@@ -1,0 +1,77 @@
+name: Linux Build (exploratory)
+
+# Build-only signal for the Linux port. This proves whether the app COMPILES
+# and BUNDLES on Linux; it does NOT exercise rendering or validate runtime
+# codec/editor behavior.
+# Standalone and non-blocking: a failing run is the breakage signal.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            wget \
+            xz-utils
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Download a static Linux ffmpeg (LGPL) and place it where
+      # tauri.linux.conf.json expects it so it gets bundled with the app.
+      # prores_ks (CPU ProRes encoder) is included in LGPL builds.
+      - name: Fetch Linux FFmpeg
+        run: |
+          curl -L --fail -o ffmpeg.tar.xz \
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-lgpl.tar.xz
+          mkdir ffmpeg_extracted
+          tar -xJf ffmpeg.tar.xz -C ffmpeg_extracted --strip-components=1
+          cp ffmpeg_extracted/bin/ffmpeg resources/ffmpeg
+          chmod +x resources/ffmpeg
+          file resources/ffmpeg
+          resources/ffmpeg -hide_banner -encoders | grep -q prores_ks
+
+      - name: Install frontend dependencies
+        run: pnpm -C app install
+
+      - name: Build Tauri app (no signing, no release)
+        run: app/node_modules/.bin/tauri build --config src-tauri/tauri.linux.conf.json --bundles deb,appimage
+
+      - name: Upload Linux artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclemetry-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

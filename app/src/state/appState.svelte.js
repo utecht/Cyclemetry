@@ -5,7 +5,8 @@ import { parseLocalStorage } from '../lib/utils.js'
 export function createAppState() {
   // ── Persistent ──────────────────────────────────────────────────────────────
   // config is the single source of truth: scene settings + all element positions
-  let config = $state(parseLocalStorage('editorConfig'))
+  const initialConfig = parseLocalStorage('editorConfig')
+  let config = $state(initialConfig)
   const _storedGpx = localStorage.getItem('gpxFilename')
   let gpxFilename = $state(
     _storedGpx && _storedGpx !== 'null' && _storedGpx !== 'undefined'
@@ -22,6 +23,7 @@ export function createAppState() {
     localStorage.getItem('loadedTemplateFilename') ?? null,
   )
   let outputDir = $state(localStorage.getItem('outputDir') ?? null)
+  let defaultOutputDir = $state(null)
   let outputWidth = $state(
     parseInt(localStorage.getItem('outputWidth') ?? '1920'),
   )
@@ -33,7 +35,7 @@ export function createAppState() {
   // 1080p template into a 4K view never marks it modified.
   let pristineConfig = $state(
     localStorage.getItem('pristineConfig') ??
-      (config ? JSON.stringify(config) : null),
+      (initialConfig ? JSON.stringify(initialConfig) : null),
   )
 
   // ── Transient ────────────────────────────────────────────────────────────────
@@ -116,6 +118,14 @@ export function createAppState() {
   function confirmIfModified(run) {
     if (templateModified()) pendingDiscard = run
     else run()
+  }
+
+  async function fetchDefaultOutputDir() {
+    try {
+      defaultOutputDir = await backend.defaultOutputDir()
+    } catch {
+      defaultOutputDir = null
+    }
   }
 
   function resolvePendingDiscard(ok) {
@@ -558,6 +568,7 @@ export function createAppState() {
     },
     confirmIfModified,
     resolvePendingDiscard,
+    fetchDefaultOutputDir,
     get loadedTemplateFilename() {
       return loadedTemplateFilename
     },
@@ -569,6 +580,9 @@ export function createAppState() {
     },
     set outputDir(v) {
       outputDir = v
+    },
+    get defaultOutputDir() {
+      return defaultOutputDir
     },
     get outputWidth() {
       return outputWidth

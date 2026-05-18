@@ -192,6 +192,9 @@
 
     <!-- Rotation handle: large transparent hit area + small visual dot -->
     <circle
+      role="button"
+      aria-label="Rotate element"
+      tabindex="0"
       cx={cx}
       cy={d.y - ROTATE_HANDLE_OFFSET}
       r="14"

@@ -74,6 +74,7 @@
   onMount(() => {
     app.fetchTemplates()
     app.fetchFonts()
+    app.fetchDefaultOutputDir()
     if (import.meta.env.DEV) backend.appBuildInfo().then(s => { buildInfo = s }).catch(() => {})
 
     if (typeof window.__TAURI__ !== 'undefined') {

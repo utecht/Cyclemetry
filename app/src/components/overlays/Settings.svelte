@@ -7,8 +7,6 @@
 
   let { onclose } = $props()
 
-  const DEFAULT_DIR = '~/Movies/Cyclemetry'
-
   const RESOLUTIONS = [
     { label: '4K',    w: 3840, h: 2160 },
     { label: '1080p', w: 1920, h: 1080 },
@@ -16,14 +14,20 @@
     { label: '480p',  w: 854,  h: 480  },
   ]
 
-  let outputDirLabel = $derived.by(() => {
-    if (!app.outputDir) return DEFAULT_DIR
-    const m = app.outputDir.match(/^\/Users\/([^/]+)/)
-    return m ? app.outputDir.replace(`/Users/${m[1]}`, '~') : app.outputDir
-  })
+  const formatHomePath = (path) => {
+    if (!path) return ''
+    const macHome = path.match(/^\/Users\/([^/]+)/)
+    if (macHome) return path.replace(`/Users/${macHome[1]}`, '~')
+    const windowsHome = path.match(/^[A-Za-z]:\\Users\\[^\\]+/)
+    if (windowsHome) return path.replace(windowsHome[0], '~')
+    return path
+  }
+
+  let effectiveOutputDir = $derived(app.outputDir ?? app.defaultOutputDir ?? '')
+  let outputDirLabel = $derived(formatHomePath(effectiveOutputDir))
 
   async function pickOutputDir() {
-    const dir = await open({ directory: true, multiple: false, defaultPath: app.outputDir ?? undefined })
+    const dir = await open({ directory: true, multiple: false, defaultPath: effectiveOutputDir || undefined })
     if (dir) app.outputDir = dir
   }
 
@@ -71,7 +75,7 @@
         <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Output Folder</p>
         <p class="text-[11px] text-zinc-500">Where rendered videos are saved.</p>
         <div class="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2">
-          <span class="flex-1 text-xs text-zinc-300 font-mono truncate" title={app.outputDir ?? DEFAULT_DIR}>
+          <span class="flex-1 text-xs text-zinc-300 font-mono truncate" title={effectiveOutputDir}>
             {outputDirLabel}
           </span>
           <button

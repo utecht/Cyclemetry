@@ -516,6 +516,41 @@ fn resolve_ffmpeg() -> String {
                 }
             }
         }
+        // Production Linux: depending on the bundle target, resources may sit
+        // next to the executable or under a sibling lib/resources directory.
+        #[cfg(target_os = "linux")]
+        if let Some(exe_dir) = exe.parent() {
+            let app_name = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "cyclemetry".to_string());
+            for candidate in &[
+                exe_dir.join(bin_name),
+                exe_dir.join("resources").join(bin_name),
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("lib")
+                    .join(&app_name)
+                    .join(bin_name),
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("lib")
+                    .join(&app_name)
+                    .join("resources")
+                    .join(bin_name),
+            ] {
+                if std::fs::metadata(candidate)
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false)
+                {
+                    ensure_executable(candidate);
+                    log::info!("resolve_ffmpeg: found Linux bundled ffmpeg at {candidate:?}");
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
     }
     // Homebrew on macOS doesn't modify the system PATH visible to .app bundles.
     // Check known install locations before falling back to PATH lookup.

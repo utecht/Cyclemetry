@@ -48,6 +48,8 @@ export const openActivitiesFolder = () => invoke('backend_open_activities')
 export const openDownloads = (dir) =>
   invoke('backend_open_downloads', { path: dir ?? null })
 
+export const defaultOutputDir = () => invoke('backend_default_output_dir')
+
 export const openVideo = (filename) =>
   invoke('backend_open_video', { filename })
 

@@ -457,6 +457,11 @@ fn backend_open_activities() -> Result<String, String> {
     Ok(r#"{"message":"Activities folder opened"}"#.to_string())
 }
 
+#[tauri::command]
+fn backend_default_output_dir() -> String {
+    default_output_dir().to_string_lossy().to_string()
+}
+
 /// Single source of truth for available fonts: bundled fonts ∪ user-installed.
 #[tauri::command]
 fn backend_list_fonts() -> Vec<String> {
@@ -513,8 +518,32 @@ fn backend_open_video(filename: String) -> Result<String, String> {
     if !path.exists() {
         return Err(format!("Video file not found: {filename}"));
     }
-    open_path(&path.to_string_lossy())?;
+    open_render_result(&path)?;
     Ok(r#"{"message":"Video opened"}"#.to_string())
+}
+
+fn open_render_result(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        open_path(&path.to_string_lossy())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let target = path.parent().unwrap_or(path);
+        std::process::Command::new("explorer")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("Failed to open output folder: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let target = path.parent().unwrap_or(path);
+        std::process::Command::new("xdg-open")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("Failed to open output folder: {e}"))?;
+    }
+    Ok(())
 }
 
 fn open_path(path: &str) -> Result<(), String> {
@@ -534,6 +563,17 @@ fn open_path(path: &str) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to open path: {e}"))?;
     Ok(())
+}
+
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    let cmd = ("open", url);
+    #[cfg(target_os = "windows")]
+    let cmd = ("explorer", url);
+    #[cfg(target_os = "linux")]
+    let cmd = ("xdg-open", url);
+
+    let _ = std::process::Command::new(cmd.0).arg(cmd.1).spawn();
 }
 
 // ─── GPX upload / load ────────────────────────────────────────────────────────
@@ -1189,6 +1229,7 @@ pub fn run() {
             backend_save_template,
             backend_rename_template,
             backend_open_templates,
+            backend_default_output_dir,
             backend_list_fonts,
             backend_import_font,
             backend_open_activities,
@@ -1494,16 +1535,10 @@ pub fn run() {
                             recent::clear();
                         }
                         "help_docs" => {
-                            std::process::Command::new("open")
-                                .arg("https://github.com/walkersutton/cyclemetry#readme")
-                                .spawn()
-                                .ok();
+                            open_url("https://github.com/walkersutton/cyclemetry#readme");
                         }
                         "help_issues" => {
-                            std::process::Command::new("open")
-                                .arg("https://github.com/walkersutton/cyclemetry/issues/new")
-                                .spawn()
-                                .ok();
+                            open_url("https://github.com/walkersutton/cyclemetry/issues/new");
                         }
                         _ if id.starts_with("recent_gpx_") => {
                             if let Ok(idx) = id["recent_gpx_".len()..].parse::<usize>() {
@@ -1513,6 +1548,176 @@ pub fn run() {
                                     app_handle.emit("menu_open_recent_gpx", path.clone()).ok();
                                 }
                             }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+                let settings =
+                    MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
+                let open_gpx =
+                    MenuItem::with_id(app, "open_gpx", "Open GPX...", true, Some("CmdOrCtrl+O"))?;
+                let show_dl = MenuItem::with_id(
+                    app,
+                    "show_downloads",
+                    "Show Output Folder",
+                    true,
+                    None::<&str>,
+                )?;
+                let file_submenu = Submenu::with_items(
+                    app,
+                    "File",
+                    true,
+                    &[
+                        &settings,
+                        &PredefinedMenuItem::separator(app)?,
+                        &open_gpx,
+                        &show_dl,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::quit(app, None)?,
+                    ],
+                )?;
+
+                let edit_submenu = Submenu::with_items(
+                    app,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(app, None)?,
+                        &PredefinedMenuItem::redo(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::cut(app, None)?,
+                        &PredefinedMenuItem::copy(app, None)?,
+                        &PredefinedMenuItem::paste(app, None)?,
+                        &PredefinedMenuItem::select_all(app, None)?,
+                    ],
+                )?;
+
+                let new_tpl =
+                    MenuItem::with_id(app, "new_template", "New Template", true, None::<&str>)?;
+                let save_tpl = MenuItem::with_id(
+                    app,
+                    "save_template",
+                    "Save Template",
+                    true,
+                    Some("CmdOrCtrl+S"),
+                )?;
+                let save_tpl_as = MenuItem::with_id(
+                    app,
+                    "save_template_as",
+                    "Save Template As...",
+                    true,
+                    Some("CmdOrCtrl+Shift+S"),
+                )?;
+                let rename_tpl = MenuItem::with_id(
+                    app,
+                    "rename_template",
+                    "Rename Template...",
+                    true,
+                    None::<&str>,
+                )?;
+                let show_tpl_dir = MenuItem::with_id(
+                    app,
+                    "show_templates",
+                    "Show Templates Folder",
+                    true,
+                    None::<&str>,
+                )?;
+                let browse_community = MenuItem::with_id(
+                    app,
+                    "browse_community_templates",
+                    "Browse Community Templates...",
+                    true,
+                    None::<&str>,
+                )?;
+                let templates_submenu = Submenu::with_items(
+                    app,
+                    "Templates",
+                    true,
+                    &[
+                        &new_tpl,
+                        &save_tpl,
+                        &save_tpl_as,
+                        &rename_tpl,
+                        &PredefinedMenuItem::separator(app)?,
+                        &show_tpl_dir,
+                        &PredefinedMenuItem::separator(app)?,
+                        &browse_community,
+                    ],
+                )?;
+
+                let act_show_folder = MenuItem::with_id(
+                    app,
+                    "activities_show_folder",
+                    "Show Activities Folder",
+                    true,
+                    None::<&str>,
+                )?;
+                let activities_submenu =
+                    Submenu::with_items(app, "Activities", true, &[&act_show_folder])?;
+
+                let help_docs =
+                    MenuItem::with_id(app, "help_docs", "Documentation", true, None::<&str>)?;
+                let help_issues =
+                    MenuItem::with_id(app, "help_issues", "Report an Issue", true, None::<&str>)?;
+                let help_submenu =
+                    Submenu::with_items(app, "Help", true, &[&help_docs, &help_issues])?;
+
+                app.set_menu(Menu::with_items(
+                    app,
+                    &[
+                        &file_submenu,
+                        &edit_submenu,
+                        &templates_submenu,
+                        &activities_submenu,
+                        &help_submenu,
+                    ],
+                )?)?;
+
+                app.on_menu_event(|app_handle, event| {
+                    use tauri::Emitter;
+                    let id = event.id().as_ref();
+                    match id {
+                        "settings" => {
+                            app_handle.emit("menu_settings", ()).ok();
+                        }
+                        "open_gpx" => {
+                            app_handle.emit("menu_open_gpx", ()).ok();
+                        }
+                        "activities_show_folder" => {
+                            app_handle.emit("menu_show_activities", ()).ok();
+                        }
+                        "save_template" => {
+                            app_handle.emit("menu_save_template", ()).ok();
+                        }
+                        "save_template_as" => {
+                            app_handle.emit("menu_save_template_as", ()).ok();
+                        }
+                        "rename_template" => {
+                            app_handle.emit("menu_rename_template", ()).ok();
+                        }
+                        "new_template" => {
+                            app_handle.emit("menu_new_template", ()).ok();
+                        }
+                        "browse_community_templates" => {
+                            app_handle.emit("menu_browse_community_templates", ()).ok();
+                        }
+                        "show_downloads" => {
+                            app_handle.emit("menu_show_downloads", ()).ok();
+                        }
+                        "show_templates" => {
+                            app_handle.emit("menu_show_templates", ()).ok();
+                        }
+                        "help_docs" => {
+                            open_url("https://github.com/walkersutton/cyclemetry#readme");
+                        }
+                        "help_issues" => {
+                            open_url("https://github.com/walkersutton/cyclemetry/issues/new");
                         }
                         _ => {}
                     }
