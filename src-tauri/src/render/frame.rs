@@ -4,8 +4,8 @@ use skia_safe::{Canvas, Color, Font, FontMgr, FontStyle, ISize, ImageInfo, Paint
 use std::collections::HashMap;
 
 use crate::render::activity::{
-    Activity, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
-    MPH_CONVERSION,
+    Activity, ATTR_DISTANCE, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION,
+    KMH_CONVERSION, MI_CONVERSION, MPH_CONVERSION,
 };
 use crate::render::chart::ChartCache;
 use crate::render::color::hex_with_opacity;
@@ -53,7 +53,14 @@ pub fn measure_elements(
     for (i, val_cfg) in template.values.iter().enumerate() {
         let attr = &val_cfg.value;
         let raw = if activity.valid_attributes.contains(attr) {
-            activity.get_scalar(attr, frame_idx)
+            if attr == ATTR_DISTANCE {
+                let target_m = val_cfg
+                    .distance_target
+                    .map(|t| distance_target_to_m(t, val_cfg.unit.as_deref()));
+                activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
+            } else {
+                activity.get_scalar(attr, frame_idx)
+            }
         } else {
             0.0
         };
@@ -135,9 +142,14 @@ impl SceneCache {
                     .to_string()
             }))
         {
-            typefaces.entry(font_name.clone()).or_insert_with(|| {
-                load_typeface(&font_name, fonts_dir).expect("failed to load typeface")
-            });
+            if let std::collections::hash_map::Entry::Vacant(e) = typefaces.entry(font_name.clone())
+            {
+                if let Some(tf) = load_typeface(&font_name, fonts_dir) {
+                    e.insert(tf);
+                } else {
+                    eprintln!("Warning: could not load font '{font_name}'; text elements using it will not render");
+                }
+            }
         }
 
         // --- Build chart caches ---
@@ -336,7 +348,15 @@ pub fn compute_crop_rect(
             continue;
         };
         for i in 0..n {
-            let text = format_value(activity.get_scalar(&vc.value, i), vc);
+            let raw = if vc.value == ATTR_DISTANCE {
+                let target_m = vc
+                    .distance_target
+                    .map(|t| distance_target_to_m(t, vc.unit.as_deref()));
+                activity.get_distance(vc.distance_reference.as_deref(), target_m, i)
+            } else {
+                activity.get_scalar(&vc.value, i)
+            };
+            let text = format_value(raw, vc);
             let (_, r) = font.measure_str(&text, None);
             acc(vc.x + r.left, vc.y + r.top, vc.x + r.right, vc.y + r.bottom);
         }
@@ -397,7 +417,14 @@ fn draw_value(
     if !activity.valid_attributes.contains(attr) {
         return;
     }
-    let raw = activity.get_scalar(attr, frame_idx);
+    let raw = if attr == ATTR_DISTANCE {
+        let target_m = val_cfg
+            .distance_target
+            .map(|t| distance_target_to_m(t, val_cfg.unit.as_deref()));
+        activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
+    } else {
+        activity.get_scalar(attr, frame_idx)
+    };
     let display = format_value(raw, val_cfg);
     draw_text_on_canvas(canvas, &display, val_cfg, template, typefaces);
 }
@@ -506,8 +533,32 @@ pub(crate) fn load_typeface(font_name: &str, fonts_dir: &str) -> Option<Typeface
             }
         }
     }
-    let family = font_name.trim_end_matches(".ttf").trim_end_matches(".TTF");
-    mgr.match_family_style(family, FontStyle::normal())
+    // System font fallback: try the font name as a family, then common Linux
+    // families (Arial is not typically installed on Linux).
+    let primary = font_name
+        .trim_end_matches(".ttf")
+        .trim_end_matches(".TTF")
+        .trim_end_matches(".otf")
+        .trim_end_matches(".OTF");
+    let fallbacks: &[&str] = if cfg!(target_os = "linux") {
+        &[
+            primary,
+            "DejaVu Sans",
+            "Liberation Sans",
+            "Noto Sans",
+            "Ubuntu",
+            "FreeSans",
+            "sans-serif",
+        ]
+    } else {
+        &[primary]
+    };
+    for family in fallbacks {
+        if let Some(tf) = mgr.match_family_style(family, FontStyle::normal()) {
+            return Some(tf);
+        }
+    }
+    None
 }
 
 fn load_font(font_name: &str, size: f32, fonts_dir: &str) -> Option<Font> {
@@ -516,6 +567,17 @@ fn load_font(font_name: &str, size: f32, fonts_dir: &str) -> Option<Font> {
 
 // ─── Value formatting ──────────────────────────────────────────────────────
 
+/// Convert a display-unit distance target to metres for "custom" reference mode.
+/// Unit string matches the distance element's `unit` field: "km", "m", "mi", or
+/// legacy "metric"/"imperial".
+fn distance_target_to_m(target: f64, unit: Option<&str>) -> f64 {
+    match unit.unwrap_or("km") {
+        "mi" | "imperial" => target / MI_CONVERSION,
+        "m" => target,
+        _ => target * 1000.0, // "km" or "metric" or default
+    }
+}
+
 fn format_value(raw: f64, cfg: &ValueConfig) -> String {
     let mut v = raw;
 
@@ -523,6 +585,13 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
     // GPX speed is in m/s, elevation in metres, temperature in °C.
     let imperial = cfg.unit.as_deref() == Some("imperial");
     match cfg.value.as_str() {
+        ATTR_DISTANCE => {
+            match cfg.unit.as_deref().unwrap_or("km") {
+                "mi" | "imperial" => v *= MI_CONVERSION,
+                "m" => {}
+                _ => v *= 0.001, // "km" or "metric" or default
+            }
+        }
         ATTR_SPEED => {
             v *= if imperial {
                 MPH_CONVERSION

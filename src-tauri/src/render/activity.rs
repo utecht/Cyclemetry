@@ -3,6 +3,7 @@ use quick_xml::reader::Reader;
 
 pub const ATTR_CADENCE: &str = "cadence";
 pub const ATTR_COURSE: &str = "course";
+pub const ATTR_DISTANCE: &str = "distance";
 pub const ATTR_ELEVATION: &str = "elevation";
 pub const ATTR_GRADIENT: &str = "gradient";
 pub const ATTR_HEARTRATE: &str = "heartrate";
@@ -14,11 +15,13 @@ pub const ATTR_TEMPERATURE: &str = "temperature";
 pub const MPH_CONVERSION: f64 = 2.23694;
 pub const KMH_CONVERSION: f64 = 3.6;
 pub const FT_CONVERSION: f64 = 3.28084;
+pub const MI_CONVERSION: f64 = 0.001 / 1.60934; // metres to miles
 pub const GRADIENT_SCALE: f64 = 1.747;
 
 #[derive(Debug, Clone, Default)]
 pub struct Activity {
     pub course: Vec<(f64, f64)>,
+    pub distance: Vec<f64>,
     pub elevation: Vec<f64>,
     pub gradient: Vec<f64>,
     pub heartrate: Vec<f64>,
@@ -27,6 +30,8 @@ pub struct Activity {
     pub power: Vec<f64>,
     pub temperature: Vec<f64>,
     pub valid_attributes: Vec<String>,
+    /// Total cumulative distance (metres) of the full activity before any trim.
+    pub total_activity_distance: f64,
 }
 
 impl Activity {
@@ -42,9 +47,14 @@ impl Activity {
     pub fn synthetic(secs: usize) -> Self {
         let n = secs.max(1);
         let mut a = Activity::default();
+        let mut cum_dist = 0.0;
         for i in 0..n {
             let t = i as f64;
-            a.speed.push(8.0 + 3.0 * (t / 10.0).sin());
+            let spd = 8.0 + 3.0 * (t / 10.0).sin();
+            if i > 0 {
+                cum_dist += spd; // 1-second intervals
+            }
+            a.speed.push(spd);
             a.power.push(200.0 + 60.0 * (t / 8.0).sin());
             a.heartrate.push(140.0 + 15.0 * (t / 12.0).sin());
             a.cadence.push(88.0 + 6.0 * (t / 6.0).sin());
@@ -53,9 +63,12 @@ impl Activity {
             a.temperature.push(21.0);
             a.course
                 .push((37.0 + t * 1.0e-4, -122.0 + (t / 20.0).sin() * 1.0e-3));
+            a.distance.push(cum_dist);
         }
+        a.total_activity_distance = cum_dist;
         a.valid_attributes = [
             ATTR_COURSE,
+            ATTR_DISTANCE,
             ATTR_SPEED,
             ATTR_ELEVATION,
             ATTR_GRADIENT,
@@ -182,6 +195,7 @@ impl Activity {
         // after interpolate() expanded speed but not the missed attribute's vec.
         let mut valid: std::collections::HashSet<String> = std::collections::HashSet::new();
         valid.insert(ATTR_COURSE.into());
+        valid.insert(ATTR_DISTANCE.into());
         valid.insert(ATTR_SPEED.into());
         if points.iter().any(|p| p.elevation.is_some()) {
             valid.insert(ATTR_ELEVATION.into());
@@ -211,6 +225,7 @@ impl Activity {
 
         // Build raw data arrays
         let mut raw_gradient: Vec<f64> = Vec::with_capacity(n);
+        let mut cum_dist = 0.0f64;
 
         for (i, pt) in points.iter().enumerate() {
             activity.course.push((pt.lat, pt.lon));
@@ -234,6 +249,13 @@ impl Activity {
                 }
             };
             activity.speed.push(spd);
+
+            // Cumulative distance from activity start
+            if i > 0 {
+                let prev = &points[i - 1];
+                cum_dist += haversine_m(prev.lat, prev.lon, pt.lat, pt.lon);
+            }
+            activity.distance.push(cum_dist);
 
             // Gradient: elevation angle in degrees
             let grad = if i == 0 {
@@ -277,6 +299,7 @@ impl Activity {
             activity.gradient = grad.iter().map(|&v| v * GRADIENT_SCALE).collect();
         }
 
+        activity.total_activity_distance = cum_dist;
         Ok(activity)
     }
 
@@ -296,6 +319,9 @@ impl Activity {
                     let new_lats = linear_interp(&lats, fps);
                     let new_lons = linear_interp(&lons, fps);
                     self.course = new_lats.into_iter().zip(new_lons).collect();
+                }
+                ATTR_DISTANCE => {
+                    self.distance = linear_interp(&self.distance, fps);
                 }
                 ATTR_ELEVATION => {
                     self.elevation = linear_interp(&self.elevation, fps);
@@ -342,6 +368,7 @@ impl Activity {
             *v = v[s..e].to_vec();
         }
         tv(&mut self.course, start, end);
+        tv(&mut self.distance, start, end);
         tv(&mut self.elevation, start, end);
         tv(&mut self.gradient, start, end);
         tv(&mut self.heartrate, start, end);
@@ -359,6 +386,7 @@ impl Activity {
     pub fn get_scalar(&self, attribute: &str, index: usize) -> f64 {
         let safe = |v: &[f64]| v.get(index).copied().unwrap_or(0.0);
         match attribute {
+            ATTR_DISTANCE => safe(&self.distance),
             ATTR_ELEVATION => safe(&self.elevation),
             ATTR_GRADIENT => safe(&self.gradient),
             ATTR_HEARTRATE => safe(&self.heartrate),
@@ -370,6 +398,28 @@ impl Activity {
         }
     }
 
+    /// Distance in metres adjusted for the requested reference point.
+    /// `reference` values: "overlay_start" (default), "activity_start",
+    /// "overlay_end", "activity_end", "custom".
+    /// `target_m`: for "custom" only — the finish-line distance in metres.
+    pub fn get_distance(
+        &self,
+        reference: Option<&str>,
+        target_m: Option<f64>,
+        index: usize,
+    ) -> f64 {
+        let current = self.distance.get(index).copied().unwrap_or(0.0);
+        let overlay_start = self.distance.first().copied().unwrap_or(0.0);
+        let overlay_end = self.distance.last().copied().unwrap_or(0.0);
+        match reference.unwrap_or("overlay_start") {
+            "activity_start" => current,
+            "overlay_end" => (overlay_end - current).max(0.0),
+            "activity_end" => (self.total_activity_distance - current).max(0.0),
+            "custom" => target_m.map(|t| (t - current).max(0.0)).unwrap_or(0.0),
+            _ => (current - overlay_start).max(0.0), // "overlay_start"
+        }
+    }
+
     /// Build (x, y) data arrays for a plot of the given attribute.
     pub fn plot_data(&self, attribute: &str) -> (Vec<f64>, Vec<f64>) {
         let scalar = |data: &[f64]| -> (Vec<f64>, Vec<f64>) {
@@ -377,6 +427,7 @@ impl Activity {
             (x, data.to_vec())
         };
         match attribute {
+            ATTR_DISTANCE => scalar(&self.distance),
             ATTR_ELEVATION => scalar(&self.elevation),
             ATTR_HEARTRATE => scalar(&self.heartrate),
             ATTR_SPEED => scalar(&self.speed),

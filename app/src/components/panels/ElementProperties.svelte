@@ -26,8 +26,20 @@
     const f = await app.addCustomFont()
     if (f) apply(f)
   }
-  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time']
-  const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'course']
+  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time', 'distance']
+  const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'course', 'distance']
+  const DISTANCE_REFERENCES = [
+    { value: 'overlay_start', label: 'Since overlay start' },
+    { value: 'activity_start', label: 'Since activity start' },
+    { value: 'overlay_end', label: 'Until overlay end' },
+    { value: 'activity_end', label: 'Until activity end' },
+    { value: 'custom', label: 'Until custom point' },
+  ]
+  const DISTANCE_UNITS = [
+    { value: 'km', label: 'Kilometers (km)' },
+    { value: 'm', label: 'Meters (m)' },
+    { value: 'mi', label: 'Miles (mi)' },
+  ]
   const UNITS = [
     { value: '', label: 'Default' },
     { value: 'imperial', label: 'Imperial' },
@@ -49,7 +61,7 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     app.updateElement(s.category, s.idx, { [field]: value })
   }
@@ -486,10 +498,32 @@
     {#if type === 'value'}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Formatting</p>
+        {#if item.value === 'distance'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={item.unit ?? 'km'} options={DISTANCE_UNITS} onchange={(v) => update('unit', v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Reference</span>
+          <Select
+            value={item.distance_reference ?? 'overlay_start'}
+            options={DISTANCE_REFERENCES}
+            onchange={(v) => update('distance_reference', v)}
+          />
+        </label>
+        {#if item.distance_reference === 'custom'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Target ({item.unit ?? 'km'})</span>
+          <Input type="number" value={numVal(item, 'distance_target')} min={0} step={0.1}
+            oninput={(e) => update('distance_target', e.target.value)} />
+        </label>
+        {/if}
+        {:else}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit system</span>
           <Select value={item.unit ?? ''} options={UNITS} onchange={(v) => update('unit', v || undefined)} />
         </label>
+        {/if}
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Suffix</span>

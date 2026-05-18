@@ -181,18 +181,50 @@ fn resolve_demo_gpx() -> Option<String> {
 
 fn resolve_fonts_dir() -> String {
     if let Ok(exe) = std::env::current_exe() {
-        // Dev: repo resources/fonts/
-        if let Some(root) = exe.ancestors().find(|p| p.join("resources").exists()) {
-            let dev = root.join("resources").join("fonts");
-            if dev.exists() {
-                return dev.to_string_lossy().to_string();
-            }
+        // Dev: walk ancestor dirs until we find one containing resources/fonts/.
+        if let Some(root) = exe
+            .ancestors()
+            .find(|p| p.join("resources").join("fonts").exists())
+        {
+            return root
+                .join("resources")
+                .join("fonts")
+                .to_string_lossy()
+                .to_string();
         }
         // Production macOS .app bundle: Contents/Resources/fonts/
         if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
             let prod = contents.join("Resources").join("fonts");
             if prod.exists() {
                 return prod.to_string_lossy().to_string();
+            }
+        }
+        // Production Linux AppImage (APPDIR set by the AppImage runtime) or
+        // DEB/RPM install (exe at /usr/bin/; resources at /usr/lib/<name>/).
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(appdir) = std::env::var("APPDIR") {
+                for name in &["Cyclemetry", "cyclemetry"] {
+                    let p = PathBuf::from(&appdir)
+                        .join("usr/lib")
+                        .join(name)
+                        .join("fonts");
+                    if p.exists() {
+                        return p.to_string_lossy().to_string();
+                    }
+                }
+            }
+            if let Some(exe_dir) = exe.parent() {
+                for rel in &[
+                    "../lib/Cyclemetry/fonts",
+                    "../lib/cyclemetry/fonts",
+                    "fonts",
+                ] {
+                    let p = exe_dir.join(rel);
+                    if p.exists() {
+                        return p.canonicalize().unwrap_or(p).to_string_lossy().to_string();
+                    }
+                }
             }
         }
         // Production Windows: fonts/ next to the exe or inside resources/

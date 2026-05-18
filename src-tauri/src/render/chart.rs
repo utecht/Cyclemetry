@@ -8,7 +8,8 @@ use skia_safe::{
 };
 
 use crate::render::activity::{
-    ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION, MPH_CONVERSION,
+    ATTR_DISTANCE, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
+    MI_CONVERSION, MPH_CONVERSION,
 };
 use crate::render::color::to_skia_color;
 use crate::render::template::{PlotConfig, PointLabelConfig};
@@ -379,6 +380,11 @@ impl ChartCache {
 fn format_point_label(raw: f64, attr: &str, unit: &str, decimals: i32) -> String {
     let imperial = unit.eq_ignore_ascii_case("imperial");
     let (value, suffix) = match attr {
+        ATTR_DISTANCE => match unit {
+            "mi" | "imperial" => (raw * MI_CONVERSION, "MI"),
+            "m" => (raw, "M"),
+            _ => (raw * 0.001, "KM"),
+        },
         ATTR_ELEVATION => {
             if imperial {
                 (raw * FT_CONVERSION, "FT")
