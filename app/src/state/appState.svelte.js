@@ -219,6 +219,38 @@ export function createAppState() {
     commitConfig(next)
   }
 
+  // Update positions live during a drag without touching undo history.
+  // Call commitElementPositions on drop to persist the pre-drag snapshot.
+  function moveElementPositionsLive(moves) {
+    if (!config || moves.length === 0) return
+    let next = config
+    for (const m of moves) {
+      const arr = [...(next[m.category] ?? [])]
+      if (!arr[m.idx]) continue
+      arr[m.idx] = { ...arr[m.idx], x: Math.round(m.x), y: Math.round(m.y) }
+      next = { ...next, [m.category]: arr }
+    }
+    config = next
+  }
+
+  // Commit a drag: push the pre-drag snapshot to history so Ctrl+Z reverts
+  // the whole drag in one step, then apply the final positions.
+  function commitElementPositions(preDragConfigJson, moves) {
+    if (!config) return
+    if (preDragConfigJson) {
+      history = [...history.slice(-(HISTORY_LIMIT - 1)), preDragConfigJson]
+    }
+    if (moves.length === 0) return
+    let next = config
+    for (const m of moves) {
+      const arr = [...(next[m.category] ?? [])]
+      if (!arr[m.idx]) continue
+      arr[m.idx] = { ...arr[m.idx], x: Math.round(m.x), y: Math.round(m.y) }
+      next = { ...next, [m.category]: arr }
+    }
+    config = next
+  }
+
   function elementIdFor(category, idx) {
     return `${category.slice(0, -1)}-${idx}`
   }
@@ -681,6 +713,8 @@ export function createAppState() {
     updateElement,
     updateElementPos,
     updateElementPositions,
+    moveElementPositionsLive,
+    commitElementPositions,
     addElement,
     removeElement,
     deleteSelectedElement,

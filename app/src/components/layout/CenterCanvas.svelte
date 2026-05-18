@@ -51,14 +51,18 @@
 
   async function fetchFrame(frameIdx) {
     const config = app.config
-    if (!config) return
+    if (!config) return console.debug('[tpl-diag] fetchFrame bail: no config')
     const fps = app.previewFps ?? 1
     const start = config.scene?.start ?? 0
     const end = config.scene?.end ?? app.activityDuration
     const maxFrameIdx = Math.round((end - start) * fps)
-    if (frameIdx < 0 || frameIdx > maxFrameIdx) return
-    if (cache.has(frameIdx) || pending.has(frameIdx)) return
-    if (pending.size >= MAX_CONCURRENT) return
+    if (frameIdx < 0 || frameIdx > maxFrameIdx)
+      return console.debug('[tpl-diag] fetchFrame bail: frameIdx out of range', { frameIdx, maxFrameIdx, start, end })
+    if (cache.has(frameIdx) || pending.has(frameIdx))
+      return console.debug('[tpl-diag] fetchFrame bail: cache/pending has', frameIdx)
+    if (pending.size >= MAX_CONCURRENT)
+      return console.debug('[tpl-diag] fetchFrame bail: MAX_CONCURRENT', pending.size)
+    console.debug('[tpl-diag] fetchFrame start', { frameIdx, fps, start, end })
     // Fall back to the bundled demo GPX when no file has been loaded yet.
     // Guard against stale "null"/"undefined" strings persisted by older builds.
     const raw = app.gpxFilename
@@ -72,6 +76,7 @@
       )
       let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, app.outputWidth, app.outputHeight), timeout])
       if (data?.image) {
+        console.debug('[tpl-diag] fetchFrame got image', { frameIdx, elements: data.elements?.length })
         fetchError = null
         if (stallTimer) { clearTimeout(stallTimer); stallTimer = null }
         // Surface any backend warning (e.g. GPX not found, using demo) — once per message
@@ -88,7 +93,10 @@
         // Show this frame if it's current, or if we don't have the current frame yet
         const currentIdx = secToFrameIdx(app.selectedSecond, fps, start)
         if (frameIdx === currentIdx || (frameIdx < currentIdx && !cache.has(currentIdx))) {
+          console.debug('[tpl-diag] currentFrameData <- frame', frameIdx)
           currentFrameData = data
+        } else {
+          console.debug('[tpl-diag] frame NOT shown (not current)', { frameIdx, currentIdx })
         }
       }
     } catch (e) {
@@ -114,18 +122,26 @@
     void app.outputWidth // reactive dep: re-render preview on resolution change
     void app.outputHeight
     clearBuffer()
+    console.debug('[tpl-diag] config effect ran', {
+      hasConfig: !!_config,
+      labels: _config?.labels?.length,
+      sceneStart: _config?.scene?.start,
+      sceneEnd: _config?.scene?.end,
+    })
     if (_config) {
       const start = _config.scene?.start ?? 0
       const end = _config.scene?.end ?? app.activityDuration
       // Don't attempt to fetch when the timeline range is invalid — the sidebar
       // already shows a validation error; no point spinning here too.
       if (end <= start) {
+        console.debug('[tpl-diag] config effect: INVALID range, currentFrameData=null', { start, end })
         currentFrameData = null
         return
       }
       // untrack selectedSecond — only needed for initial seek position
       const s = Math.max(start, untrack(() => app.selectedSecond))
       const frameIdx = secToFrameIdx(s, _fps, start)
+      console.debug('[tpl-diag] config effect -> fetchFrame', { frameIdx, s, start, end })
       untrack(() => fetchFrame(frameIdx))
       stallTimer = setTimeout(() => { stallTimer = null }, 5000)
     }
@@ -339,7 +355,10 @@
         {/if}
 
         <!-- WYSIWYG drag layer — always on top -->
-        <WysiwygLayer measuredElements={currentFrameData?.elements ?? []} />
+        <WysiwygLayer
+          measuredElements={currentFrameData?.elements ?? []}
+          frameImage={currentFrameData?.image ?? null}
+        />
 
         <!-- Top-right badges -->
         <div class="absolute top-2 right-2 flex items-center gap-1.5">

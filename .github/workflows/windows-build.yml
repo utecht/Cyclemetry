@@ -1,10 +1,10 @@
 name: Windows Build (exploratory)
 
-# Build-only signal for the Windows port. This proves whether the app
-# COMPILES and BUNDLES on Windows — it does NOT exercise rendering, so
-# runtime gaps (e.g. path layout, codec availability) will not surface here;
-# those need an actual render run on real hardware.
-# Standalone and non-blocking: a failing run is the breakage signal.
+# Build-only signal for the Windows port. This proves whether the app COMPILES
+# and BUNDLES on Windows. If WINDOWS_CERTIFICATE_BASE64 and
+# WINDOWS_CERTIFICATE_PASSWORD are configured as repository secrets, the NSIS
+# installer is signed so Windows shows a verified publisher instead of
+# "Unknown publisher".
 
 on:
   workflow_dispatch:
@@ -14,6 +14,8 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      SIGN_WINDOWS: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' && 'true' || 'false' }}
 
     steps:
       - name: Checkout
@@ -50,8 +52,28 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm -C app install
 
-      - name: Build Tauri app (no signing, no release)
-        run: app/node_modules/.bin/tauri build --bundles nsis
+      - name: Import signing certificate
+        if: ${{ env.SIGN_WINDOWS == 'true' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("windows-cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath windows-cert.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          Remove-Item windows-cert.pfx
+
+      - name: Build Tauri app
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_CERTIFICATE_THUMBPRINT) {
+            app/node_modules/.bin/tauri build --bundles nsis --config "{`"bundle`":{`"windows`":{`"digestAlgorithm`":`"sha256`",`"certificateThumbprint`":`"$env:WINDOWS_CERTIFICATE_THUMBPRINT`",`"timestampUrl`":`"http://timestamp.digicert.com`"}}}"
+          } else {
+            Write-Host "No Windows signing certificate configured; building unsigned installer."
+            app/node_modules/.bin/tauri build --bundles nsis
+          }
 
       - name: Upload installer artifacts
         if: success()

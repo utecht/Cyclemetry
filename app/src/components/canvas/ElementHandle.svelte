@@ -121,7 +121,7 @@
     width={Math.max(d.w + 8, 24)}
     height={Math.max(d.h + 8, 24)}
     fill="transparent"
-    style="cursor: {dragging ? 'grabbing' : 'grab'}; pointer-events: all"
+    style="cursor: {dragging ? 'grabbing' : 'grab'}; pointer-events: all; outline: none"
     role="button"
     aria-label="Move {label}"
     tabindex="0"

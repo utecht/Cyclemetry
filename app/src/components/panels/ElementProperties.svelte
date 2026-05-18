@@ -6,6 +6,7 @@
   import { getContext } from 'svelte'
   import Input from '../ui/Input.svelte'
   import Select from '../ui/Select.svelte'
+  import Switch from '../ui/Switch.svelte'
 
   const app = getContext('app')
 
@@ -177,17 +178,18 @@
     {@const { item, type } = selected()}
 
     <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">
-      {type === 'label' ? 'Text Label' : type === 'value' ? 'Metric Value' : item.value === 'course' ? 'Map' : 'Chart'} Properties
+      {type === 'label' ? 'Text Label' : type === 'value' ? 'Metric Value' : item.value === 'course' ? 'Map' : 'Chart'}
     </p>
 
     <!-- Advanced disclosure: hides position/size and rarely-changed detail -->
-    <button
-      onclick={() => (showAdvanced = !showAdvanced)}
-      class="mb-4 flex w-full items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-600 hover:text-zinc-400 transition-colors duration-150"
-    >
-      <span class="inline-block transition-transform duration-150 {showAdvanced ? 'rotate-90' : ''}">▸</span>
-      {showAdvanced ? 'Hide' : 'Show'} advanced options
-    </button>
+    <div class="mb-4 flex items-center justify-between">
+      <span class="text-[10px] uppercase tracking-wider text-zinc-600">Advanced</span>
+      <Switch
+        checked={showAdvanced}
+        ariaLabel="Advanced options"
+        onchange={(checked) => (showAdvanced = checked)}
+      />
+    </div>
 
     <!-- Position (basic) -->
     <section class="mb-4 space-y-2">

@@ -10,12 +10,6 @@
     <div class="px-4 py-3 border-b border-zinc-800">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Properties</p>
     </div>
-    <ElementProperties />
-  {:else}
-    <div class="flex-1 flex items-center justify-center p-6">
-      <p class="text-xs text-zinc-600 italic text-center">
-        Click an element on the canvas<br>to edit its properties here.
-      </p>
-    </div>
   {/if}
+  <ElementProperties />
 </aside>

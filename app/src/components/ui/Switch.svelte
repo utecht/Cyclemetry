@@ -3,6 +3,7 @@
   let {
     checked = $bindable(false),
     id,
+    ariaLabel,
     disabled = false,
     onchange,
     class: className = '',
@@ -12,6 +13,7 @@
 <button
   role="switch"
   aria-checked={checked}
+  aria-label={ariaLabel}
   {id}
   {disabled}
   onclick={() => { checked = !checked; onchange?.(checked) }}

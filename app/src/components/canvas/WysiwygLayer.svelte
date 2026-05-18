@@ -9,13 +9,15 @@
    *      Config `y` for text is the Skia baseline, so we subtract ~0.8×font_size
    *      to approximate the visual top of the glyph.
    */
-  import { getContext } from 'svelte'
+  import { getContext, untrack } from 'svelte'
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import ElementHandle from './ElementHandle.svelte'
 
   const app = getContext('app')
 
   // Pixel-perfect bounds from the Rust renderer — { id, x, y, w, h }[]
-  let { measuredElements = [] } = $props()
+  // frameImage: full rendered scene PNG (data URL) at output resolution.
+  let { measuredElements = [], frameImage = null } = $props()
 
   // The backend renders + measures the demo frame at the chosen OUTPUT
   // resolution, scaled from the template's authored size by a uniform
@@ -36,12 +38,21 @@
     const fb = (o) => ({ id: o.id, x: o.x * s, y: o.y * s, w: o.w * s, h: o.h * s })
     const byId = {}
 
+    // Pick the best bounds source for a given element:
+    //  • Dragging → use the pre-drag snapshot so dragDelta isn't double-counted.
+    //  • Recently moved (stale measured) → skip measured, use config-derived.
+    //  • Otherwise → prefer pixel-perfect measured, fall back to config-derived.
+    function boundsFor(id) {
+      if (draggingIds.has(id)) return dragBase.baseElements.get(id) ?? null
+      if (movedIds.has(id)) return null
+      return measured.get(id) ?? null
+    }
+
     for (const [i, l] of (app.config.labels ?? []).entries()) {
       const id = `label-${i}`
-      const m = measured.get(id)
       const fs = l.font_size ?? 32
       const text = l.text ?? 'LABEL'
-      byId[id] = m ?? fb({
+      byId[id] = boundsFor(id) ?? fb({
         id,
         x: l.x ?? 100,
         y: (l.y ?? 100) - fs * 0.8,           // baseline → visual top
@@ -51,9 +62,8 @@
     }
     for (const [i, v] of (app.config.values ?? []).entries()) {
       const id = `value-${i}`
-      const m = measured.get(id)
       const fs = v.font_size ?? 48
-      byId[id] = m ?? fb({
+      byId[id] = boundsFor(id) ?? fb({
         id,
         x: v.x ?? 100,
         y: (v.y ?? 200) - fs * 0.8,
@@ -63,8 +73,7 @@
     }
     for (const [i, p] of (app.config.plots ?? []).entries()) {
       const id = `plot-${i}`
-      const m = measured.get(id)
-      byId[id] = m ?? fb({
+      byId[id] = boundsFor(id) ?? fb({
         id,
         x: p.x ?? 50, y: p.y ?? 400,
         w: p.width ?? 400,
@@ -99,6 +108,33 @@
 
   // Live rotation state: { id, degrees } while the user is dragging the handle.
   let liveRotation = $state(null)
+
+  // Snapshot captured at drag start so live updates don't shift the base coords.
+  // { preDragConfig: string, positions: Map<id,{category,idx,x,y}>, baseElements: Map<id,{x,y,w,h}> }
+  let dragBase = $state(null)
+
+  // Elements whose config position was just committed — skip stale measured
+  // bounds for them until the next rendered frame arrives.
+  let movedIds = $state(new Set())
+
+  // Cropped pixels of the dragged element(s), floated under the cursor so the
+  // real graphic moves during a drag (the box alone feels dead).
+  // id → { url, baseX, baseY, x, y, w, h } — all output px.
+  const dragSnaps = new SvelteMap()
+
+  // When a new measured frame arrives, the stale-bounds guard AND the drag
+  // snapshot are no longer needed — the fresh frame already shows the element
+  // at its new position. untrack keeps these out of the effect's dependency
+  // set so it only fires on a genuine new frame, not on our own drag writes.
+  $effect(() => {
+    void measuredElements
+    untrack(() => {
+      if (movedIds.size > 0) movedIds = new Set()
+      if (dragSnaps.size > 0) dragSnaps.clear()
+    })
+  })
+
+  let draggingIds = $derived(dragBase ? new Set([...dragBase.positions.keys()]) : new Set())
 
   function getRotation(id) {
     const el = parseId(id)
@@ -136,29 +172,110 @@
     }
   }
 
-  function handleDrag(id, dx, dy) {
-    liveGroup = isGroupDrag(id) ? { leaderId: id, dx, dy } : null
+  // Capture pre-drag state on the first move so we always delta from the
+  // original authored position, not from a live-updated intermediate one.
+  function ensureDragBase(leadId) {
+    if (dragBase) return
+    const ids = isGroupDrag(leadId) ? [...selectedSet] : [leadId]
+    const positions = new SvelteMap()
+    const baseElements = new SvelteMap()
+    for (const sid of ids) {
+      const el = parseId(sid)
+      if (!el) continue
+      const item = app.config?.[el.category]?.[el.idx]
+      if (!item) continue
+      positions.set(sid, { category: el.category, idx: el.idx, x: item.x ?? 0, y: item.y ?? 0 })
+      const elData = elements.find(e => e.id === sid)
+      if (elData) baseElements.set(sid, { id: sid, x: elData.x, y: elData.y, w: elData.w, h: elData.h })
+    }
+    dragBase = { preDragConfig: JSON.stringify(app.config), positions, baseElements }
+    buildDragSnaps([...baseElements.keys()])
   }
 
+  // Crop each dragged element out of the current rendered frame so its real
+  // pixels can be floated under the cursor. Async (image decode); guarded so a
+  // click or a drag that ends before decode leaves no stale snapshot.
+  async function buildDragSnaps(ids) {
+    if (!frameImage) return
+    const img = new Image()
+    img.src = frameImage
+    try {
+      await img.decode()
+    } catch {
+      return
+    }
+    if (!dragBase) return
+    const PAD = 2
+    for (const id of ids) {
+      const b = dragBase.baseElements.get(id)
+      if (!b) continue
+      const sx = Math.max(0, Math.floor(b.x - PAD))
+      const sy = Math.max(0, Math.floor(b.y - PAD))
+      const sw = Math.min(img.width - sx, Math.ceil(b.w + PAD * 2))
+      const sh = Math.min(img.height - sy, Math.ceil(b.h + PAD * 2))
+      if (sw <= 0 || sh <= 0) continue
+      const c = document.createElement('canvas')
+      c.width = sw
+      c.height = sh
+      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+      const prev = dragSnaps.get(id)
+      dragSnaps.set(id, {
+        url: c.toDataURL(),
+        baseX: sx,
+        baseY: sy,
+        x: prev?.x ?? sx,
+        y: prev?.y ?? sy,
+        w: sw,
+        h: sh,
+      })
+    }
+  }
+
+  function moveDragSnaps(dx, dy) {
+    for (const [id, s] of dragSnaps) {
+      dragSnaps.set(id, { ...s, x: s.baseX + dx, y: s.baseY + dy })
+    }
+  }
+
+  // dx/dy are in output space; config x/y are authored — use the pre-drag
+  // authored position so repeated calls with the same delta stay idempotent.
   function moveFor(id, dx, dy) {
+    const base = dragBase?.positions.get(id)
+    const s = authorScale || 1
+    if (base) return { category: base.category, idx: base.idx, x: base.x + dx / s, y: base.y + dy / s }
     const el = parseId(id)
     if (!el) return null
     const item = app.config?.[el.category]?.[el.idx]
     if (!item) return null
-    // dx/dy are in output space; config x/y are authored — convert back.
-    const s = authorScale || 1
-    return {
-      category: el.category,
-      idx: el.idx,
-      x: (item.x ?? 0) + dx / s,
-      y: (item.y ?? 0) + dy / s,
-    }
+    return { category: el.category, idx: el.idx, x: (item.x ?? 0) + dx / s, y: (item.y ?? 0) + dy / s }
+  }
+
+  function handleDrag(id, dx, dy) {
+    ensureDragBase(id)
+    // Float the cropped real pixels under the cursor. No live re-render: a
+    // server-side render can't keep up with a drag, and queuing them only
+    // delays the single commit render we want immediately on drop.
+    liveGroup = isGroupDrag(id) ? { leaderId: id, dx, dy } : null
+    moveDragSnaps(dx, dy)
   }
 
   function handleDragEnd(id, dx, dy) {
+    ensureDragBase(id)
     const ids = isGroupDrag(id) ? [...selectedSet] : [id]
-    const moves = ids.map((sid) => moveFor(sid, dx, dy)).filter(Boolean)
-    app.updateElementPositions(moves)
+    const moves = ids.map(sid => moveFor(sid, dx, dy)).filter(Boolean)
+
+    // Mark moved elements so the derived skips their stale measured bounds.
+    if (moves.length > 0) {
+      const next = new SvelteSet(movedIds)
+      for (const m of moves) next.add(`${m.category.slice(0, -1)}-${m.idx}`)
+      movedIds = next
+    }
+
+    // Freeze the snapshot at the drop point; it stays until the fresh frame
+    // arrives (cleared by the measuredElements effect), so no blank gap.
+    moveDragSnaps(dx, dy)
+    app.commitElementPositions(dragBase?.preDragConfig ?? null, moves)
+    dragBase = null
     liveGroup = null
   }
 
@@ -257,6 +374,21 @@
     onpointerup={bgPointerUp}
     onkeydown={(e) => { if (e.key === 'Escape') app.selectedElementId = null }}
   />
+
+  <!-- Cropped real pixels of the dragged element(s), under the handle boxes
+       so the border/handles stay on top. -->
+  {#each [...dragSnaps] as [sid, s] (sid)}
+    <image
+      href={s.url}
+      xlink:href={s.url}
+      x={s.x}
+      y={s.y}
+      width={s.w}
+      height={s.h}
+      preserveAspectRatio="none"
+      style="pointer-events:none"
+    />
+  {/each}
 
   {#each elements as el (el.id)}
     <ElementHandle
