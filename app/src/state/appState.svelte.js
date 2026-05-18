@@ -286,6 +286,14 @@ export function createAppState() {
     commitConfig({ ...config, scene: { ...config.scene, layers: next } })
   }
 
+  function setElementLayerOrder(ids) {
+    if (!config?.scene) return
+    const validIds = normalizedElementLayerIds()
+    if (ids.length !== validIds.length) return
+    if (!ids.every((id) => validIds.includes(id))) return
+    commitConfig({ ...config, scene: { ...config.scene, layers: [...ids] } })
+  }
+
   const ELEMENT_CATEGORY = { label: 'labels', value: 'values', plot: 'plots' }
   const ELEMENT_TYPE_NAME = { label: 'Label', value: 'Metric', plot: 'Chart' }
 
@@ -659,6 +667,7 @@ export function createAppState() {
       return normalizedElementLayerIds()
     },
     moveElementLayer,
+    setElementLayerOrder,
     get renderProgress() {
       return renderProgress
     },

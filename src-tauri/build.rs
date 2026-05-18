@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=CYCLEMETRY_BUILD_STAMP");
+
     // Ensure resources/ffmpeg exists so tauri_build can validate bundle resources.
     // In CI, the real binary is placed here before `pnpm build`. Locally, this
     // stub lets `cargo check`/`pnpm dev` compile; resolve_ffmpeg() skips zero-byte

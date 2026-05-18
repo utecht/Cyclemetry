@@ -257,9 +257,14 @@ fn unix_to_ymdhm(secs: u64) -> (u64, u64, u64, u64, u64) {
 
 #[tauri::command]
 fn app_build_info() -> String {
+    use chrono::{Local, TimeZone};
+
     let ts: u64 = env!("CYCLEMETRY_BUILD_TIME").parse().unwrap_or(0);
-    let (y, mo, d, h, mi) = unix_to_ymdhm(ts);
-    format!("build {y}-{mo:02}-{d:02} {h:02}:{mi:02} UTC")
+    let local = Local.timestamp_opt(ts as i64, 0).single();
+    match local {
+        Some(dt) => format!("build {}", dt.format("%Y-%m-%d %-I:%M %p %Z")),
+        None => "build unknown".to_string(),
+    }
 }
 
 // ─── Template commands ────────────────────────────────────────────────────────

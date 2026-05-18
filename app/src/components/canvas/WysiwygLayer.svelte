@@ -77,7 +77,7 @@
   })
 
   function parseId(id) {
-    const m = id.match(/^(label|value|plot)-(\d+)$/)
+    const m = typeof id === 'string' ? id.match(/^(label|value|plot)-(\d+)$/) : null
     if (!m) return null
     return { category: { label: 'labels', value: 'values', plot: 'plots' }[m[1]], idx: parseInt(m[2]) }
   }

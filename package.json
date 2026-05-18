@@ -2,8 +2,8 @@
   "name": "cyclemetry",
   "version": "0.1.2",
   "scripts": {
-    "dev": "app/node_modules/.bin/tauri dev",
-    "build": "app/node_modules/.bin/tauri build",
+    "dev": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev",
+    "build": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri build",
     "lint": "pnpm --dir app lint",
     "format": "pnpm --dir app format",
     "release": "pnpm --dir app release"

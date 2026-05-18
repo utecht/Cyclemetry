@@ -11,6 +11,10 @@
   } from 'lucide-svelte'
 
   const app = getContext('app')
+  let draggingId = $state(null)
+  let dropIndex = $state(null)
+  let pointerDrag = $state(null)
+  let suppressClickId = $state(null)
 
   // Flat list of all elements with category + index
   let elements = $derived(() => {
@@ -88,7 +92,84 @@
       points: [{ color: '#ef4444', weight: 80, edge_color: '#ffffff' }],
     })
   }
+
+  function onRowPointerDown(e, id) {
+    if (e.button !== 0 || e.target.closest('[data-layer-action]')) return
+    pointerDrag = {
+      id,
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      moved: false,
+    }
+    dropIndex = elements().findIndex((el) => el.id === id)
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+
+  function updateDropIndex(clientY) {
+    const rows = [...document.querySelectorAll('[data-element-row]')]
+    if (rows.length === 0) return
+    const next = rows.findIndex((row) => {
+      const rect = row.getBoundingClientRect()
+      return clientY < rect.top + rect.height / 2
+    })
+    dropIndex = next === -1 ? rows.length : next
+  }
+
+  function onWindowPointerMove(e) {
+    if (!pointerDrag) return
+    const dy = Math.abs(e.clientY - pointerDrag.startY)
+    if (!pointerDrag.moved && dy < 4) return
+    pointerDrag = { ...pointerDrag, moved: true }
+    draggingId = pointerDrag.id
+    updateDropIndex(e.clientY)
+    e.preventDefault()
+  }
+
+  function commitPointerDrop() {
+    if (!pointerDrag?.moved || dropIndex == null) return
+    const displayIds = elements().map((el) => el.id)
+    const from = displayIds.indexOf(pointerDrag.id)
+    if (from < 0) return
+    const next = [...displayIds]
+    const [moved] = next.splice(from, 1)
+    const to = Math.max(
+      0,
+      Math.min(next.length, dropIndex - (from < dropIndex ? 1 : 0)),
+    )
+    next.splice(to, 0, moved)
+    if (to !== from) app.setElementLayerOrder([...next].reverse())
+    app.selectedElementId = pointerDrag.id
+    suppressClickId = pointerDrag.id
+  }
+
+  function onWindowPointerUp() {
+    if (!pointerDrag) return
+    if (pointerDrag.moved) {
+      commitPointerDrop()
+    } else {
+      app.selectedElementId =
+        app.selectedElementId === pointerDrag.id ? null : pointerDrag.id
+      suppressClickId = pointerDrag.id
+    }
+    pointerDrag = null
+    draggingId = null
+    dropIndex = null
+  }
+
+  function selectElement(id, selected) {
+    if (suppressClickId === id) {
+      suppressClickId = null
+      return
+    }
+    app.selectedElementId = selected ? null : id
+  }
 </script>
+
+<svelte:window
+  onpointermove={onWindowPointerMove}
+  onpointerup={onWindowPointerUp}
+  onpointercancel={onWindowPointerUp}
+/>
 
 <section class="px-4 py-3 flex-1 overflow-y-auto">
   <div class="flex items-center justify-between mb-2">
@@ -114,13 +195,21 @@
   {:else if elements().length === 0}
     <p class="text-xs text-zinc-600 italic">No elements. Add one above.</p>
   {:else}
-    <ul class="space-y-0.5">
-      {#each elements() as el (el.id)}
+    <ul class="space-y-0.5 pb-3">
+      {#each elements() as el, i (el.id)}
         {@const selected = app.selectedElementId === el.id}
-        <li class="relative group">
+        <li
+          data-element-row
+          onpointerdown={(e) => onRowPointerDown(e, el.id)}
+          class={`relative group rounded-[6px]
+            ${draggingId === el.id ? 'opacity-45' : ''}
+            ${dropIndex === i && draggingId !== el.id ? 'before:absolute before:left-0 before:right-0 before:-top-0.5 before:h-px before:bg-primary' : ''}
+            ${dropIndex === i + 1 && draggingId !== el.id ? 'after:absolute after:left-0 after:right-0 after:-bottom-0.5 after:h-px after:bg-primary' : ''}`}
+        >
           <button
-            onclick={() => app.selectedElementId = selected ? null : el.id}
+            onclick={() => selectElement(el.id, selected)}
             class={`w-full flex items-center gap-2 px-2.5 py-2 pr-20 rounded-[6px] text-left text-sm transition-colors
+              cursor-grab active:cursor-grabbing
               ${selected
                 ? 'bg-primary/10 text-primary border border-primary/30'
                 : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100'}`}
@@ -141,6 +230,7 @@
           </button>
           <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
+              data-layer-action
               onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, 1) }}
               class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
               title="Bring forward"
@@ -149,6 +239,7 @@
               <ArrowUp size={11} />
             </button>
             <button
+              data-layer-action
               onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, -1) }}
               class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
               title="Send backward"
@@ -157,6 +248,7 @@
               <ArrowDown size={11} />
             </button>
             <button
+              data-layer-action
               onclick={(e) => { e.stopPropagation(); app.removeElement(el.category, el.idx) }}
               class="p-1 rounded text-zinc-600 hover:text-destructive transition-colors"
               title="Remove"
