@@ -425,15 +425,44 @@ impl OverlayElement for MeterConfig {
         // Fill.
         let frac = self.fraction(ctx.activity, frame_idx);
         if frac > 0.0 {
-            let color_str = self.color.as_deref().unwrap_or("#ffffff");
-            let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
-            paint.set_color(Color::from_argb(a, r, g, b));
             let fr = self.fill_rect(frac);
+
+            if let Some(stops) = self.gradient.as_ref().filter(|g| g.len() >= 2) {
+                // Linear gradient anchored to element bounds (left→right) so the
+                // color at any horizontal position is stable as the fill grows.
+                let x0 = self.x as f32;
+                let x1 = x0 + self.width as f32;
+                let y = self.y as f32 + self.height as f32 / 2.0;
+                let n = stops.len();
+                let colors: Vec<Color> = stops
+                    .iter()
+                    .map(|s| {
+                        let (r, g, b, a) = hex_with_opacity(s, self.opacity);
+                        Color::from_argb(a, r, g, b)
+                    })
+                    .collect();
+                let pos: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
+                let shader = skia_safe::gradient_shader::linear(
+                    (skia_safe::Point::new(x0, y), skia_safe::Point::new(x1, y)),
+                    skia_safe::gradient_shader::GradientShaderColors::Colors(&colors),
+                    Some(pos.as_slice()),
+                    skia_safe::TileMode::Clamp,
+                    None,
+                    None,
+                );
+                paint.set_shader(shader);
+            } else {
+                let color_str = self.color.as_deref().unwrap_or("#ffffff");
+                let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+                paint.set_color(Color::from_argb(a, r, g, b));
+            }
+
             if radius > 0.0 {
                 canvas.draw_rrect(RRect::new_rect_xy(fr, radius, radius), &paint);
             } else {
                 canvas.draw_rect(fr, &paint);
             }
+            paint.set_shader(None);
         }
 
         if rotation != 0.0 {

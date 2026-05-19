@@ -237,6 +237,14 @@
     setGradient(meterGradient().filter((_, idx) => idx !== i))
   }
 
+  // Continuous fill: always exactly 2 stops (start / end).
+  function updateContinuousGradientStop(idx, val) {
+    const cur = meterGradient()
+    const stops = cur.length >= 2 ? [...cur] : ['#ffffff', '#ffffff']
+    stops[idx] = val
+    setGradient(stops.slice(0, 2))
+  }
+
   // Progressive disclosure: most overlays reuse the same colors/fonts/line
   // weights, so detailed/structural controls hide behind "Advanced".
   let showAdvanced = $state(false)
@@ -402,6 +410,45 @@
                 onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
             </div>
           {/each}
+        </div>
+        {:else}
+        <div class="space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-zinc-500">Gradient</span>
+            {#if meterGradient().length === 0}
+            <button type="button" class="text-xs text-primary hover:underline"
+              onclick={() => setGradient([item.color ?? '#ffffff', '#ffffff'])}>+ enable</button>
+            {:else}
+            <button type="button" class="text-xs text-zinc-500 hover:text-red-400"
+              onclick={() => setGradient([])}>remove</button>
+            {/if}
+          </div>
+          {#if meterGradient().length >= 2}
+          <div class="grid grid-cols-2 gap-2">
+            <label class="space-y-1">
+              <span class="text-[10px] text-zinc-600">Start</span>
+              <div class="flex gap-2 items-center">
+                <input type="color" value={(meterGradient()[0] ?? '#ffffff').slice(0, 7)}
+                  oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
+                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+                <Input value={meterGradient()[0] ?? '#ffffff'}
+                  oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
+                  class="flex-1 font-mono text-xs" />
+              </div>
+            </label>
+            <label class="space-y-1">
+              <span class="text-[10px] text-zinc-600">End</span>
+              <div class="flex gap-2 items-center">
+                <input type="color" value={(meterGradient()[1] ?? '#ffffff').slice(0, 7)}
+                  oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
+                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+                <Input value={meterGradient()[1] ?? '#ffffff'}
+                  oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
+                  class="flex-1 font-mono text-xs" />
+              </div>
+            </label>
+          </div>
+          {/if}
         </div>
         {/if}
         {#if showAdvanced}
