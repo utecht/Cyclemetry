@@ -293,7 +293,7 @@
             <Input type="number" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
           </label>
         </div>
-        {#if type === 'plot'}
+        {#if type === 'plot' || type === 'meter' || type === 'gauge'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Rotation (°)</span>
           <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}

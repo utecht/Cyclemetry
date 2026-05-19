@@ -134,7 +134,7 @@
 
   function getRotation(id) {
     const el = elById(id)
-    if (!el || el.type !== 'plot') return 0
+    if (!el || !['plot', 'meter', 'gauge'].includes(el.type)) return 0
     return el.rotation ?? 0
   }
 
@@ -150,7 +150,7 @@
   function handleRotateEnd(id, degrees) {
     liveRotation = null
     const el = elById(id)
-    if (!el || el.type !== 'plot') return
+    if (!el || !['plot', 'meter', 'gauge'].includes(el.type)) return
     app.updateElement(id, { rotation: Math.round(degrees) })
   }
 

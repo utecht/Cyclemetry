@@ -390,6 +390,14 @@ impl OverlayElement for MeterConfig {
     }
 
     fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        let rotation = self.rotation.unwrap_or(0.0);
+        if rotation != 0.0 {
+            let cx = self.x as f32 + self.width as f32 / 2.0;
+            let cy = self.y as f32 + self.height as f32 / 2.0;
+            canvas.save();
+            canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
+        }
+
         let radius = self.radius.unwrap_or(0.0);
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -397,6 +405,9 @@ impl OverlayElement for MeterConfig {
         if let Some(n) = self.segments.filter(|n| *n >= 1) {
             let frac = self.fraction(ctx.activity, frame_idx);
             self.draw_segmented(canvas, &mut paint, n, frac, radius);
+            if rotation != 0.0 {
+                canvas.restore();
+            }
             return;
         }
 
@@ -423,6 +434,10 @@ impl OverlayElement for MeterConfig {
             } else {
                 canvas.draw_rect(fr, &paint);
             }
+        }
+
+        if rotation != 0.0 {
+            canvas.restore();
         }
     }
 }
@@ -465,11 +480,21 @@ impl OverlayElement for GaugeConfig {
     fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
         let cx = self.x as f32 + self.width as f32 / 2.0;
         let cy = self.y as f32 + self.height as f32 / 2.0;
+
+        let rotation = self.rotation.unwrap_or(0.0);
+        if rotation != 0.0 {
+            canvas.save();
+            canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
+        }
+
         let arc_w = self.arc_width.unwrap_or(8.0);
         let needle_w = self.needle_width.unwrap_or(4.0);
         // Keep the stroked arc fully inside the bounding box.
         let r = (self.width.min(self.height) as f32) / 2.0 - arc_w / 2.0;
         if r <= 0.0 {
+            if rotation != 0.0 {
+                canvas.restore();
+            }
             return;
         }
         let start = self.start_angle.unwrap_or(135.0);
@@ -509,6 +534,10 @@ impl OverlayElement for GaugeConfig {
         // Hub.
         needle.set_style(skia_safe::paint::Style::Fill);
         canvas.draw_circle((cx, cy), needle_w * 1.5, &needle);
+
+        if rotation != 0.0 {
+            canvas.restore();
+        }
     }
 }
 

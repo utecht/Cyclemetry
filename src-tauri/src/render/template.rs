@@ -246,6 +246,8 @@ pub struct MeterConfig {
     pub segments: Option<u32>,
     /// Gap in px between segments (only used when `segments` is set).
     pub gap: Option<f32>,
+    /// Clockwise rotation in degrees around the element center. Default 0.
+    pub rotation: Option<f32>,
 }
 
 /// A circular dial: an arc track plus a needle that points to the current
@@ -275,6 +277,8 @@ pub struct GaugeConfig {
     pub needle_color: Option<String>,
     pub needle_width: Option<f32>,
     pub opacity: Option<f32>,
+    /// Clockwise rotation in degrees around the element center. Default 0.
+    pub rotation: Option<f32>,
 }
 
 impl PlotConfig {
