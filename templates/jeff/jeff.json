@@ -1,35 +1,4 @@
 {
-  "labels": [
-    {
-      "color": "#ffffff",
-      "font_size": 100,
-      "opacity": 1,
-      "text": "| ———— | ———— |",
-      "x": 47,
-      "y": 1943
-    }
-  ],
-  "plots": [
-    {
-      "color": "#f4f4f4",
-      "height": 1000,
-      "line": {
-        "width": 6
-      },
-      "margin": 0.1,
-      "points": [
-        {
-          "opacity": 1,
-          "weight": 1000
-        }
-      ],
-      "rotation": 0,
-      "value": "course",
-      "width": 600,
-      "x": 2725,
-      "y": 1113
-    }
-  ],
   "scene": {
     "color": "#ffffff",
     "decimal_rounding": 0,
@@ -52,8 +21,41 @@
     "start": 1380,
     "width": 3840
   },
-  "values": [
+  "elements": [
     {
+      "type": "label",
+      "id": "label-0",
+      "color": "#ffffff",
+      "font_size": 100,
+      "opacity": 1,
+      "text": "| \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 |",
+      "x": 47,
+      "y": 1943
+    },
+    {
+      "type": "plot",
+      "id": "plot-0",
+      "color": "#f4f4f4",
+      "height": 1000,
+      "line": {
+        "width": 6
+      },
+      "margin": 0.1,
+      "points": [
+        {
+          "opacity": 1,
+          "weight": 1000
+        }
+      ],
+      "rotation": 0,
+      "value": "course",
+      "width": 600,
+      "x": 2725,
+      "y": 1113
+    },
+    {
+      "type": "value",
+      "id": "value-0",
       "font_size": 80,
       "opacity": 1,
       "suffix": " mph",
@@ -63,6 +65,8 @@
       "y": 1842
     },
     {
+      "type": "value",
+      "id": "value-1",
       "font_size": 80,
       "opacity": 1,
       "suffix": " bpm",
@@ -71,6 +75,8 @@
       "y": 2058
     },
     {
+      "type": "value",
+      "id": "value-2",
       "font_size": 80,
       "opacity": 1,
       "suffix": " m to go",
@@ -79,6 +85,8 @@
       "y": 121
     },
     {
+      "type": "value",
+      "id": "value-3",
       "font_size": 80,
       "opacity": 1,
       "suffix": " W",
@@ -87,6 +95,8 @@
       "y": 1929
     },
     {
+      "type": "value",
+      "id": "value-4",
       "font_size": 80,
       "opacity": 1,
       "suffix": " kph",
@@ -96,6 +106,8 @@
       "y": 1985
     },
     {
+      "type": "value",
+      "id": "value-5",
       "font_size": 80,
       "opacity": 1,
       "suffix": " rpm",

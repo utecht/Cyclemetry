@@ -11,57 +11,34 @@
     "start": 0,
     "end": 1000
   },
-  "labels": [
+  "elements": [
     {
+      "type": "label",
+      "id": "label-0",
       "text": "MPH",
       "x": 100,
       "y": 695,
       "font_size": 70
     },
     {
+      "type": "label",
+      "id": "label-1",
       "text": "KMH",
       "x": 100,
       "y": 1000,
       "font_size": 70
     },
     {
+      "type": "label",
+      "id": "label-2",
       "text": "Grad.",
       "x": 44,
       "y": 1889,
       "font_size": 60
-    }
-  ],
-  "values": [
-    {
-      "value": "speed",
-      "x": 80,
-      "y": 724,
-      "font_size": 255,
-      "unit": "imperial",
-      "nahopacity": 0.3
     },
     {
-      "value": "speed",
-      "x": 80,
-      "y": 1029,
-      "font_size": 255,
-      "unit": "metric",
-      "nahopacity": 0.3
-    },
-    {
-      "value": "elevation",
-      "x": 0,
-      "y": 60
-    },
-    {
-      "value": "gradient",
-      "x": 37,
-      "y": 1928,
-      "font_size": 192
-    }
-  ],
-  "plots": [
-    {
+      "type": "plot",
+      "id": "plot-0",
       "value": "course",
       "x": -120,
       "y": -160,
@@ -84,6 +61,8 @@
       ]
     },
     {
+      "type": "plot",
+      "id": "plot-1",
       "value": "elevation",
       "x": -209,
       "y": 1435,
@@ -104,6 +83,41 @@
           "label": "Furore.otf font, round 0, xoffset 20, y_offset20, font size 12.5, units metric and imperial - these are really just moving values"
         }
       ]
+    },
+    {
+      "type": "value",
+      "id": "value-0",
+      "value": "speed",
+      "x": 80,
+      "y": 724,
+      "font_size": 255,
+      "unit": "imperial",
+      "nahopacity": 0.3
+    },
+    {
+      "type": "value",
+      "id": "value-1",
+      "value": "speed",
+      "x": 80,
+      "y": 1029,
+      "font_size": 255,
+      "unit": "metric",
+      "nahopacity": 0.3
+    },
+    {
+      "type": "value",
+      "id": "value-2",
+      "value": "elevation",
+      "x": 0,
+      "y": 60
+    },
+    {
+      "type": "value",
+      "id": "value-3",
+      "value": "gradient",
+      "x": 37,
+      "y": 1928,
+      "font_size": 192
     }
   ]
 }

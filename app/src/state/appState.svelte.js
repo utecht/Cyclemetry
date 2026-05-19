@@ -1,11 +1,22 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import * as backend from '../api/backend.js'
 import { parseLocalStorage } from '../lib/utils.js'
+import { elementTypeName } from '../lib/elementTypes.js'
 
 export function createAppState() {
   // ── Persistent ──────────────────────────────────────────────────────────────
   // config is the single source of truth: scene settings + all element positions
-  const initialConfig = parseLocalStorage('editorConfig')
+  let _persisted = parseLocalStorage('editorConfig')
+  // Drop a pre-unified persisted config (old labels/values/plots shape); the
+  // app reloads a template fresh rather than migrating stale localStorage.
+  if (
+    _persisted &&
+    !Array.isArray(_persisted.elements) &&
+    (_persisted.labels || _persisted.values || _persisted.plots)
+  ) {
+    _persisted = null
+  }
+  const initialConfig = _persisted
   let config = $state(initialConfig)
   const _storedGpx = localStorage.getItem('gpxFilename')
   let gpxFilename = $state(
@@ -39,7 +50,7 @@ export function createAppState() {
   )
 
   // ── Transient ────────────────────────────────────────────────────────────────
-  let copiedElement = $state(null) // { category, item } — in-memory element clipboard
+  let copiedElement = $state(null) // the copied element object — in-memory clipboard
   let previewFps = $state(parseInt(localStorage.getItem('previewFps') ?? '5'))
   let benchmarking = $state(false)
   let lastRenderFps = $state(
@@ -215,43 +226,51 @@ export function createAppState() {
     commitConfig({ ...config, scene: { ...config.scene, ...updates } })
   }
 
-  function updateElement(category, idx, updates) {
-    if (!config?.[category]) return
-    const arr = [...config[category]]
-    arr[idx] = { ...arr[idx], ...updates }
-    commitConfig({ ...config, [category]: arr })
+  // Find an element by stable id. Returns { idx, el } or null.
+  function findElement(id, src = config) {
+    const idx = src?.elements?.findIndex((e) => e.id === id) ?? -1
+    return idx < 0 ? null : { idx, el: src.elements[idx] }
   }
 
-  function updateElementPos(category, idx, x, y) {
-    updateElement(category, idx, { x: Math.round(x), y: Math.round(y) })
+  function updateElement(id, updates) {
+    const found = findElement(id)
+    if (!found) return
+    const elements = [...config.elements]
+    elements[found.idx] = { ...found.el, ...updates }
+    commitConfig({ ...config, elements })
+  }
+
+  function updateElementPos(id, x, y) {
+    updateElement(id, { x: Math.round(x), y: Math.round(y) })
+  }
+
+  // Apply position moves ({ id, x, y }) to a config, returning the next config
+  // (same ref if nothing changed). Shared by the three drag entry points.
+  function applyMoves(base, moves) {
+    if (!base?.elements || moves.length === 0) return base
+    const elements = [...base.elements]
+    let touched = false
+    for (const m of moves) {
+      const i = elements.findIndex((e) => e.id === m.id)
+      if (i < 0) continue
+      elements[i] = { ...elements[i], x: Math.round(m.x), y: Math.round(m.y) }
+      touched = true
+    }
+    return touched ? { ...base, elements } : base
   }
 
   // Apply several position changes as ONE edit (one undo step) — used by
   // group drag so the whole move reverts together.
   function updateElementPositions(moves) {
     if (!config || moves.length === 0) return
-    let next = config
-    for (const m of moves) {
-      const arr = [...(next[m.category] ?? [])]
-      if (!arr[m.idx]) continue
-      arr[m.idx] = { ...arr[m.idx], x: Math.round(m.x), y: Math.round(m.y) }
-      next = { ...next, [m.category]: arr }
-    }
-    commitConfig(next)
+    commitConfig(applyMoves(config, moves))
   }
 
   // Update positions live during a drag without touching undo history.
   // Call commitElementPositions on drop to persist the pre-drag snapshot.
   function moveElementPositionsLive(moves) {
     if (!config || moves.length === 0) return
-    let next = config
-    for (const m of moves) {
-      const arr = [...(next[m.category] ?? [])]
-      if (!arr[m.idx]) continue
-      arr[m.idx] = { ...arr[m.idx], x: Math.round(m.x), y: Math.round(m.y) }
-      next = { ...next, [m.category]: arr }
-    }
-    config = next
+    config = applyMoves(config, moves)
   }
 
   // Commit a drag: push the pre-drag snapshot to history so Ctrl+Z reverts
@@ -263,27 +282,23 @@ export function createAppState() {
       redoStack = []
     }
     if (moves.length === 0) return
-    let next = config
-    for (const m of moves) {
-      const arr = [...(next[m.category] ?? [])]
-      if (!arr[m.idx]) continue
-      arr[m.idx] = { ...arr[m.idx], x: Math.round(m.x), y: Math.round(m.y) }
-      next = { ...next, [m.category]: arr }
-    }
-    config = next
+    config = applyMoves(config, moves)
   }
 
-  function elementIdFor(category, idx) {
-    return `${category.slice(0, -1)}-${idx}`
+  // Stable, collision-free id within the config. Keeps the readable
+  // `type-N` scheme (matches converted templates / Rust's opaque ids).
+  function newElementId(type, elements) {
+    const taken = (elements ?? []).map((e) => e.id)
+    let n = 0
+    let id
+    do {
+      id = `${type}-${n++}`
+    } while (taken.includes(id))
+    return id
   }
 
   function allElementIds(nextConfig = config) {
-    if (!nextConfig) return []
-    return [
-      ...(nextConfig.labels ?? []).map((_, i) => `label-${i}`),
-      ...(nextConfig.plots ?? []).map((_, i) => `plot-${i}`),
-      ...(nextConfig.values ?? []).map((_, i) => `value-${i}`),
-    ]
+    return (nextConfig?.elements ?? []).map((e) => e.id)
   }
 
   function normalizedElementLayerIds(nextConfig = config) {
@@ -306,25 +321,24 @@ export function createAppState() {
     }
   }
 
-  function addElement(category, defaults) {
-    if (!config) return
-    const arr = [...(config[category] ?? []), defaults]
-    const next = { ...config, [category]: arr }
+  function addElement(type, defaults) {
+    if (!config) return null
+    const id = newElementId(type, config.elements ?? [])
+    const el = { type, id, ...defaults }
+    const next = { ...config, elements: [...(config.elements ?? []), el] }
     const layers = normalizedElementLayerIds(next)
-    const id = elementIdFor(category, arr.length - 1)
     commitConfig({
       ...next,
       scene: { ...next.scene, layers: [...layers.filter((x) => x !== id), id] },
     })
+    return id
   }
 
-  function removeElement(category, idx) {
-    if (!config?.[category]) return
-    const arr = config[category].filter((_, i) => i !== idx)
-    commitConfig(withNormalizedLayers({ ...config, [category]: arr }))
-    if (selectedElementId === elementIdFor(category, idx)) {
-      selectOnly(null)
-    }
+  function removeElement(id) {
+    if (!config?.elements) return
+    const elements = config.elements.filter((e) => e.id !== id)
+    commitConfig(withNormalizedLayers({ ...config, elements }))
+    if (selectedElementId === id) selectOnly(null)
   }
 
   function moveElementLayer(id, delta) {
@@ -348,45 +362,43 @@ export function createAppState() {
     commitConfig({ ...config, scene: { ...config.scene, layers: [...ids] } })
   }
 
-  const ELEMENT_CATEGORY = { label: 'labels', value: 'values', plot: 'plots' }
-  const ELEMENT_TYPE_NAME = { label: 'Label', value: 'Metric', plot: 'Chart' }
-
   function parseSelectedElement() {
     if (!selectedElementId || !config) return null
-    const m = selectedElementId.match(/^(label|value|plot)-(\d+)$/)
-    if (!m) return null
-    const category = ELEMENT_CATEGORY[m[1]]
-    const idx = parseInt(m[2])
-    const item = config[category]?.[idx]
-    return item ? { category, idx, item, type: m[1] } : null
+    const found = findElement(selectedElementId)
+    return found
+      ? { id: found.el.id, item: found.el, type: found.el.type }
+      : null
   }
 
   function selectedElementLabel() {
     const s = parseSelectedElement()
     if (!s) return null
+    const name = elementTypeName(s.item)
     const text = s.item.text || s.item.value || ''
-    return text
-      ? `${ELEMENT_TYPE_NAME[s.type]} "${text}"`
-      : ELEMENT_TYPE_NAME[s.type]
+    return text ? `${name} "${text}"` : name
   }
 
   function deleteSelectedElement() {
     const s = parseSelectedElement()
-    if (s) removeElement(s.category, s.idx)
+    if (s) removeElement(s.id)
   }
 
   function copyElement() {
     const s = parseSelectedElement()
     if (!s) return
-    copiedElement = { category: s.category, item: s.item }
+    copiedElement = s.item
   }
 
   function pasteElement() {
     if (!copiedElement) return
-    addElement(copiedElement.category, {
-      ...copiedElement.item,
-      x: (copiedElement.item.x ?? 0) + 20,
-      y: (copiedElement.item.y ?? 0) + 20,
+    const rest = { ...copiedElement }
+    const type = rest.type
+    delete rest.id
+    delete rest.type
+    addElement(type, {
+      ...rest,
+      x: (rest.x ?? 0) + 20,
+      y: (rest.y ?? 0) + 20,
     })
   }
 
@@ -423,9 +435,7 @@ export function createAppState() {
         overlay_filename: name.replace(/\.json$/, ''),
         layers: [],
       },
-      labels: [],
-      values: [],
-      plots: [],
+      elements: [],
     }
   }
 

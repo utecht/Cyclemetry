@@ -124,7 +124,7 @@
     clearBuffer()
     console.debug('[tpl-diag] config effect ran', {
       hasConfig: !!_config,
-      labels: _config?.labels?.length,
+      elements: _config?.elements?.length,
       sceneStart: _config?.scene?.start,
       sceneEnd: _config?.scene?.end,
     })
@@ -197,10 +197,9 @@
   let selectedDistanceEl = $derived.by(() => {
     const id = app.selectedElementId
     const config = app.config
-    if (!id || !config) return null
-    const m = id.match(/^value-(\d+)$/)
-    if (!m) return null
-    return config.values?.[parseInt(m[1])] ?? null
+    if (!id || !config?.elements) return null
+    const el = config.elements.find((e) => e.id === id)
+    return el && el.type === 'value' ? el : null
   })
 
   let showDistanceBar = $derived(
@@ -235,16 +234,14 @@
 
   function onCustomDistanceChange(newM) {
     const id = app.selectedElementId
-    if (!id) return
-    const m = id.match(/^value-(\d+)$/)
-    if (!m) return
-    const idx = parseInt(m[1])
-    const unit = app.config?.values?.[idx]?.unit ?? 'km'
+    const el = app.config?.elements?.find((e) => e.id === id)
+    if (!el || el.type !== 'value') return
+    const unit = el.unit ?? 'km'
     let displayVal
     if (unit === 'm') displayVal = newM
     else if (unit === 'mi') displayVal = Math.round((newM / 1609.34) * 100) / 100
     else displayVal = Math.round((newM / 1000) * 100) / 100
-    app.updateElement('values', idx, { distance_target: displayVal })
+    app.updateElement(id, { distance_target: displayVal })
   }
   // Preview canvas matches the chosen output resolution (the backend renders
   // the demo frame retargeted to these dims), so the aspect ratio is honored.
@@ -413,6 +410,7 @@
         <WysiwygLayer
           measuredElements={currentFrameData?.elements ?? []}
           frameImage={currentFrameData?.image ?? null}
+          {zoom}
         />
 
         <!-- Top-right badges -->

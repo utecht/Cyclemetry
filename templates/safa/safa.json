@@ -1,33 +1,53 @@
 {
-  "labels": [
+  "scene": {
+    "color": "#ffffff",
+    "decimal_rounding": 0,
+    "end": 1200,
+    "font": "Evogria.otf",
+    "font_size": 30,
+    "fps": 30,
+    "height": 2160,
+    "opacity": 0.5,
+    "start": 900,
+    "width": 3840
+  },
+  "elements": [
     {
+      "type": "label",
+      "id": "label-0",
       "font_size": 70,
       "text": "KMH",
       "x": 100,
       "y": 990
     },
     {
+      "type": "label",
+      "id": "label-1",
       "font_size": 70,
       "text": "PWR",
       "x": 101,
       "y": 1320
     },
     {
+      "type": "label",
+      "id": "label-2",
       "font_size": 60,
       "text": "Grad.",
       "x": 60,
       "y": 1910
     },
     {
+      "type": "label",
+      "id": "label-3",
       "color": "#ffffff",
       "font_size": 70,
       "text": "MPH",
       "x": 100,
       "y": 660
-    }
-  ],
-  "plots": [
+    },
     {
+      "type": "plot",
+      "id": "plot-0",
       "color": "#f4f4f4",
       "height": 600,
       "line": {
@@ -46,6 +66,8 @@
       "y": 20
     },
     {
+      "type": "plot",
+      "id": "plot-1",
       "color": "#f4f4f4",
       "fill": {
         "opacity": 0.65
@@ -59,7 +81,10 @@
         "decimal_rounding": 0,
         "font": "Furore.otf",
         "font_size": 50,
-        "units": ["metric", "imperial"],
+        "units": [
+          "metric",
+          "imperial"
+        ],
         "x_offset": 30,
         "y_offset": 30
       },
@@ -74,22 +99,10 @@
       "width": 1300,
       "x": 0,
       "y": 1660
-    }
-  ],
-  "scene": {
-    "color": "#ffffff",
-    "decimal_rounding": 0,
-    "end": 1200,
-    "font": "Evogria.otf",
-    "font_size": 30,
-    "fps": 30,
-    "height": 2160,
-    "opacity": 0.5,
-    "start": 900,
-    "width": 3840
-  },
-  "values": [
+    },
     {
+      "type": "value",
+      "id": "value-0",
       "font_size": 255,
       "nahopacity": 0.3,
       "unit": "imperial",
@@ -98,6 +111,8 @@
       "y": 890
     },
     {
+      "type": "value",
+      "id": "value-1",
       "font_size": 255,
       "nahopacity": 0.3,
       "unit": "metric",
@@ -106,12 +121,16 @@
       "y": 1220
     },
     {
+      "type": "value",
+      "id": "value-2",
       "font_size": 192,
       "value": "gradient",
       "x": 50,
       "y": 2110
     },
     {
+      "type": "value",
+      "id": "value-3",
       "font_size": 255,
       "value": "power",
       "x": 80,

@@ -1,57 +1,4 @@
 {
-  "labels": [
-    {
-      "color": "#ffffff",
-      "font_size": 100,
-      "opacity": 1,
-      "text": "| ———— | ———— | ———— | ———— |",
-      "x": 1115,
-      "y": 1919
-    }
-  ],
-  "plots": [
-    {
-      "color": "#f4f4f4",
-      "height": 1000,
-      "line": {
-        "width": 6
-      },
-      "margin": 0.1,
-      "points": [
-        {
-          "opacity": 1,
-          "weight": 1000
-        }
-      ],
-      "rotation": 0,
-      "value": "course",
-      "width": 600,
-      "x": 3204,
-      "y": 41
-    },
-    {
-      "fill": {
-        "opacity": 0.5
-      },
-      "height": 300,
-      "line": {
-        "color": "#ffffff",
-        "width": 5
-      },
-      "opacity": 1,
-      "points": [
-        {
-          "color": "#ffffff",
-          "edge_color": "#ffffff",
-          "weight": 1000
-        }
-      ],
-      "value": "elevation",
-      "width": 1000,
-      "x": 38,
-      "y": 1842
-    }
-  ],
   "scene": {
     "color": "#ffffff",
     "decimal_rounding": 0,
@@ -73,8 +20,65 @@
     "start": 1380,
     "width": 3840
   },
-  "values": [
+  "elements": [
     {
+      "type": "label",
+      "id": "label-0",
+      "color": "#ffffff",
+      "font_size": 100,
+      "opacity": 1,
+      "text": "| \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 |",
+      "x": 1115,
+      "y": 1919
+    },
+    {
+      "type": "plot",
+      "id": "plot-0",
+      "color": "#f4f4f4",
+      "height": 1000,
+      "line": {
+        "width": 6
+      },
+      "margin": 0.1,
+      "points": [
+        {
+          "opacity": 1,
+          "weight": 1000
+        }
+      ],
+      "rotation": 0,
+      "value": "course",
+      "width": 600,
+      "x": 3204,
+      "y": 41
+    },
+    {
+      "type": "plot",
+      "id": "plot-1",
+      "fill": {
+        "opacity": 0.5
+      },
+      "height": 300,
+      "line": {
+        "color": "#ffffff",
+        "width": 5
+      },
+      "opacity": 1,
+      "points": [
+        {
+          "color": "#ffffff",
+          "edge_color": "#ffffff",
+          "weight": 1000
+        }
+      ],
+      "value": "elevation",
+      "width": 1000,
+      "x": 38,
+      "y": 1842
+    },
+    {
+      "type": "value",
+      "id": "value-0",
       "font_size": 80,
       "opacity": 1,
       "suffix": " mph",
@@ -83,6 +87,8 @@
       "y": 1987
     },
     {
+      "type": "value",
+      "id": "value-1",
       "font_size": 80,
       "opacity": 1,
       "suffix": " bpm",
@@ -91,6 +97,8 @@
       "y": 2096
     },
     {
+      "type": "value",
+      "id": "value-2",
       "font_size": 80,
       "opacity": 1,
       "suffix": " m to go",
@@ -99,6 +107,8 @@
       "y": 2096
     },
     {
+      "type": "value",
+      "id": "value-3",
       "font_size": 80,
       "opacity": 1,
       "value": "power",

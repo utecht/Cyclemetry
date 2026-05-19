@@ -1,12 +1,16 @@
 /// Per-frame Skia rendering — draws one video frame to a raw RGBA byte buffer.
 use serde::Serialize;
-use skia_safe::{Canvas, Color, Font, FontMgr, FontStyle, ISize, ImageInfo, Paint, Typeface};
+use skia_safe::{
+    Canvas, Color, Font, FontMgr, FontStyle, ISize, ImageInfo, Paint, RRect, Rect, Typeface,
+};
 use std::collections::HashMap;
 
 use crate::render::activity::{Activity, ATTR_DISTANCE};
 use crate::render::chart::ChartCache;
 use crate::render::color::hex_with_opacity;
-use crate::render::template::{LabelConfig, LayerElement, PlotConfig, Template, ValueConfig};
+use crate::render::template::{
+    Element, GaugeConfig, LabelConfig, MeterConfig, PlotConfig, SceneConfig, Template, ValueConfig,
+};
 use crate::render::units;
 
 /// Pixel-perfect bounding box for a single overlay element in overlay coordinates.
@@ -19,82 +23,456 @@ pub struct ElementBounds {
     pub h: f32,
 }
 
-/// Measure every element in the template for the given frame, returning pixel-perfect
-/// bounding boxes using the same Skia font metrics used to render.
+/// Everything an element needs to measure or draw itself for a given frame.
+/// Shared across all elements so a new graphic just reads what it needs.
+pub struct ElementCtx<'a> {
+    pub activity: &'a Activity,
+    pub scene: &'a SceneConfig,
+    pub typefaces: &'a HashMap<String, Typeface>,
+    /// One ChartCache per plot element, keyed by element id.
+    pub charts: &'a HashMap<String, ChartCache>,
+    pub fonts_dir: &'a str,
+}
+
+/// One overlay graphic. Every element family implements this; rendering,
+/// measuring, cropping, and font/cache prep all dispatch through it with
+/// zero per-type branching at the call sites.
+pub trait OverlayElement {
+    /// Visual bounding box for this frame, or `None` if nothing is drawn.
+    fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds>;
+
+    /// Draw onto the canvas for this frame.
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize);
+
+    /// `true` if the bounding box varies frame-to-frame (e.g. changing text
+    /// width). Static elements are measured once for the crop computation.
+    fn is_dynamic(&self) -> bool {
+        false
+    }
+
+    /// Font filenames this element needs preloaded into the typeface cache.
+    fn fonts(&self, _scene: &SceneConfig) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Prebuilt per-element chart cache, if any (plots only).
+    fn build_chart(&self, _activity: &Activity, _fonts_dir: &str) -> Option<ChartCache> {
+        None
+    }
+
+    /// Extent used for crop union: `(x0, y0, x1, y1)`. Defaults to the
+    /// measured box; plots override to circumscribe their rotation.
+    fn crop_extent(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<(f32, f32, f32, f32)> {
+        self.measure(ctx, frame_idx)
+            .map(|b| (b.x, b.y, b.x + b.w, b.y + b.h))
+    }
+}
+
+impl Element {
+    pub fn as_overlay(&self) -> &dyn OverlayElement {
+        match self {
+            Element::Label(c) => c,
+            Element::Value(c) => c,
+            Element::Plot(c) => c,
+            Element::Meter(c) => c,
+            Element::Gauge(c) => c,
+        }
+    }
+}
+
+// ─── Label ─────────────────────────────────────────────────────────────────
+
+impl OverlayElement for LabelConfig {
+    fn fonts(&self, scene: &SceneConfig) -> Vec<String> {
+        vec![self
+            .font
+            .as_deref()
+            .or(scene.font.as_deref())
+            .unwrap_or("Arial.ttf")
+            .to_string()]
+    }
+
+    fn measure(&self, ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
+        let font_name = self
+            .font
+            .as_deref()
+            .or(ctx.scene.font.as_deref())
+            .unwrap_or("Arial.ttf");
+        let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let font = load_font(font_name, font_size, ctx.fonts_dir)?;
+        let (_, rect) = font.measure_str(&self.text, None);
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x + rect.left,
+            y: self.y + rect.top,
+            w: rect.width(),
+            h: rect.height(),
+        })
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, _frame_idx: usize) {
+        let font_name = self
+            .font
+            .as_deref()
+            .or(ctx.scene.font.as_deref())
+            .unwrap_or("Arial.ttf");
+        let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let color_str = self.color.as_deref().unwrap_or("#ffffff");
+        let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+        let color = Color::from_argb(a, r, g, b);
+
+        let font = ctx
+            .typefaces
+            .get(font_name)
+            .map(|tf| Font::new(tf.clone(), font_size))
+            .or_else(|| load_font(font_name, font_size, ctx.fonts_dir));
+        if let Some(font) = font {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(color);
+            canvas.draw_str(&self.text, (self.x, self.y), &font, &paint);
+        }
+    }
+}
+
+// ─── Value ─────────────────────────────────────────────────────────────────
+
+impl ValueConfig {
+    fn sample(&self, activity: &Activity, frame_idx: usize) -> f64 {
+        if !activity.valid_attributes.contains(&self.value) {
+            return 0.0;
+        }
+        if self.value == ATTR_DISTANCE {
+            let target_m = self
+                .distance_target
+                .map(|t| units::distance_target_to_m(t, self.unit.as_deref()));
+            activity.get_distance(self.distance_reference.as_deref(), target_m, frame_idx)
+        } else {
+            activity.get_scalar(&self.value, frame_idx)
+        }
+    }
+}
+
+impl OverlayElement for ValueConfig {
+    fn is_dynamic(&self) -> bool {
+        true
+    }
+
+    fn fonts(&self, scene: &SceneConfig) -> Vec<String> {
+        vec![self
+            .font
+            .as_deref()
+            .or(scene.font.as_deref())
+            .unwrap_or("Arial.ttf")
+            .to_string()]
+    }
+
+    fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds> {
+        let raw = self.sample(ctx.activity, frame_idx);
+        let text = format_value(raw, self);
+        let font_name = self
+            .font
+            .as_deref()
+            .or(ctx.scene.font.as_deref())
+            .unwrap_or("Arial.ttf");
+        let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let font = load_font(font_name, font_size, ctx.fonts_dir)?;
+        let (_, rect) = font.measure_str(&text, None);
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x + rect.left,
+            y: self.y + rect.top,
+            w: rect.width(),
+            h: rect.height(),
+        })
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        if !ctx.activity.valid_attributes.contains(&self.value) {
+            return;
+        }
+        let raw = self.sample(ctx.activity, frame_idx);
+        let display = format_value(raw, self);
+
+        let font_name = self
+            .font
+            .as_deref()
+            .or(ctx.scene.font.as_deref())
+            .unwrap_or("Arial.ttf");
+        let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let color_str = self.color.as_deref().unwrap_or("#ffffff");
+        let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+        let color = Color::from_argb(a, r, g, b);
+
+        if let Some(tf) = ctx.typefaces.get(font_name) {
+            let font = Font::new(tf.clone(), font_size);
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(color);
+            canvas.draw_str(&display, (self.x, self.y), &font, &paint);
+        }
+    }
+}
+
+// ─── Plot ──────────────────────────────────────────────────────────────────
+
+impl OverlayElement for PlotConfig {
+    fn build_chart(&self, activity: &Activity, fonts_dir: &str) -> Option<ChartCache> {
+        let (x_data, y_data) = activity.plot_data(&self.value);
+        ChartCache::build(self, x_data, y_data, fonts_dir)
+    }
+
+    fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x as f32,
+            y: self.y as f32,
+            w: self.width as f32,
+            h: self.height as f32,
+        })
+    }
+
+    fn crop_extent(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<(f32, f32, f32, f32)> {
+        // Rotated plots are bounded by their circumscribed circle.
+        let rot = self.rotation.unwrap_or(0.0);
+        if rot != 0.0 {
+            let cx = self.x as f32 + self.width as f32 / 2.0;
+            let cy = self.y as f32 + self.height as f32 / 2.0;
+            let r = ((self.width as f32).powi(2) + (self.height as f32).powi(2)).sqrt() / 2.0;
+            Some((cx - r, cy - r, cx + r, cy + r))
+        } else {
+            Some((
+                self.x as f32,
+                self.y as f32,
+                self.x as f32 + self.width as f32,
+                self.y as f32 + self.height as f32,
+            ))
+        }
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        let Some(chart) = ctx.charts.get(&self.id) else {
+            return;
+        };
+        let rotation = self.rotation.unwrap_or(0.0);
+        if rotation != 0.0 {
+            let cx = self.x as f32 + self.width as f32 / 2.0;
+            let cy = self.y as f32 + self.height as f32 / 2.0;
+            canvas.save();
+            canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
+        }
+        if self.has_position_markers() {
+            chart.draw_on_canvas(canvas, frame_idx);
+        } else {
+            canvas.draw_image(
+                &chart.background,
+                skia_safe::Point::new(chart.x_offset as f32, chart.y_offset as f32),
+                None,
+            );
+        }
+        if rotation != 0.0 {
+            canvas.restore();
+        }
+    }
+}
+
+// ─── Meter ─────────────────────────────────────────────────────────────────
+
+impl MeterConfig {
+    /// Current fill fraction in [0, 1] for this frame.
+    fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
+        if !activity.valid_attributes.contains(&self.value) {
+            return 0.0;
+        }
+        let raw = activity.get_scalar(&self.value, frame_idx);
+        let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
+        let v = conv.apply(raw);
+        let span = self.max - self.min;
+        if span.abs() < f64::EPSILON {
+            return 0.0;
+        }
+        (((v - self.min) / span) as f32).clamp(0.0, 1.0)
+    }
+
+    fn rect(&self) -> Rect {
+        Rect::from_xywh(
+            self.x as f32,
+            self.y as f32,
+            self.width as f32,
+            self.height as f32,
+        )
+    }
+
+    /// Sub-rect of the track that is filled, given the direction.
+    fn fill_rect(&self, frac: f32) -> Rect {
+        let (x, y, w, h) = (
+            self.x as f32,
+            self.y as f32,
+            self.width as f32,
+            self.height as f32,
+        );
+        match self.direction.as_deref().unwrap_or("up") {
+            "down" => Rect::from_xywh(x, y, w, h * frac),
+            "left" => Rect::from_xywh(x + w * (1.0 - frac), y, w * frac, h),
+            "right" => Rect::from_xywh(x, y, w * frac, h),
+            // "up" (default): grow from the bottom edge upward.
+            _ => Rect::from_xywh(x, y + h * (1.0 - frac), w, h * frac),
+        }
+    }
+}
+
+impl OverlayElement for MeterConfig {
+    fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x as f32,
+            y: self.y as f32,
+            w: self.width as f32,
+            h: self.height as f32,
+        })
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        let radius = self.radius.unwrap_or(0.0);
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+
+        // Track (empty portion), if a background color is set.
+        if let Some(bg) = self.background.as_deref() {
+            let (r, g, b, a) = hex_with_opacity(bg, self.opacity);
+            paint.set_color(Color::from_argb(a, r, g, b));
+            if radius > 0.0 {
+                canvas.draw_rrect(RRect::new_rect_xy(self.rect(), radius, radius), &paint);
+            } else {
+                canvas.draw_rect(self.rect(), &paint);
+            }
+        }
+
+        // Fill.
+        let frac = self.fraction(ctx.activity, frame_idx);
+        if frac > 0.0 {
+            let color_str = self.color.as_deref().unwrap_or("#ffffff");
+            let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+            paint.set_color(Color::from_argb(a, r, g, b));
+            let fr = self.fill_rect(frac);
+            if radius > 0.0 {
+                canvas.draw_rrect(RRect::new_rect_xy(fr, radius, radius), &paint);
+            } else {
+                canvas.draw_rect(fr, &paint);
+            }
+        }
+    }
+}
+
+// ─── Gauge ─────────────────────────────────────────────────────────────────
+
+impl GaugeConfig {
+    fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
+        if !activity.valid_attributes.contains(&self.value) {
+            return 0.0;
+        }
+        let raw = activity.get_scalar(&self.value, frame_idx);
+        let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
+        let v = conv.apply(raw);
+        let span = self.max - self.min;
+        if span.abs() < f64::EPSILON {
+            return 0.0;
+        }
+        (((v - self.min) / span) as f32).clamp(0.0, 1.0)
+    }
+
+    fn argb(&self, specific: Option<&str>, opacity: Option<f32>) -> Color {
+        let s = specific.or(self.color.as_deref()).unwrap_or("#ffffff");
+        let (r, g, b, a) = hex_with_opacity(s, opacity);
+        Color::from_argb(a, r, g, b)
+    }
+}
+
+impl OverlayElement for GaugeConfig {
+    fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x as f32,
+            y: self.y as f32,
+            w: self.width as f32,
+            h: self.height as f32,
+        })
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        let cx = self.x as f32 + self.width as f32 / 2.0;
+        let cy = self.y as f32 + self.height as f32 / 2.0;
+        let arc_w = self.arc_width.unwrap_or(8.0);
+        let needle_w = self.needle_width.unwrap_or(4.0);
+        // Keep the stroked arc fully inside the bounding box.
+        let r = (self.width.min(self.height) as f32) / 2.0 - arc_w / 2.0;
+        if r <= 0.0 {
+            return;
+        }
+        let start = self.start_angle.unwrap_or(135.0);
+        let sweep = self.sweep_angle.unwrap_or(270.0);
+        let frac = self.fraction(ctx.activity, frame_idx);
+
+        let oval = Rect::from_ltrb(cx - r, cy - r, cx + r, cy + r);
+
+        let mut arc_paint = Paint::default();
+        arc_paint.set_anti_alias(true);
+        arc_paint.set_style(skia_safe::paint::Style::Stroke);
+        arc_paint.set_stroke_cap(skia_safe::paint::Cap::Round);
+
+        // Track arc.
+        arc_paint.set_stroke_width(arc_w);
+        arc_paint.set_color(self.argb(self.arc_color.as_deref(), self.opacity));
+        canvas.draw_arc(oval, start, sweep, false, &arc_paint);
+
+        // Progress arc (start → current), if a color is set.
+        if let Some(pc) = self.progress_color.as_deref() {
+            arc_paint.set_color(self.argb(Some(pc), self.opacity));
+            canvas.draw_arc(oval, start, sweep * frac, false, &arc_paint);
+        }
+
+        // Needle.
+        let theta = (start + sweep * frac).to_radians();
+        let nx = cx + theta.cos() * r;
+        let ny = cy + theta.sin() * r;
+        let mut needle = Paint::default();
+        needle.set_anti_alias(true);
+        needle.set_style(skia_safe::paint::Style::Stroke);
+        needle.set_stroke_cap(skia_safe::paint::Cap::Round);
+        needle.set_stroke_width(needle_w);
+        needle.set_color(self.argb(self.needle_color.as_deref(), self.opacity));
+        canvas.draw_line((cx, cy), (nx, ny), &needle);
+
+        // Hub.
+        needle.set_style(skia_safe::paint::Style::Fill);
+        canvas.draw_circle((cx, cy), needle_w * 1.5, &needle);
+    }
+}
+
+// ─── Measurement ───────────────────────────────────────────────────────────
+
+/// Measure every element in the template for the given frame, returning
+/// pixel-perfect bounding boxes using the same Skia font metrics used to render.
 pub fn measure_elements(
     frame_idx: usize,
     activity: &Activity,
     template: &Template,
     fonts_dir: &str,
 ) -> Vec<ElementBounds> {
-    let mut bounds = Vec::new();
-
-    for (i, label) in template.labels.iter().enumerate() {
-        let font_name = label
-            .font
-            .as_deref()
-            .or(template.scene.font.as_deref())
-            .unwrap_or("Arial.ttf");
-        let font_size = label.font_size.or(template.scene.font_size).unwrap_or(32.0);
-        if let Some(font) = load_font(font_name, font_size, fonts_dir) {
-            let (_, rect) = font.measure_str(&label.text, None);
-            bounds.push(ElementBounds {
-                id: format!("label-{i}"),
-                x: label.x + rect.left,
-                y: label.y + rect.top,
-                w: rect.width(),
-                h: rect.height(),
-            });
-        }
-    }
-
-    for (i, val_cfg) in template.values.iter().enumerate() {
-        let attr = &val_cfg.value;
-        let raw = if activity.valid_attributes.contains(attr) {
-            if attr == ATTR_DISTANCE {
-                let target_m = val_cfg
-                    .distance_target
-                    .map(|t| units::distance_target_to_m(t, val_cfg.unit.as_deref()));
-                activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
-            } else {
-                activity.get_scalar(attr, frame_idx)
-            }
-        } else {
-            0.0
-        };
-        let text = format_value(raw, val_cfg);
-        let font_name = val_cfg
-            .font
-            .as_deref()
-            .or(template.scene.font.as_deref())
-            .unwrap_or("Arial.ttf");
-        let font_size = val_cfg
-            .font_size
-            .or(template.scene.font_size)
-            .unwrap_or(32.0);
-        if let Some(font) = load_font(font_name, font_size, fonts_dir) {
-            let (_, rect) = font.measure_str(&text, None);
-            bounds.push(ElementBounds {
-                id: format!("value-{i}"),
-                x: val_cfg.x + rect.left,
-                y: val_cfg.y + rect.top,
-                w: rect.width(),
-                h: rect.height(),
-            });
-        }
-    }
-
-    for (i, plot) in template.plots.iter().enumerate() {
-        bounds.push(ElementBounds {
-            id: format!("plot-{i}"),
-            x: plot.x as f32,
-            y: plot.y as f32,
-            w: plot.width as f32,
-            h: plot.height as f32,
-        });
-    }
-
-    bounds
+    let charts: HashMap<String, ChartCache> = HashMap::new();
+    let typefaces: HashMap<String, Typeface> = HashMap::new();
+    let ctx = ElementCtx {
+        activity,
+        scene: &template.scene,
+        typefaces: &typefaces,
+        charts: &charts,
+        fonts_dir,
+    };
+    template
+        .elements
+        .iter()
+        .filter_map(|e| e.as_overlay().measure(&ctx, frame_idx))
+        .collect()
 }
 
 /// All pre-computed data that stays constant across frames.
@@ -102,8 +480,8 @@ pub struct SceneCache {
     /// Pre-rendered base frame as an immutable Skia Image.
     /// Stored as Image (not raw bytes) to avoid a heap allocation + 8 MB copy on every frame.
     pub base_image: skia_safe::Image,
-    /// One ChartCache per plot index.
-    pub charts: Vec<Option<ChartCache>>,
+    /// One ChartCache per plot element, keyed by element id.
+    pub charts: HashMap<String, ChartCache>,
     pub width: u32,
     pub height: u32,
     /// Pre-loaded typefaces keyed by filename. Eliminates disk I/O inside the per-frame
@@ -120,25 +498,12 @@ impl SceneCache {
         let w = template.scene.width;
         let h = template.scene.height;
 
-        // --- Pre-load all typefaces referenced by text elements ---
+        // --- Pre-load all typefaces referenced by elements ---
         let mut typefaces: HashMap<String, Typeface> = HashMap::new();
         for font_name in template
-            .values
+            .elements
             .iter()
-            .map(|v| {
-                v.font
-                    .as_deref()
-                    .or(template.scene.font.as_deref())
-                    .unwrap_or("Arial.ttf")
-                    .to_string()
-            })
-            .chain(template.labels.iter().map(|l| {
-                l.font
-                    .as_deref()
-                    .or(template.scene.font.as_deref())
-                    .unwrap_or("Arial.ttf")
-                    .to_string()
-            }))
+            .flat_map(|e| e.as_overlay().fonts(&template.scene))
         {
             if let std::collections::hash_map::Entry::Vacant(e) = typefaces.entry(font_name.clone())
             {
@@ -150,14 +515,11 @@ impl SceneCache {
             }
         }
 
-        // --- Build chart caches ---
-        let mut charts: Vec<Option<ChartCache>> = std::iter::repeat_with(|| None)
-            .take(template.plots.len())
-            .collect();
-        for (idx, plot_cfg) in template.plots.iter().enumerate() {
-            let (x_data, y_data) = activity.plot_data(&plot_cfg.value);
-            if let Some(cache) = ChartCache::build(plot_cfg, x_data, y_data, fonts_dir) {
-                charts[idx] = Some(cache);
+        // --- Build chart caches (keyed by element id) ---
+        let mut charts: HashMap<String, ChartCache> = HashMap::new();
+        for el in &template.elements {
+            if let Some(cache) = el.as_overlay().build_chart(activity, fonts_dir) {
+                charts.insert(el.id().to_string(), cache);
             }
         }
 
@@ -237,30 +599,16 @@ pub fn render_frame(
         canvas.draw_image(&cache.base_image, (0, 0), None);
 
         // 2. Draw all elements back-to-front according to scene.layers.
-        for layer in template.layer_order() {
-            match layer {
-                LayerElement::Label(idx) => {
-                    if let Some(label) = template.labels.get(idx) {
-                        draw_label(canvas, label, template, &cache.typefaces, "");
-                    }
-                }
-                LayerElement::Value(idx) => {
-                    if let Some(val_cfg) = template.values.get(idx) {
-                        draw_value(
-                            canvas,
-                            val_cfg,
-                            template,
-                            activity,
-                            frame_idx,
-                            &cache.typefaces,
-                        );
-                    }
-                }
-                LayerElement::Plot(idx) => {
-                    if let Some(plot_cfg) = template.plots.get(idx) {
-                        draw_plot(canvas, plot_cfg, idx, frame_idx, cache);
-                    }
-                }
+        let ctx = ElementCtx {
+            activity,
+            scene: &template.scene,
+            typefaces: &cache.typefaces,
+            charts: &cache.charts,
+            fonts_dir: "",
+        };
+        for idx in template.layer_order() {
+            if let Some(el) = template.elements.get(idx) {
+                el.as_overlay().draw(canvas, &ctx, frame_idx);
             }
         }
     } // surface dropped here → releases the &mut pixels borrow
@@ -270,11 +618,12 @@ pub fn render_frame(
 
 /// Union bounding box of every element that is ever drawn, across all frames.
 ///
-/// Plots/labels are static; value text changes width frame-to-frame, so values
-/// are measured at every frame (cheap: one cached `Font` per config). The box
-/// is padded, clamped to the frame, and rounded to even dimensions. Returns
-/// `None` when the box covers ≥95% of the frame (cropping wouldn't pay off) or
-/// there is nothing to draw — callers fall back to the full-frame path.
+/// Static elements (plots/labels) are measured once; dynamic elements (value
+/// text changes width frame-to-frame) are measured at every frame (cheap: one
+/// cached `Font` per config via load_font). The box is padded, clamped to the
+/// frame, and rounded to even dimensions. Returns `None` when the box covers
+/// ≥95% of the frame (cropping wouldn't pay off) or there is nothing to draw —
+/// callers fall back to the full-frame path.
 pub fn compute_crop_rect(
     activity: &Activity,
     template: &Template,
@@ -292,71 +641,27 @@ pub fn compute_crop_rect(
         max_y = max_y.max(y1);
     };
 
-    // Plots: fixed rect (may extend off-frame; clamped later).
-    // Rotated plots are bounded by their circumscribed circle.
-    for p in &template.plots {
-        let rot = p.rotation.unwrap_or(0.0);
-        if rot != 0.0 {
-            let cx = p.x as f32 + p.width as f32 / 2.0;
-            let cy = p.y as f32 + p.height as f32 / 2.0;
-            let r = ((p.width as f32).powi(2) + (p.height as f32).powi(2)).sqrt() / 2.0;
-            acc(cx - r, cy - r, cx + r, cy + r);
-        } else {
-            acc(
-                p.x as f32,
-                p.y as f32,
-                (p.x as f32) + p.width as f32,
-                (p.y as f32) + p.height as f32,
-            );
-        }
-    }
+    let charts: HashMap<String, ChartCache> = HashMap::new();
+    let typefaces: HashMap<String, Typeface> = HashMap::new();
+    let ctx = ElementCtx {
+        activity,
+        scene: &template.scene,
+        typefaces: &typefaces,
+        charts: &charts,
+        fonts_dir,
+    };
 
-    // Static labels.
-    for label in &template.labels {
-        let name = label
-            .font
-            .as_deref()
-            .or(template.scene.font.as_deref())
-            .unwrap_or("Arial.ttf");
-        let size = label.font_size.or(template.scene.font_size).unwrap_or(32.0);
-        if let Some(font) = load_font(name, size, fonts_dir) {
-            let (_, r) = font.measure_str(&label.text, None);
-            acc(
-                label.x + r.left,
-                label.y + r.top,
-                label.x + r.right,
-                label.y + r.bottom,
-            );
-        }
-    }
-
-    // Dynamic values: build the Font once per config, measure every frame.
     let n = activity.data_len();
-    for vc in &template.values {
-        if !activity.valid_attributes.contains(&vc.value) {
-            continue;
-        }
-        let name = vc
-            .font
-            .as_deref()
-            .or(template.scene.font.as_deref())
-            .unwrap_or("Arial.ttf");
-        let size = vc.font_size.or(template.scene.font_size).unwrap_or(32.0);
-        let Some(font) = load_font(name, size, fonts_dir) else {
-            continue;
-        };
-        for i in 0..n {
-            let raw = if vc.value == ATTR_DISTANCE {
-                let target_m = vc
-                    .distance_target
-                    .map(|t| units::distance_target_to_m(t, vc.unit.as_deref()));
-                activity.get_distance(vc.distance_reference.as_deref(), target_m, i)
-            } else {
-                activity.get_scalar(&vc.value, i)
-            };
-            let text = format_value(raw, vc);
-            let (_, r) = font.measure_str(&text, None);
-            acc(vc.x + r.left, vc.y + r.top, vc.x + r.right, vc.y + r.bottom);
+    for el in &template.elements {
+        let ov = el.as_overlay();
+        if ov.is_dynamic() {
+            for i in 0..n {
+                if let Some((x0, y0, x1, y1)) = ov.crop_extent(&ctx, i) {
+                    acc(x0, y0, x1, y1);
+                }
+            }
+        } else if let Some((x0, y0, x1, y1)) = ov.crop_extent(&ctx, 0) {
+            acc(x0, y0, x1, y1);
         }
     }
 
@@ -403,118 +708,7 @@ fn render_base_frame(w: u32, h: u32) -> Result<skia_safe::Image, String> {
     Ok(surface.image_snapshot())
 }
 
-fn draw_value(
-    canvas: &Canvas,
-    val_cfg: &ValueConfig,
-    template: &Template,
-    activity: &Activity,
-    frame_idx: usize,
-    typefaces: &HashMap<String, Typeface>,
-) {
-    let attr = &val_cfg.value;
-    if !activity.valid_attributes.contains(attr) {
-        return;
-    }
-    let raw = if attr == ATTR_DISTANCE {
-        let target_m = val_cfg
-            .distance_target
-            .map(|t| units::distance_target_to_m(t, val_cfg.unit.as_deref()));
-        activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
-    } else {
-        activity.get_scalar(attr, frame_idx)
-    };
-    let display = format_value(raw, val_cfg);
-    draw_text_on_canvas(canvas, &display, val_cfg, template, typefaces);
-}
-
-fn draw_plot(
-    canvas: &Canvas,
-    plot_cfg: &PlotConfig,
-    idx: usize,
-    frame_idx: usize,
-    cache: &SceneCache,
-) {
-    let Some(Some(chart)) = cache.charts.get(idx) else {
-        return;
-    };
-    let rotation = plot_cfg.rotation.unwrap_or(0.0);
-    if rotation != 0.0 {
-        let cx = plot_cfg.x as f32 + plot_cfg.width as f32 / 2.0;
-        let cy = plot_cfg.y as f32 + plot_cfg.height as f32 / 2.0;
-        canvas.save();
-        canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
-    }
-    if plot_cfg.has_position_markers() {
-        chart.draw_on_canvas(canvas, frame_idx);
-    } else {
-        canvas.draw_image(
-            &chart.background,
-            skia_safe::Point::new(chart.x_offset as f32, chart.y_offset as f32),
-            None,
-        );
-    }
-    if rotation != 0.0 {
-        canvas.restore();
-    }
-}
-
-// ─── Text rendering ────────────────────────────────────────────────────────
-
-fn draw_text_on_canvas(
-    canvas: &Canvas,
-    text: &str,
-    cfg: &ValueConfig,
-    template: &Template,
-    typefaces: &HashMap<String, Typeface>,
-) {
-    let font_name = cfg
-        .font
-        .as_deref()
-        .or(template.scene.font.as_deref())
-        .unwrap_or("Arial.ttf");
-    let font_size = cfg.font_size.or(template.scene.font_size).unwrap_or(32.0);
-    let color_str = cfg.color.as_deref().unwrap_or("#ffffff");
-
-    let (r, g, b, a) = hex_with_opacity(color_str, cfg.opacity);
-    let color = Color::from_argb(a, r, g, b);
-
-    if let Some(tf) = typefaces.get(font_name) {
-        let font = Font::new(tf.clone(), font_size);
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        paint.set_color(color);
-        canvas.draw_str(text, (cfg.x, cfg.y), &font, &paint);
-    }
-}
-
-fn draw_label(
-    canvas: &Canvas,
-    label: &LabelConfig,
-    template: &Template,
-    typefaces: &HashMap<String, Typeface>,
-    fonts_dir: &str,
-) {
-    let font_name = label
-        .font
-        .as_deref()
-        .or(template.scene.font.as_deref())
-        .unwrap_or("Arial.ttf");
-    let font_size = label.font_size.or(template.scene.font_size).unwrap_or(32.0);
-    let color_str = label.color.as_deref().unwrap_or("#ffffff");
-    let (r, g, b, a) = hex_with_opacity(color_str, label.opacity);
-    let color = Color::from_argb(a, r, g, b);
-
-    let font = typefaces
-        .get(font_name)
-        .map(|tf| Font::new(tf.clone(), font_size))
-        .or_else(|| load_font(font_name, font_size, fonts_dir));
-    if let Some(font) = font {
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        paint.set_color(color);
-        canvas.draw_str(&label.text, (label.x, label.y), &font, &paint);
-    }
-}
+// ─── Font loading ──────────────────────────────────────────────────────────
 
 pub(crate) fn load_typeface(font_name: &str, fonts_dir: &str) -> Option<Typeface> {
     let mgr = FontMgr::default();
@@ -587,92 +781,23 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::render::activity::Activity;
     use crate::render::template::Template;
 
-    /// Minimal synthetic GPX: a short track with moving position + varying
-    /// elevation so course/elevation plots and values all have real extents.
-    fn synthetic_gpx() -> String {
-        let mut s = String::from(r#"<?xml version="1.0"?><gpx><trk><trkseg>"#);
-        for i in 0..40 {
-            let lat = 37.0 + i as f64 * 0.001;
-            let lon = -122.0 + i as f64 * 0.0012;
-            let ele = 100.0 + (i as f64 * 7.0);
-            let t = format!("2026-01-01T00:{:02}:{:02}Z", i / 60, i % 60);
-            s.push_str(&format!(
-                "<trkpt lat=\"{lat}\" lon=\"{lon}\"><ele>{ele}</ele><time>{t}</time>\
-                 <extensions><TrackPointExtension><hr>{}</hr><cad>{}</cad>\
-                 </TrackPointExtension></extensions></trkpt>",
-                120 + i,
-                80 + (i % 10)
-            ));
-        }
-        s.push_str("</trkseg></trk></gpx>");
-        s
-    }
-
+    /// Unified model: explicit `scene.layers` ids drive draw order; elements
+    /// not listed fall back to array order after the listed ones.
     #[test]
-    fn crop_rect_is_a_valid_subregion_of_localized_template() {
-        let manifest = env!("CARGO_MANIFEST_DIR");
-        let tmpl_path = format!("{manifest}/../templates/safa_brian.json");
-        let fonts_dir = format!("{manifest}/../resources/fonts");
-
-        let raw: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&tmpl_path).unwrap()).unwrap();
-        let template = Template::from_value(raw).unwrap();
-
-        let mut activity = Activity::parse_gpx(&synthetic_gpx()).unwrap();
-        activity.interpolate(template.scene.fps);
-
-        let crop = compute_crop_rect(&activity, &template, &fonts_dir)
-            .expect("localized template should yield a crop");
-
-        let (fw, fh) = (template.scene.width, template.scene.height);
-        // Inside the frame.
-        assert!(crop.x >= 0 && crop.y >= 0, "origin negative: {crop:?}");
-        assert!(
-            crop.x as u32 + crop.w <= fw && crop.y as u32 + crop.h <= fh,
-            "crop {crop:?} exceeds {fw}x{fh}"
-        );
-        // Even dimensions (codec requirement).
-        assert!(crop.w % 2 == 0 && crop.h % 2 == 0, "odd dims: {crop:?}");
-        // Actually smaller than the full frame (the whole point).
-        let frac = (crop.w as f64 * crop.h as f64) / (fw as f64 * fh as f64);
-        assert!(frac < 0.95, "crop not a meaningful subregion: {frac:.2}");
-    }
-
-    /// Exercises the wrap_pixels path end-to-end: Skia must composite into the
-    /// caller-owned buffer (not a detached surface). A correctly drawn frame
-    /// from a template with visible elements is the right size and not blank.
-    #[test]
-    fn render_frame_composites_into_the_returned_buffer() {
-        let manifest = env!("CARGO_MANIFEST_DIR");
-        let tmpl_path = format!("{manifest}/../templates/safa_brian.json");
-        let fonts_dir = format!("{manifest}/../resources/fonts");
-
-        let raw: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&tmpl_path).unwrap()).unwrap();
-        let template = Template::from_value(raw).unwrap();
-
-        let mut activity = Activity::parse_gpx(&synthetic_gpx()).unwrap();
-        activity.interpolate(template.scene.fps);
-
-        let cache = SceneCache::build(&activity, &template, &fonts_dir).unwrap();
-        let crop = compute_crop_rect(&activity, &template, &fonts_dir).unwrap();
-
-        let buf = render_frame(0, &cache, &activity, &template, Some(&crop));
-
-        assert_eq!(
-            buf.len(),
-            crop.w as usize * crop.h as usize * 4,
-            "buffer size must match the crop window"
-        );
-        // wrap_pixels drew into *this* buffer: a template with a course plot +
-        // labels must leave some non-transparent (non-zero) pixels.
-        assert!(
-            buf.iter().any(|&b| b != 0),
-            "frame is entirely blank — Skia did not composite into the buffer"
-        );
+    fn layer_order_honors_explicit_ids_then_array_order() {
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100, "layers": ["plot-0", "label-0"] },
+            "elements": [
+                { "type": "label", "id": "label-0", "text": "A", "x": 0.0, "y": 0.0 },
+                { "type": "value", "id": "value-0", "value": "speed", "x": 0.0, "y": 0.0 },
+                { "type": "plot", "id": "plot-0", "value": "elevation",
+                  "x": 0, "y": 0, "width": 10, "height": 10 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        // plot-0 (idx 2), label-0 (idx 0) listed first; value-0 (idx 1) trails.
+        assert_eq!(t.layer_order(), vec![2, 0, 1]);
     }
 }

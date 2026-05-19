@@ -4,11 +4,15 @@
     ArrowDown,
     ArrowUp,
     BarChart2,
+    Gauge,
     Hash,
     Map,
+    Thermometer,
     Trash2,
     Type,
   } from 'lucide-svelte'
+
+  import { ADD_PRESETS, elementMeta } from '../../lib/elementTypes.js'
 
   const app = getContext('app')
   let draggingId = $state(null)
@@ -16,81 +20,29 @@
   let pointerDrag = $state(null)
   let suppressClickId = $state(null)
 
-  // Flat list of all elements with category + index
+  const ICONS = { type: Type, hash: Hash, bar: BarChart2, map: Map, meter: Thermometer, gauge: Gauge }
+
+  // Flat list of all elements in z-order (top of list = front-most).
   let elements = $derived(() => {
-    if (!app.config) return []
+    if (!app.config?.elements) return []
     const byId = {}
-    for (const [i, l] of (app.config.labels ?? []).entries())
-      byId[`label-${i}`] = {
-        id: `label-${i}`,
-        category: 'labels',
-        idx: i,
-        type: 'label',
-        name: l.text ?? 'Label',
+    for (const el of app.config.elements) {
+      const meta = elementMeta(el)
+      byId[el.id] = {
+        id: el.id,
+        type: meta.kind,
+        name: meta.name,
+        unit: meta.unit,
       }
-    for (const [i, v] of (app.config.values ?? []).entries())
-      byId[`value-${i}`] = {
-        id: `value-${i}`,
-        category: 'values',
-        idx: i,
-        type: 'value',
-        name: v.value ?? 'value',
-        unit: v.unit ?? null,
-      }
-    for (const [i, p] of (app.config.plots ?? []).entries())
-      byId[`plot-${i}`] = {
-        id: `plot-${i}`,
-        category: 'plots',
-        idx: i,
-        type: p.value === 'course' ? 'map' : 'plot',
-        name: p.value === 'course' ? 'map' : `${p.value} chart`,
-      }
+    }
     return [...(app.elementLayerOrder ?? [])]
       .reverse()
       .map((id) => byId[id])
       .filter(Boolean)
   })
 
-  function addLabel() {
-    app.addElement('labels', {
-      text: 'LABEL',
-      x: 100, y: 100,
-      font_size: app.config?.scene?.font_size ?? 32,
-      color: '#ffffff',
-      opacity: 1,
-    })
-  }
-
-  function addValue() {
-    app.addElement('values', {
-      value: 'speed',
-      x: 100, y: 200,
-      font_size: app.config?.scene?.font_size ?? 48,
-      opacity: 1,
-    })
-  }
-
-  function addChart() {
-    app.addElement('plots', {
-      value: 'elevation',
-      x: 50, y: 800,
-      width: 500, height: 120,
-      opacity: 1,
-      line: { color: '#ffffff', width: 1.5 },
-      fill: { opacity: 0.25, color: '#ffffff' },
-      points: [{ color: '#ffffff', weight: 80, remove_edge_color: true }],
-    })
-  }
-
-  function addMap() {
-    app.addElement('plots', {
-      value: 'course',
-      x: 50, y: 580,
-      width: 200, height: 200,
-      opacity: 1,
-      line: { color: '#ffffff', width: 1.5 },
-      points: [{ color: '#ef4444', weight: 80, edge_color: '#ffffff' }],
-    })
+  function addPreset(preset) {
+    app.addElement(preset.type, preset.defaults(app.config?.scene))
   }
 
   function onRowPointerDown(e, id) {
@@ -175,18 +127,12 @@
   <div class="flex items-center justify-between mb-2">
     <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Elements</p>
     <div class="flex gap-0.5">
-      <button onclick={addLabel} title="Add text label" class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
-        <Type size={13} />
-      </button>
-      <button onclick={addValue} title="Add metric value" class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
-        <Hash size={13} />
-      </button>
-      <button onclick={addChart} title="Add chart" class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
-        <BarChart2 size={13} />
-      </button>
-      <button onclick={addMap} title="Add map (GPS route)" class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
-        <Map size={13} />
-      </button>
+      {#each ADD_PRESETS as preset (preset.key)}
+        {@const Icon = ICONS[preset.icon]}
+        <button onclick={() => addPreset(preset)} title={preset.title} class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+          <Icon size={13} />
+        </button>
+      {/each}
     </div>
   </div>
 
@@ -220,6 +166,10 @@
               <Hash size={12} class="shrink-0 opacity-60" />
             {:else if el.type === 'map'}
               <Map size={12} class="shrink-0 opacity-60" />
+            {:else if el.type === 'meter'}
+              <Thermometer size={12} class="shrink-0 opacity-60" />
+            {:else if el.type === 'gauge'}
+              <Gauge size={12} class="shrink-0 opacity-60" />
             {:else}
               <BarChart2 size={12} class="shrink-0 opacity-60" />
             {/if}
@@ -249,7 +199,7 @@
             </button>
             <button
               data-layer-action
-              onclick={(e) => { e.stopPropagation(); app.removeElement(el.category, el.idx) }}
+              onclick={(e) => { e.stopPropagation(); app.removeElement(el.id) }}
               class="p-1 rounded text-zinc-600 hover:text-destructive transition-colors"
               title="Remove"
               tabindex="-1"

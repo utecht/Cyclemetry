@@ -7,6 +7,7 @@
   import Input from '../ui/Input.svelte'
   import Select from '../ui/Select.svelte'
   import Switch from '../ui/Switch.svelte'
+  import { elementTypeName } from '../../lib/elementTypes.js'
 
   const app = getContext('app')
 
@@ -20,6 +21,13 @@
   }
   const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time', 'distance']
   const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'course', 'distance']
+  const METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature']
+  const METER_DIRECTIONS = [
+    { value: 'up', label: 'Fill upward' },
+    { value: 'down', label: 'Fill downward' },
+    { value: 'right', label: 'Fill rightward' },
+    { value: 'left', label: 'Fill leftward' },
+  ]
   const DISTANCE_REFERENCES = [
     { value: 'overlay_start', label: 'Since overlay start' },
     { value: 'activity_start', label: 'Since activity start' },
@@ -65,22 +73,17 @@
 
   let selected = $derived(() => {
     const id = app.selectedElementId
-    if (!id || !app.config) return null
-    const m = id.match(/^(label|value|plot)-(\d+)$/)
-    if (!m) return null
-    const catMap = { label: 'labels', value: 'values', plot: 'plots' }
-    const category = catMap[m[1]]
-    const idx = parseInt(m[2])
-    const item = app.config[category]?.[idx]
-    return item ? { id, category, idx, item, type: m[1] } : null
+    if (!id || !app.config?.elements) return null
+    const item = app.config.elements.find((e) => e.id === id)
+    return item ? { id, item, type: item.type } : null
   })
 
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
-    app.updateElement(s.category, s.idx, { [field]: value })
+    app.updateElement(s.id, { [field]: value })
   }
 
   // Switch the distance unit, converting distance_target to the equivalent
@@ -99,7 +102,7 @@
       updates.distance_target =
         newUnit === 'm' ? Math.round(conv) : Math.round(conv * 100) / 100
     }
-    app.updateElement(s.category, s.idx, updates)
+    app.updateElement(s.id, updates)
   }
 
   // Update a nested object field: updateNested('line', 'color', '#fff')
@@ -109,7 +112,7 @@
     const numFields = ['width', 'opacity', 'past_opacity', 'future_opacity']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     const current = s.item[obj] ?? {}
-    app.updateElement(s.category, s.idx, { [obj]: { ...current, [field]: value } })
+    app.updateElement(s.id, { [obj]: { ...current, [field]: value } })
   }
 
   // Update points[0] — the tracking marker. Creates it if absent.
@@ -119,7 +122,7 @@
     const numFields = ['weight', 'opacity']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     const current = s.item.points?.[0] ?? {}
-    app.updateElement(s.category, s.idx, { points: [{ ...current, [field]: value }] })
+    app.updateElement(s.id, { points: [{ ...current, [field]: value }] })
   }
 
   // Point label (value text next to the chart marker, e.g. "960 M").
@@ -136,7 +139,7 @@
   function togglePointLabel(enabled) {
     const s = selected()
     if (!s) return
-    app.updateElement(s.category, s.idx, {
+    app.updateElement(s.id, {
       point_label: enabled ? { ...POINT_LABEL_DEFAULT } : undefined,
     })
   }
@@ -151,7 +154,7 @@
         : Number(raw)
       : raw
     const current = s.item.point_label ?? {}
-    app.updateElement(s.category, s.idx, {
+    app.updateElement(s.id, {
       point_label: { ...current, [field]: value },
     })
   }
@@ -164,7 +167,7 @@
     const next = on ? [...cur, unit] : cur.filter((u) => u !== unit)
     const units = ['metric', 'imperial'].filter((u) => next.includes(u))
     const current = s.item.point_label ?? {}
-    app.updateElement(s.category, s.idx, {
+    app.updateElement(s.id, {
       point_label: { ...current, units },
     })
   }
@@ -206,9 +209,9 @@
       }
       if (it.points?.[0]) patch.points = [{ ...it.points[0], color: raw }]
       if (it.point_label) patch.point_label = { ...it.point_label, color: raw }
-      app.updateElement(s.category, s.idx, patch)
+      app.updateElement(s.id, patch)
     } else {
-      app.updateElement(s.category, s.idx, { color: raw })
+      app.updateElement(s.id, { color: raw })
     }
   }
 
@@ -226,7 +229,7 @@
     {@const { item, type } = selected()}
 
     <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">
-      {type === 'label' ? 'Text Label' : type === 'value' ? 'Metric Value' : item.value === 'course' ? 'Map' : 'Chart'}
+      {elementTypeName(item)}
     </p>
 
     <!-- Advanced disclosure: hides position/size and rarely-changed detail -->
@@ -254,8 +257,8 @@
       </div>
     </section>
 
-    <!-- Plot size + rotation (advanced) -->
-    {#if showAdvanced && type === 'plot'}
+    <!-- Size (plot + meter, advanced) + rotation (plot only) -->
+    {#if showAdvanced && (type === 'plot' || type === 'meter' || type === 'gauge')}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
         <div class="grid grid-cols-2 gap-2">
@@ -268,11 +271,13 @@
             <Input type="number" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
           </label>
         </div>
+        {#if type === 'plot'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Rotation (°)</span>
           <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
             oninput={(e) => update('rotation', e.target.value)} />
         </label>
+        {/if}
       </section>
     {/if}
 
@@ -305,6 +310,139 @@
           options={PLOT_METRICS.map((m) => ({ value: m, label: m === 'course' ? 'course (map)' : m }))}
           onchange={(v) => update('value', v)}
         />
+      </section>
+    {/if}
+
+    <!-- Meter: metric + range + direction -->
+    {#if type === 'meter'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          onchange={(v) => update('value', v)}
+        />
+        {#if UNITS_BY_METRIC[item.value]}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+        </label>
+        {/if}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Min</span>
+            <Input type="number" value={numVal(item, 'min')} oninput={(e) => update('min', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Max</span>
+            <Input type="number" value={numVal(item, 'max')} oninput={(e) => update('max', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Direction</span>
+          <Select
+            value={item.direction ?? 'up'}
+            options={METER_DIRECTIONS}
+            onchange={(v) => update('direction', v)}
+          />
+        </label>
+        {#if showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Corner radius (px)</span>
+          <Input type="number" value={item.radius ?? 0} min={0} step={1}
+            oninput={(e) => update('radius', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Track color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.background ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('background', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.background ?? ''} placeholder="none" oninput={(e) => update('background', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        {/if}
+      </section>
+    {/if}
+
+    <!-- Gauge: metric + range + dial geometry -->
+    {#if type === 'gauge'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          onchange={(v) => update('value', v)}
+        />
+        {#if UNITS_BY_METRIC[item.value]}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+        </label>
+        {/if}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Min</span>
+            <Input type="number" value={numVal(item, 'min')} oninput={(e) => update('min', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Max</span>
+            <Input type="number" value={numVal(item, 'max')} oninput={(e) => update('max', e.target.value)} />
+          </label>
+        </div>
+        {#if showAdvanced}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Start angle (°)</span>
+            <Input type="number" value={item.start_angle ?? 135} step={1}
+              oninput={(e) => update('start_angle', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Sweep (°)</span>
+            <Input type="number" value={item.sweep_angle ?? 270} step={1}
+              oninput={(e) => update('sweep_angle', e.target.value)} />
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Arc width (px)</span>
+            <Input type="number" value={item.arc_width ?? 14} min={0} step={1}
+              oninput={(e) => update('arc_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Needle width (px)</span>
+            <Input type="number" value={item.needle_width ?? 6} min={0} step={1}
+              oninput={(e) => update('needle_width', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Track color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.arc_color ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('arc_color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.arc_color ?? ''} placeholder="none" oninput={(e) => update('arc_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Progress color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.progress_color ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('progress_color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.progress_color ?? ''} placeholder="none" oninput={(e) => update('progress_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Needle color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.needle_color ?? '#ef4444').slice(0, 7)}
+              oninput={(e) => update('needle_color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.needle_color ?? ''} placeholder="base color" oninput={(e) => update('needle_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        {/if}
       </section>
     {/if}
 

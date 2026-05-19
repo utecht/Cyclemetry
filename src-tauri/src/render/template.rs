@@ -4,11 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Template {
     pub scene: SceneConfig,
     #[serde(default, deserialize_with = "null_seq_as_default")]
-    pub labels: Vec<LabelConfig>,
-    #[serde(default, deserialize_with = "null_seq_as_default")]
-    pub values: Vec<ValueConfig>,
-    #[serde(default, deserialize_with = "null_seq_as_default")]
-    pub plots: Vec<PlotConfig>,
+    pub elements: Vec<Element>,
 }
 
 /// `#[serde(default)]` covers a missing key but NOT an explicit `null`
@@ -37,22 +33,98 @@ pub struct SceneConfig {
     pub decimal_rounding: Option<i32>,
     pub color: Option<String>,
     pub opacity: Option<f32>,
+    /// Stable element ids in back-to-front draw order. Unknown/missing ids are
+    /// ignored; elements absent from the list fall back to array order.
     pub layers: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayerElement {
-    Label(usize),
-    Value(usize),
-    Plot(usize),
 }
 
 fn default_fps() -> u32 {
     30
 }
 
+/// A single overlay element. Internally tagged by `type`; every variant's
+/// config carries a stable `id` used for z-order (`scene.layers`) and the
+/// frontend selection. Adding a new graphic = one new variant + one
+/// `OverlayElement` impl (see frame.rs) + one `scale` arm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Element {
+    Label(LabelConfig),
+    Value(ValueConfig),
+    Plot(PlotConfig),
+    Meter(MeterConfig),
+    Gauge(GaugeConfig),
+}
+
+impl Element {
+    pub fn id(&self) -> &str {
+        match self {
+            Element::Label(c) => &c.id,
+            Element::Value(c) => &c.id,
+            Element::Plot(c) => &c.id,
+            Element::Meter(c) => &c.id,
+            Element::Gauge(c) => &c.id,
+        }
+    }
+
+    /// Scale every spatial field by `factor`. Each variant owns the knowledge
+    /// of which of its fields are spatial — non-spatial fields (colors, fonts,
+    /// opacity, units, decimal_rounding, fractional margins) are
+    /// resolution-independent and left untouched.
+    pub fn scale(&mut self, factor: f64) {
+        let f32f = factor as f32;
+        match self {
+            Element::Label(c) => {
+                c.x *= f32f;
+                c.y *= f32f;
+                c.font_size = c.font_size.map(|v| v * f32f);
+            }
+            Element::Value(c) => {
+                c.x *= f32f;
+                c.y *= f32f;
+                c.font_size = c.font_size.map(|v| v * f32f);
+            }
+            Element::Plot(c) => {
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
+                c.width = (c.width as f64 * factor).round() as u32;
+                c.height = (c.height as f64 * factor).round() as u32;
+                if let Some(line) = c.line.as_mut() {
+                    line.width = line.width.map(|v| v * f32f);
+                }
+                if let Some(pl) = c.point_label.as_mut() {
+                    pl.font_size = pl.font_size.map(|v| v * f32f);
+                    pl.x_offset = pl.x_offset.map(|v| v * f32f);
+                    pl.y_offset = pl.y_offset.map(|v| v * f32f);
+                }
+                if let Some(points) = c.points.as_mut() {
+                    for p in points {
+                        p.weight = p.weight.map(|v| v * f32f);
+                    }
+                }
+            }
+            Element::Meter(c) => {
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
+                c.width = (c.width as f64 * factor).round() as u32;
+                c.height = (c.height as f64 * factor).round() as u32;
+                c.radius = c.radius.map(|v| v * f32f);
+            }
+            Element::Gauge(c) => {
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
+                c.width = (c.width as f64 * factor).round() as u32;
+                c.height = (c.height as f64 * factor).round() as u32;
+                c.arc_width = c.arc_width.map(|v| v * f32f);
+                c.needle_width = c.needle_width.map(|v| v * f32f);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabelConfig {
+    pub id: String,
     pub text: String,
     pub x: f32,
     pub y: f32,
@@ -65,6 +137,7 @@ pub struct LabelConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValueConfig {
+    pub id: String,
     pub value: String,
     pub x: f32,
     pub y: f32,
@@ -87,6 +160,7 @@ pub struct ValueConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlotConfig {
+    pub id: String,
     pub value: String,
     pub x: i32,
     pub y: i32,
@@ -138,6 +212,59 @@ pub struct PointLabelConfig {
     pub y_offset: Option<f32>,
     pub units: Option<Vec<String>>,
     pub decimal_rounding: Option<i32>,
+}
+
+/// A bar that fills proportionally to the current value of a metric, mapped
+/// linearly between `min` and `max` (both in the element's display `unit`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeterConfig {
+    pub id: String,
+    pub value: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub min: f64,
+    pub max: f64,
+    /// Fill growth direction: "up" (default), "down", "left", "right".
+    pub direction: Option<String>,
+    pub unit: Option<String>,
+    /// Fill color.
+    pub color: Option<String>,
+    /// Optional track (empty portion) color; omitted = no track drawn.
+    pub background: Option<String>,
+    pub opacity: Option<f32>,
+    /// Corner radius in px (rounded rect). Default 0 (sharp corners).
+    pub radius: Option<f32>,
+}
+
+/// A circular dial: an arc track plus a needle that points to the current
+/// value, mapped linearly between `min` and `max` (in the display `unit`)
+/// across an angular sweep. Angles are degrees, 0° = east, clockwise.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GaugeConfig {
+    pub id: String,
+    pub value: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub min: f64,
+    pub max: f64,
+    pub unit: Option<String>,
+    /// Needle angle at `min`. Default 135° (lower-left).
+    pub start_angle: Option<f32>,
+    /// Total sweep from `min` to `max`, clockwise. Default 270°.
+    pub sweep_angle: Option<f32>,
+    /// Base color used for arc/needle when their specific colors are unset.
+    pub color: Option<String>,
+    pub arc_color: Option<String>,
+    pub arc_width: Option<f32>,
+    /// Optional filled arc from `start_angle` to the current value.
+    pub progress_color: Option<String>,
+    pub needle_color: Option<String>,
+    pub needle_width: Option<f32>,
+    pub opacity: Option<f32>,
 }
 
 impl PlotConfig {
@@ -199,22 +326,7 @@ impl Template {
         mut raw: serde_json::Value,
         target: Option<(u32, u32)>,
     ) -> Result<Self, serde_json::Error> {
-        if let Some((tw, th)) = target {
-            let authored_h = raw
-                .get("scene")
-                .and_then(|s| s.get("height"))
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            if authored_h > 0.0 {
-                // Always retarget (even when factor ≈ 1) so the canvas adopts
-                // the chosen width/height — e.g. 3840×2160 → 2160×2160 square
-                // has factor 1 but still needs scene.width updated.
-                let factor = th as f64 / authored_h;
-                scale_template(&mut raw, factor, tw, th);
-            }
-        }
-
-        // Apply scene defaults before deserializing
+        // Apply scene defaults before deserializing.
         if let Some(scene) = raw.get_mut("scene") {
             if scene.get("fps").is_none() {
                 scene["fps"] = serde_json::json!(30);
@@ -224,64 +336,61 @@ impl Template {
             }
         }
 
-        // Merge scene config into each value/label/plot (inherit font, font_size, etc.)
+        // Inherit scene-level defaults (font, color, opacity, …) into each
+        // element that doesn't set them explicitly. Generic — copies any
+        // absent scene key into the element object; element configs ignore
+        // keys they don't declare.
         let scene_snapshot = raw["scene"].clone();
-        for key in &["values", "labels", "plots"] {
-            if let Some(items) = raw[key].as_array_mut() {
-                for item in items.iter_mut() {
-                    merge_scene_into_item(&scene_snapshot, item);
+        if let Some(items) = raw.get_mut("elements").and_then(|v| v.as_array_mut()) {
+            for item in items.iter_mut() {
+                merge_scene_into_item(&scene_snapshot, item);
+            }
+        }
+
+        let mut template: Template = serde_json::from_value(raw)?;
+
+        if let Some((tw, th)) = target {
+            let authored_h = template.scene.height;
+            template.scene.width = tw;
+            template.scene.height = th;
+            if authored_h > 0 {
+                // Always retarget (even when factor ≈ 1) so the canvas adopts
+                // the chosen width/height; e.g. 3840×2160 → 2160×2160 has
+                // factor 1 but still needs the new scene dimensions above.
+                let factor = th as f64 / authored_h as f64;
+                template.scene.font_size = template.scene.font_size.map(|s| s * factor as f32);
+                for el in &mut template.elements {
+                    el.scale(factor);
                 }
             }
         }
 
-        serde_json::from_value(raw)
+        Ok(template)
     }
 
-    pub fn layer_order(&self) -> Vec<LayerElement> {
-        let mut out = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+    /// Element indices in back-to-front draw order: explicit `scene.layers`
+    /// ids first (deduped, unknown ids skipped), then any remaining elements
+    /// in array order.
+    pub fn layer_order(&self) -> Vec<usize> {
+        let mut out = Vec::with_capacity(self.elements.len());
+        let mut seen = vec![false; self.elements.len()];
 
         if let Some(layers) = &self.scene.layers {
             for id in layers {
-                if let Some(layer) = self.parse_layer_id(id) {
-                    if seen.insert(id.clone()) {
-                        out.push(layer);
+                if let Some(idx) = self.elements.iter().position(|e| e.id() == id) {
+                    if !seen[idx] {
+                        seen[idx] = true;
+                        out.push(idx);
                     }
                 }
             }
         }
-
-        for i in 0..self.labels.len() {
-            let id = format!("label-{i}");
-            if seen.insert(id) {
-                out.push(LayerElement::Label(i));
+        for (idx, slot) in seen.iter().enumerate() {
+            if !slot {
+                out.push(idx);
             }
         }
-        for i in 0..self.plots.len() {
-            let id = format!("plot-{i}");
-            if seen.insert(id) {
-                out.push(LayerElement::Plot(i));
-            }
-        }
-        for i in 0..self.values.len() {
-            let id = format!("value-{i}");
-            if seen.insert(id) {
-                out.push(LayerElement::Value(i));
-            }
-        }
-
         out
-    }
-
-    fn parse_layer_id(&self, id: &str) -> Option<LayerElement> {
-        let (kind, idx) = id.rsplit_once('-')?;
-        let idx = idx.parse::<usize>().ok()?;
-        match kind {
-            "label" if idx < self.labels.len() => Some(LayerElement::Label(idx)),
-            "value" if idx < self.values.len() => Some(LayerElement::Value(idx)),
-            "plot" if idx < self.plots.len() => Some(LayerElement::Plot(idx)),
-            _ => None,
-        }
     }
 }
 
@@ -289,64 +398,6 @@ fn merge_scene_into_item(scene: &serde_json::Value, item: &mut serde_json::Value
     if let (Some(scene_obj), Some(item_obj)) = (scene.as_object(), item.as_object_mut()) {
         for (k, v) in scene_obj {
             item_obj.entry(k).or_insert_with(|| v.clone());
-        }
-    }
-}
-
-/// Multiply a numeric field in place, keeping it a float (for f32 fields).
-fn scale_f(obj: &mut serde_json::Value, key: &str, factor: f64) {
-    if let Some(n) = obj.get(key).and_then(|v| v.as_f64()) {
-        obj[key] = serde_json::json!(n * factor);
-    }
-}
-
-/// Multiply a numeric field in place, rounding to an integer (for u32/i32
-/// fields — serde_json rejects a float where an integer is expected).
-fn scale_i(obj: &mut serde_json::Value, key: &str, factor: f64) {
-    if let Some(n) = obj.get(key).and_then(|v| v.as_f64()) {
-        obj[key] = serde_json::json!((n * factor).round() as i64);
-    }
-}
-
-/// Scale every spatial field of a raw template by `factor`. Non-spatial
-/// fields (colors, fonts, opacity, units, fps, decimal_rounding, fractional
-/// margins) are resolution-independent and left untouched.
-fn scale_template(raw: &mut serde_json::Value, factor: f64, tw: u32, th: u32) {
-    if let Some(scene) = raw.get_mut("scene") {
-        scene["width"] = serde_json::json!(tw);
-        scene["height"] = serde_json::json!(th);
-        scale_f(scene, "font_size", factor);
-    }
-
-    for key in &["values", "labels"] {
-        if let Some(items) = raw.get_mut(key).and_then(|v| v.as_array_mut()) {
-            for item in items {
-                scale_f(item, "x", factor);
-                scale_f(item, "y", factor);
-                scale_f(item, "font_size", factor);
-            }
-        }
-    }
-
-    if let Some(plots) = raw.get_mut("plots").and_then(|v| v.as_array_mut()) {
-        for plot in plots {
-            scale_i(plot, "x", factor);
-            scale_i(plot, "y", factor);
-            scale_i(plot, "width", factor);
-            scale_i(plot, "height", factor);
-            if let Some(line) = plot.get_mut("line") {
-                scale_f(line, "width", factor);
-            }
-            if let Some(pl) = plot.get_mut("point_label") {
-                scale_f(pl, "font_size", factor);
-                scale_f(pl, "x_offset", factor);
-                scale_f(pl, "y_offset", factor);
-            }
-            if let Some(points) = plot.get_mut("points").and_then(|v| v.as_array_mut()) {
-                for p in points {
-                    scale_f(p, "weight", factor);
-                }
-            }
         }
     }
 }

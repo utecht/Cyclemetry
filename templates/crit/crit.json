@@ -1,32 +1,52 @@
 {
-  "labels": [
+  "scene": {
+    "color": "#ffffff",
+    "decimal_rounding": 0,
+    "end": 3689,
+    "font": "Evogria.otf",
+    "font_size": 30,
+    "fps": 30,
+    "height": 2160,
+    "opacity": 0.5,
+    "start": 0,
+    "width": 3840
+  },
+  "elements": [
     {
+      "type": "label",
+      "id": "label-0",
       "font_size": 60,
       "text": "MPH",
       "x": 80,
       "y": 651
     },
     {
+      "type": "label",
+      "id": "label-1",
       "font_size": 60,
       "text": "PWR",
       "x": 80,
       "y": 950
     },
     {
+      "type": "label",
+      "id": "label-2",
       "font_size": 60,
       "text": "RPM",
       "x": 80,
       "y": 1250
     },
     {
+      "type": "label",
+      "id": "label-3",
       "font_size": 60,
       "text": "BPM",
       "x": 80,
       "y": 1550
-    }
-  ],
-  "plots": [
+    },
     {
+      "type": "plot",
+      "id": "plot-0",
       "color": "#f4f4f4",
       "height": 500,
       "line": {
@@ -46,6 +66,8 @@
       "y": 51
     },
     {
+      "type": "plot",
+      "id": "plot-1",
       "color": "#f4f4f4",
       "fill": {
         "opacity": 0.65
@@ -66,22 +88,10 @@
       "width": 3840,
       "x": 0,
       "y": 1760
-    }
-  ],
-  "scene": {
-    "color": "#ffffff",
-    "decimal_rounding": 0,
-    "end": 3689,
-    "font": "Evogria.otf",
-    "font_size": 30,
-    "fps": 30,
-    "height": 2160,
-    "opacity": 0.5,
-    "start": 0,
-    "width": 3840
-  },
-  "values": [
+    },
     {
+      "type": "value",
+      "id": "value-0",
       "font_size": 220,
       "unit": "imperial",
       "value": "speed",
@@ -89,18 +99,24 @@
       "y": 851
     },
     {
+      "type": "value",
+      "id": "value-1",
       "font_size": 220,
       "value": "cadence",
       "x": 60,
       "y": 1450
     },
     {
+      "type": "value",
+      "id": "value-2",
       "font_size": 220,
       "value": "power",
       "x": 59,
       "y": 1150
     },
     {
+      "type": "value",
+      "id": "value-3",
       "font_size": 220,
       "opacity": 0.5,
       "value": "heartrate",

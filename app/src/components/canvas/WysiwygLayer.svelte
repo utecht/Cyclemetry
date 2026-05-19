@@ -17,7 +17,7 @@
 
   // Pixel-perfect bounds from the Rust renderer — { id, x, y, w, h }[]
   // frameImage: full rendered scene PNG (data URL) at output resolution.
-  let { measuredElements = [], frameImage = null } = $props()
+  let { measuredElements = [], frameImage = null, zoom = 1 } = $props()
 
   // The backend renders + measures the demo frame at the chosen OUTPUT
   // resolution, scaled from the template's authored size by a uniform
@@ -29,8 +29,12 @@
   let authoredHeight = $derived(app.config?.scene?.height ?? 1080)
   let authorScale = $derived(sceneHeight / (authoredHeight || sceneHeight))
 
+  function elById(id) {
+    return app.config?.elements?.find((e) => e.id === id) ?? null
+  }
+
   let elements = $derived.by(() => {
-    if (!app.config) return []
+    if (!app.config?.elements) return []
     const measured = new Map(measuredElements.map(e => [e.id, e]))
     const s = authorScale
     // Config-derived fallback bounds are in authored coords; the rendered
@@ -48,57 +52,49 @@
       return measured.get(id) ?? null
     }
 
-    for (const [i, l] of (app.config.labels ?? []).entries()) {
-      const id = `label-${i}`
-      const fs = l.font_size ?? 32
-      const text = l.text ?? 'LABEL'
-      byId[id] = boundsFor(id) ?? fb({
-        id,
-        x: l.x ?? 100,
-        y: (l.y ?? 100) - fs * 0.8,           // baseline → visual top
-        w: Math.max(text.length * fs * 0.58, fs),
-        h: fs,
-      })
-    }
-    for (const [i, v] of (app.config.values ?? []).entries()) {
-      const id = `value-${i}`
-      const fs = v.font_size ?? 48
-      byId[id] = boundsFor(id) ?? fb({
-        id,
-        x: v.x ?? 100,
-        y: (v.y ?? 200) - fs * 0.8,
-        w: fs * 3.5,
-        h: fs,
-      })
-    }
-    for (const [i, p] of (app.config.plots ?? []).entries()) {
-      const id = `plot-${i}`
-      byId[id] = boundsFor(id) ?? fb({
-        id,
-        x: p.x ?? 50, y: p.y ?? 400,
-        w: p.width ?? 400,
-        h: p.height ?? 150,
-      })
+    for (const el of app.config.elements) {
+      const id = el.id
+      if (el.type === 'label') {
+        const fs = el.font_size ?? 32
+        const text = el.text ?? 'LABEL'
+        byId[id] = boundsFor(id) ?? fb({
+          id,
+          x: el.x ?? 100,
+          y: (el.y ?? 100) - fs * 0.8,           // baseline → visual top
+          w: Math.max(text.length * fs * 0.58, fs),
+          h: fs,
+        })
+      } else if (el.type === 'value') {
+        const fs = el.font_size ?? 48
+        byId[id] = boundsFor(id) ?? fb({
+          id,
+          x: el.x ?? 100,
+          y: (el.y ?? 200) - fs * 0.8,
+          w: fs * 3.5,
+          h: fs,
+        })
+      } else if (el.type === 'plot' || el.type === 'meter' || el.type === 'gauge') {
+        byId[id] = boundsFor(id) ?? fb({
+          id,
+          x: el.x ?? 50, y: el.y ?? 400,
+          w: el.width ?? 400,
+          h: el.height ?? 150,
+        })
+      }
     }
     return [...(app.elementLayerOrder ?? [])]
       .map((id) => byId[id])
       .filter(Boolean)
   })
 
-  function parseId(id) {
-    const m = typeof id === 'string' ? id.match(/^(label|value|plot)-(\d+)$/) : null
-    if (!m) return null
-    return { category: { label: 'labels', value: 'values', plot: 'plots' }[m[1]], idx: parseInt(m[2]) }
-  }
-
   function handleLabel(id) {
-    const el = parseId(id)
+    const el = elById(id)
     if (!el) return id
-    const item = app.config?.[el.category]?.[el.idx]
-    if (!item) return id
-    if (el.category === 'labels') return item.text ?? 'label'
-    if (el.category === 'values') return item.value ?? 'value'
-    return `${item.value} chart`
+    if (el.type === 'label') return el.text ?? 'label'
+    if (el.type === 'value') return el.value ?? 'value'
+    if (el.type === 'meter') return `${el.value} meter`
+    if (el.type === 'gauge') return `${el.value} gauge`
+    return `${el.value} chart`
   }
 
   let selectedSet = $derived(new Set(app.selectedElementIds ?? []))
@@ -137,9 +133,9 @@
   let draggingIds = $derived(dragBase ? new Set([...dragBase.positions.keys()]) : new Set())
 
   function getRotation(id) {
-    const el = parseId(id)
-    if (!el || el.category !== 'plots') return 0
-    return app.config?.plots?.[el.idx]?.rotation ?? 0
+    const el = elById(id)
+    if (!el || el.type !== 'plot') return 0
+    return el.rotation ?? 0
   }
 
   function rotationFor(id) {
@@ -153,9 +149,9 @@
 
   function handleRotateEnd(id, degrees) {
     liveRotation = null
-    const el = parseId(id)
-    if (!el || el.category !== 'plots') return
-    app.updateElement(el.category, el.idx, { rotation: Math.round(degrees) })
+    const el = elById(id)
+    if (!el || el.type !== 'plot') return
+    app.updateElement(id, { rotation: Math.round(degrees) })
   }
 
   function isGroupDrag(id) {
@@ -180,11 +176,9 @@
     const positions = new SvelteMap()
     const baseElements = new SvelteMap()
     for (const sid of ids) {
-      const el = parseId(sid)
-      if (!el) continue
-      const item = app.config?.[el.category]?.[el.idx]
+      const item = elById(sid)
       if (!item) continue
-      positions.set(sid, { category: el.category, idx: el.idx, x: item.x ?? 0, y: item.y ?? 0 })
+      positions.set(sid, { id: sid, x: item.x ?? 0, y: item.y ?? 0 })
       const elData = elements.find(e => e.id === sid)
       if (elData) baseElements.set(sid, { id: sid, x: elData.x, y: elData.y, w: elData.w, h: elData.h })
     }
@@ -242,12 +236,10 @@
   function moveFor(id, dx, dy) {
     const base = dragBase?.positions.get(id)
     const s = authorScale || 1
-    if (base) return { category: base.category, idx: base.idx, x: base.x + dx / s, y: base.y + dy / s }
-    const el = parseId(id)
-    if (!el) return null
-    const item = app.config?.[el.category]?.[el.idx]
+    if (base) return { id, x: base.x + dx / s, y: base.y + dy / s }
+    const item = elById(id)
     if (!item) return null
-    return { category: el.category, idx: el.idx, x: (item.x ?? 0) + dx / s, y: (item.y ?? 0) + dy / s }
+    return { id, x: (item.x ?? 0) + dx / s, y: (item.y ?? 0) + dy / s }
   }
 
   function handleDrag(id, dx, dy) {
@@ -267,7 +259,7 @@
     // Mark moved elements so the derived skips their stale measured bounds.
     if (moves.length > 0) {
       const next = new SvelteSet(movedIds)
-      for (const m of moves) next.add(`${m.category.slice(0, -1)}-${m.idx}`)
+      for (const m of moves) next.add(m.id)
       movedIds = next
     }
 
@@ -398,6 +390,7 @@
       selected={selectedSet.has(el.id)}
       rotation={rotationFor(el.id)}
       groupOffset={groupOffsetFor(el.id)}
+      {zoom}
       onselect={(e) => handleSelect(el.id, e)}
       ondrag={(dx, dy) => handleDrag(el.id, dx, dy)}
       ondragend={(dx, dy) => handleDragEnd(el.id, dx, dy)}
