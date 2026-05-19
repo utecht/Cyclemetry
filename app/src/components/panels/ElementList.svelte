@@ -7,6 +7,7 @@
     Gauge,
     Hash,
     Map,
+    Square,
     Thermometer,
     Trash2,
     Type,
@@ -20,7 +21,7 @@
   let pointerDrag = $state(null)
   let suppressClickId = $state(null)
 
-  const ICONS = { type: Type, hash: Hash, bar: BarChart2, map: Map, meter: Thermometer, gauge: Gauge }
+  const ICONS = { type: Type, hash: Hash, bar: BarChart2, map: Map, meter: Thermometer, gauge: Gauge, rect: Square }
 
   // Flat list of all elements in z-order (top of list = front-most).
   let elements = $derived(() => {
@@ -170,6 +171,8 @@
               <Thermometer size={12} class="shrink-0 opacity-60" />
             {:else if el.type === 'gauge'}
               <Gauge size={12} class="shrink-0 opacity-60" />
+            {:else if el.type === 'rect'}
+              <Square size={12} class="shrink-0 opacity-60" />
             {:else}
               <BarChart2 size={12} class="shrink-0 opacity-60" />
             {/if}

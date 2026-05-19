@@ -4,6 +4,7 @@
    * All changes write directly into app.config via app.updateElement().
    */
   import { getContext } from 'svelte'
+  import { Lock, LockOpen } from 'lucide-svelte'
   import Input from '../ui/Input.svelte'
   import Select from '../ui/Select.svelte'
   import Switch from '../ui/Switch.svelte'
@@ -81,7 +82,7 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'segments', 'gap']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'segments', 'gap', 'background_opacity', 'border_width', 'border_opacity']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     app.updateElement(s.id, { [field]: value })
   }
@@ -237,10 +238,12 @@
     setGradient(meterGradient().filter((_, idx) => idx !== i))
   }
 
-  // Continuous fill: always exactly 2 stops (start / end).
+  // Continuous fill gradient: stops[0] = low-value color, stops[1] = high-value color.
+  // Initialises both stops from the current solid color when the array is empty.
   function updateContinuousGradientStop(idx, val) {
     const cur = meterGradient()
-    const stops = cur.length >= 2 ? [...cur] : ['#ffffff', '#ffffff']
+    const base = selected()?.item.color ?? '#ffffff'
+    const stops = cur.length >= 2 ? [...cur] : [base, base]
     stops[idx] = val
     setGradient(stops.slice(0, 2))
   }
@@ -256,11 +259,13 @@
       <p class="text-xs text-zinc-600 italic text-center">Click an element on the canvas<br>or in the list to edit it.</p>
     </div>
   {:else}
-    {@const { item, type } = selected()}
+    {@const { id, item, type } = selected()}
 
-    <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">
-      {elementTypeName(item)}
-    </p>
+    <div class="mb-3">
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+        {elementTypeName(item)}
+      </p>
+    </div>
 
     <!-- Advanced disclosure: hides position/size and rarely-changed detail -->
     <div class="mb-4 flex items-center justify-between">
@@ -274,7 +279,20 @@
 
     <!-- Position (basic) -->
     <section class="mb-4 space-y-2">
-      <p class="text-[10px] uppercase tracking-wider text-zinc-600">Position</p>
+      <div class="flex items-center justify-between">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Position</p>
+        <button
+          onclick={() => app.updateElement(id, { locked: !item.locked })}
+          title={item.locked ? 'Unlock position' : 'Lock position'}
+          class="p-1 rounded transition-colors {item.locked ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-zinc-300'}"
+        >
+          {#if item.locked}
+            <Lock size={13} />
+          {:else}
+            <LockOpen size={13} />
+          {/if}
+        </button>
+      </div>
       <div class="grid grid-cols-2 gap-2">
         <label class="space-y-1">
           <span class="text-xs text-zinc-500">X</span>
@@ -287,8 +305,8 @@
       </div>
     </section>
 
-    <!-- Size (plot + meter, advanced) + rotation (plot only) -->
-    {#if showAdvanced && (type === 'plot' || type === 'meter' || type === 'gauge')}
+    <!-- Size — always shown for rect; advanced for plot/meter/gauge -->
+    {#if type === 'rect' || (showAdvanced && (type === 'plot' || type === 'meter' || type === 'gauge'))}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
         <div class="grid grid-cols-2 gap-2">
@@ -307,6 +325,73 @@
           <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
             oninput={(e) => update('rotation', e.target.value)} />
         </label>
+        {/if}
+        {#if type === 'rect' && showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Corner radius (px)</span>
+          <Input type="number" value={item.radius ?? 0} min={0} step={1}
+            oninput={(e) => update('radius', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Element opacity (0–1)</span>
+          <Input type="number" value={item.opacity ?? 1} min={0} max={1} step={0.05}
+            oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+    {/if}
+
+    <!-- Rectangle fill + border -->
+    {#if type === 'rect'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.color ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.color ?? '#ffffff'} oninput={(e) => update('color', e.target.value)} class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <Input type="number" value={item.fill_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+            oninput={(e) => update('fill_opacity', e.target.value)} />
+        </label>
+      </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.border_color ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('border_color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.border_color ?? ''} placeholder="none"
+              oninput={(e) => update('border_color', e.target.value || undefined)}
+              class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        {#if item.border_color}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width (px)</span>
+            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
+              oninput={(e) => update('border_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+            <Input type="number" value={item.border_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+              oninput={(e) => update('border_opacity', e.target.value)} />
+          </label>
+        </div>
         {/if}
       </section>
     {/if}
@@ -411,45 +496,6 @@
             </div>
           {/each}
         </div>
-        {:else}
-        <div class="space-y-1">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-500">Gradient</span>
-            {#if meterGradient().length === 0}
-            <button type="button" class="text-xs text-primary hover:underline"
-              onclick={() => setGradient([item.color ?? '#ffffff', '#ffffff'])}>+ enable</button>
-            {:else}
-            <button type="button" class="text-xs text-zinc-500 hover:text-red-400"
-              onclick={() => setGradient([])}>remove</button>
-            {/if}
-          </div>
-          {#if meterGradient().length >= 2}
-          <div class="grid grid-cols-2 gap-2">
-            <label class="space-y-1">
-              <span class="text-[10px] text-zinc-600">Start</span>
-              <div class="flex gap-2 items-center">
-                <input type="color" value={(meterGradient()[0] ?? '#ffffff').slice(0, 7)}
-                  oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
-                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-                <Input value={meterGradient()[0] ?? '#ffffff'}
-                  oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
-                  class="flex-1 font-mono text-xs" />
-              </div>
-            </label>
-            <label class="space-y-1">
-              <span class="text-[10px] text-zinc-600">End</span>
-              <div class="flex gap-2 items-center">
-                <input type="color" value={(meterGradient()[1] ?? '#ffffff').slice(0, 7)}
-                  oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
-                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-                <Input value={meterGradient()[1] ?? '#ffffff'}
-                  oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
-                  class="flex-1 font-mono text-xs" />
-              </div>
-            </label>
-          </div>
-          {/if}
-        </div>
         {/if}
         {#if showAdvanced}
         <label class="space-y-1 block">
@@ -457,17 +503,99 @@
           <Input type="number" value={item.radius ?? 0} min={0} step={1}
             oninput={(e) => update('radius', e.target.value)} />
         </label>
+        {/if}
+      </section>
+
+      <!-- Fill (continuous meters only — segmented uses gradient stops in the Metric section) -->
+      {#if !(item.segments >= 1)}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Low value</span>
+            <div class="flex gap-1 items-center">
+              <input type="color"
+                value={(meterGradient()[0] ?? item.color ?? '#ffffff').slice(0, 7)}
+                oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
+                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+              <Input value={meterGradient()[0] ?? item.color ?? '#ffffff'}
+                oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
+                class="flex-1 font-mono text-xs min-w-0" />
+            </div>
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">High value</span>
+            <div class="flex gap-1 items-center">
+              <input type="color"
+                value={(meterGradient()[1] ?? item.color ?? '#ffffff').slice(0, 7)}
+                oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
+                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+              <Input value={meterGradient()[1] ?? item.color ?? '#ffffff'}
+                oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
+                class="flex-1 font-mono text-xs min-w-0" />
+            </div>
+          </label>
+        </div>
         <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Track color</span>
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <Input type="number" value={item.fill_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+            oninput={(e) => update('fill_opacity', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+
+      <!-- Background (track — the empty portion of the meter) -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Background</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
           <div class="flex gap-2 items-center">
             <input type="color" value={(item.background ?? '#ffffff').slice(0, 7)}
               oninput={(e) => update('background', e.target.value)}
               class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.background ?? ''} placeholder="none" oninput={(e) => update('background', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
+            <Input value={item.background ?? ''} placeholder="none"
+              oninput={(e) => update('background', e.target.value || undefined)}
+              class="flex-1 font-mono text-xs" />
           </div>
+        </label>
+        {#if item.background}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <Input type="number" value={item.background_opacity ?? 1} min={0} max={1} step={0.05}
+            oninput={(e) => update('background_opacity', e.target.value)} />
         </label>
         {/if}
       </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <div class="flex gap-2 items-center">
+            <input type="color" value={(item.border_color ?? '#ffffff').slice(0, 7)}
+              oninput={(e) => update('border_color', e.target.value)}
+              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+            <Input value={item.border_color ?? ''} placeholder="none"
+              oninput={(e) => update('border_color', e.target.value || undefined)}
+              class="flex-1 font-mono text-xs" />
+          </div>
+        </label>
+        {#if item.border_color}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width (px)</span>
+            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
+              oninput={(e) => update('border_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+            <Input type="number" value={item.border_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+              oninput={(e) => update('border_opacity', e.target.value)} />
+          </label>
+        </div>
+        {/if}
+      </section>
+
     {/if}
 
     <!-- Gauge: metric + range + dial geometry -->
@@ -715,7 +843,7 @@
     {/if}
 
     <!-- Typography (label + value) -->
-    {#if type !== 'plot'}
+    {#if type !== 'plot' && type !== 'rect'}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Typography</p>
         {#if showAdvanced}
@@ -735,7 +863,8 @@
       </section>
     {/if}
 
-    <!-- Appearance -->
+    <!-- Appearance (not shown for rect/meter — they have their own Fill/Border sections) -->
+    {#if type !== 'rect' && type !== 'meter'}
     <section class="mb-4 space-y-2">
       <p class="text-[10px] uppercase tracking-wider text-zinc-600">Appearance</p>
       {#if showAdvanced}
@@ -772,6 +901,7 @@
       </label>
       {/if}
     </section>
+    {/if}
 
     <!-- Value-specific -->
     {#if type === 'value'}

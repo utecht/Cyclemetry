@@ -285,6 +285,30 @@ export function createAppState() {
     config = applyMoves(config, moves)
   }
 
+  // Live element update without touching undo history — use during an
+  // in-progress resize/drag, then call commitElementUpdate on release.
+  function updateElementLive(id, updates) {
+    const found = findElement(id)
+    if (!found) return
+    const elements = [...config.elements]
+    elements[found.idx] = { ...found.el, ...updates }
+    config = { ...config, elements }
+  }
+
+  // Commit an arbitrary element update as one undo step.
+  function commitElementUpdate(preConfigJson, id, updates) {
+    if (!config) return
+    if (preConfigJson) {
+      history = [...history.slice(-(HISTORY_LIMIT - 1)), preConfigJson]
+      redoStack = []
+    }
+    const found = findElement(id)
+    if (!found) return
+    const elements = [...config.elements]
+    elements[found.idx] = { ...found.el, ...updates }
+    config = { ...config, elements }
+  }
+
   // Stable, collision-free id within the config. Keeps the readable
   // `type-N` scheme (matches converted templates / Rust's opaque ids).
   function newElementId(type, elements) {
@@ -751,6 +775,8 @@ export function createAppState() {
     updateElementPositions,
     moveElementPositionsLive,
     commitElementPositions,
+    updateElementLive,
+    commitElementUpdate,
     addElement,
     removeElement,
     deleteSelectedElement,

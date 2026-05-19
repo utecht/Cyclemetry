@@ -15,6 +15,9 @@
     '</svg>'
   )}") 10 10, grab`
 
+  const RESIZE_CURSORS = { tl: 'nw-resize', tr: 'ne-resize', bl: 'sw-resize', br: 'se-resize' }
+  const CORNERS = ['tl', 'tr', 'bl', 'br']
+
   let {
     bounds = { x: 0, y: 0, w: 50, h: 30 },
     label = '',
@@ -24,11 +27,15 @@
     // WebKit's getScreenCTM() omits CSS ancestor transforms, so we correct
     // the delta manually by dividing out the stage zoom.
     zoom = 1,
-    onselect,   // (event) — event carries shiftKey for multi-select
-    ondrag,     // (dx, dy) live, every pointermove
-    ondragend,  // (dx, dy) in scene/overlay coords
-    onrotate,   // (degrees) live, every pointermove
-    onrotateend, // (degrees) committed on pointerup
+    resizable = false,
+    locked = false,
+    onselect,      // (event) — event carries shiftKey for multi-select
+    ondrag,        // (dx, dy) live, every pointermove
+    ondragend,     // (dx, dy) in scene/overlay coords
+    onrotate,      // (degrees) live, every pointermove
+    onrotateend,   // (degrees) committed on pointerup
+    onresize,      // (corner, dx, dy, shiftKey) live, every pointermove
+    onresizeend,   // (corner, dx, dy, shiftKey) committed on pointerup
   } = $props()
 
   let dragging = $state(false)
@@ -62,6 +69,7 @@
   function onpointerdown(e) {
     e.stopPropagation()
     onselect?.(e)
+    if (locked) return   // select is fine; drag is not
     dragging = true
     dragOrigin = { mx: e.clientX, my: e.clientY }
     dragDelta = { dx: 0, dy: 0 }
@@ -116,6 +124,43 @@
     const a = sceneAngle(e.currentTarget.ownerSVGElement, e.clientX, e.clientY)
     onrotateend?.(rotateStartValue + (a - rotateStartAngle))
   }
+
+  // ── Resize handles ────────────────────────────────────────────────────────
+  let resizingCorner = $state(null)
+  let resizeOrigin = { mx: 0, my: 0 }
+  let resizeDelta = $state({ dx: 0, dy: 0 })
+
+  function cornerPointerDown(e, corner) {
+    e.stopPropagation()
+    resizingCorner = corner
+    resizeOrigin = { mx: e.clientX, my: e.clientY }
+    resizeDelta = { dx: 0, dy: 0 }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function cornerPointerMove(e) {
+    if (!resizingCorner) return
+    const svg = e.currentTarget.ownerSVGElement
+    if (!svg) return
+    resizeDelta = screenToOverlayDelta(svg, resizeOrigin.mx, resizeOrigin.my, e.clientX, e.clientY)
+    onresize?.(resizingCorner, resizeDelta.dx, resizeDelta.dy, e.shiftKey)
+  }
+
+  function cornerPointerUp(e) {
+    if (!resizingCorner) return
+    onresizeend?.(resizingCorner, resizeDelta.dx, resizeDelta.dy, e.shiftKey)
+    resizingCorner = null
+    resizeDelta = { dx: 0, dy: 0 }
+  }
+
+  function cornerPos(corner) {
+    switch (corner) {
+      case 'tl': return { x: d.x, y: d.y }
+      case 'tr': return { x: d.x + d.w, y: d.y }
+      case 'bl': return { x: d.x, y: d.y + d.h }
+      case 'br': return { x: d.x + d.w, y: d.y + d.h }
+    }
+  }
 </script>
 
 <g transform="rotate({rotation} {cx} {cy})">
@@ -126,9 +171,9 @@
     width={Math.max(d.w + 8, 24)}
     height={Math.max(d.h + 8, 24)}
     fill="transparent"
-    style="cursor: {dragging ? 'grabbing' : 'grab'}; pointer-events: all; outline: none"
+    style="cursor: {locked ? 'not-allowed' : dragging ? 'grabbing' : 'grab'}; pointer-events: all; outline: none"
     role="button"
-    aria-label="Move {label}"
+    aria-label="{locked ? 'Locked' : 'Move'} {label}"
     tabindex="0"
     {onpointerdown}
     {onpointermove}
@@ -142,7 +187,7 @@
     width={Math.max(d.w, 4)}
     height={Math.max(d.h, 4)}
     fill="none"
-    stroke={selected ? '#DC143C' : 'rgba(255,255,255,0.25)'}
+    stroke={selected ? (locked ? '#F59E0B' : '#DC143C') : 'rgba(255,255,255,0.25)'}
     stroke-width={selected ? 1.5 : 1}
     stroke-dasharray={selected ? 'none' : '4 3'}
     rx="2"
@@ -170,12 +215,9 @@
     >{label}</text>
 
     <!-- Corner handles -->
-    {#each [
-      [d.x, d.y],
-      [d.x + d.w, d.y],
-      [d.x, d.y + d.h],
-      [d.x + d.w, d.y + d.h],
-    ] as [hx, hy], i (i)}
+    {#each CORNERS as corner (corner)}
+      {@const { x: hx, y: hy } = cornerPos(corner)}
+      <!-- Visual dot -->
       <rect
         x={hx - 3}
         y={hy - 3}
@@ -185,6 +227,20 @@
         rx="1"
         style="pointer-events: none"
       />
+      <!-- Resize hit area (resizable elements only) -->
+      {#if resizable}
+        <rect
+          x={hx - 12}
+          y={hy - 12}
+          width={24}
+          height={24}
+          fill="transparent"
+          style="cursor: {RESIZE_CURSORS[corner]}; pointer-events: all"
+          onpointerdown={(e) => cornerPointerDown(e, corner)}
+          onpointermove={cornerPointerMove}
+          onpointerup={cornerPointerUp}
+        />
+      {/if}
     {/each}
 
     <!-- Rotation stem -->

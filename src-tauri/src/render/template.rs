@@ -54,6 +54,7 @@ pub enum Element {
     Plot(PlotConfig),
     Meter(MeterConfig),
     Gauge(GaugeConfig),
+    Rect(RectConfig),
 }
 
 impl Element {
@@ -64,6 +65,7 @@ impl Element {
             Element::Plot(c) => &c.id,
             Element::Meter(c) => &c.id,
             Element::Gauge(c) => &c.id,
+            Element::Rect(c) => &c.id,
         }
     }
 
@@ -110,6 +112,7 @@ impl Element {
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.radius = c.radius.map(|v| v * f32f);
                 c.gap = c.gap.map(|v| v * f32f);
+                c.border_width = c.border_width.map(|v| v * f32f);
             }
             Element::Gauge(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -118,6 +121,14 @@ impl Element {
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.arc_width = c.arc_width.map(|v| v * f32f);
                 c.needle_width = c.needle_width.map(|v| v * f32f);
+            }
+            Element::Rect(c) => {
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
+                c.width = (c.width as f64 * factor).round() as u32;
+                c.height = (c.height as f64 * factor).round() as u32;
+                c.radius = c.radius.map(|v| v * f32f);
+                c.border_width = c.border_width.map(|v| v * f32f);
             }
         }
     }
@@ -238,6 +249,12 @@ pub struct MeterConfig {
     pub gradient: Option<Vec<String>>,
     /// Optional track (empty portion) color; omitted = no track drawn.
     pub background: Option<String>,
+    /// Opacity for the track only (0–1), fully independent of the fill.
+    /// Unset = fully opaque (the track color's own alpha applies).
+    pub background_opacity: Option<f32>,
+    /// Opacity for the filled portion only (0–1). Primary fill-alpha control;
+    /// falls back to `opacity` when unset. Independent of `background_opacity`.
+    pub fill_opacity: Option<f32>,
     pub opacity: Option<f32>,
     /// Corner radius in px (rounded rect). Default 0 (sharp corners).
     pub radius: Option<f32>,
@@ -248,6 +265,12 @@ pub struct MeterConfig {
     pub gap: Option<f32>,
     /// Clockwise rotation in degrees around the element center. Default 0.
     pub rotation: Option<f32>,
+    /// When set, draws a border around the entire meter bounding box.
+    pub border_color: Option<String>,
+    /// Border stroke width in px. Default 2.
+    pub border_width: Option<f32>,
+    /// Border opacity (0–1). Falls back to `opacity` when unset.
+    pub border_opacity: Option<f32>,
 }
 
 /// A circular dial: an arc track plus a needle that points to the current
@@ -277,6 +300,38 @@ pub struct GaugeConfig {
     pub needle_color: Option<String>,
     pub needle_width: Option<f32>,
     pub opacity: Option<f32>,
+    /// Clockwise rotation in degrees around the element center. Default 0.
+    pub rotation: Option<f32>,
+}
+
+/// A static rectangle. Supports solid fill, stroke border, rounded corners,
+/// and rotation. Fill and border opacities are independently controllable:
+/// `fill_opacity` × `opacity` gives effective fill alpha; `opacity` alone
+/// gates the border — so setting `fill_opacity: 0` with `opacity: 1` draws
+/// an outline-only rectangle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RectConfig {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Fill color. Default white.
+    pub color: Option<String>,
+    /// Master element opacity (0–1). Multiplies fill_opacity for the fill;
+    /// applied directly to the border. Default 1.
+    pub opacity: Option<f32>,
+    /// Fill-specific opacity multiplier (0–1). Effective fill alpha =
+    /// fill_opacity × opacity. Default 1 (fill fully visible).
+    pub fill_opacity: Option<f32>,
+    /// Border stroke color. When unset no border is drawn.
+    pub border_color: Option<String>,
+    /// Border stroke width in px. Default 2.
+    pub border_width: Option<f32>,
+    /// Border opacity (0–1). Falls back to `opacity` when unset.
+    pub border_opacity: Option<f32>,
+    /// Corner radius in px. Default 0 (sharp corners).
+    pub radius: Option<f32>,
     /// Clockwise rotation in degrees around the element center. Default 0.
     pub rotation: Option<f32>,
 }

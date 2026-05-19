@@ -9,7 +9,8 @@ use crate::render::activity::{Activity, ATTR_DISTANCE};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
-    Element, GaugeConfig, LabelConfig, MeterConfig, PlotConfig, SceneConfig, Template, ValueConfig,
+    Element, GaugeConfig, LabelConfig, MeterConfig, PlotConfig, RectConfig, SceneConfig, Template,
+    ValueConfig,
 };
 use crate::render::units;
 
@@ -76,6 +77,7 @@ impl Element {
             Element::Plot(c) => c,
             Element::Meter(c) => c,
             Element::Gauge(c) => c,
+            Element::Rect(c) => c,
         }
     }
 }
@@ -343,25 +345,55 @@ impl MeterConfig {
         }
     }
 
+    /// Draw a border around the full meter rect, entirely outside the bounding
+    /// box (same outside-stroke technique as RectConfig).
+    fn draw_border(&self, canvas: &Canvas, paint: &mut Paint, radius: f32) {
+        let Some(bc) = self.border_color.as_deref() else {
+            return;
+        };
+        let bw = self.border_width.unwrap_or(2.0);
+        let half = bw / 2.0;
+        let outer = Rect::from_xywh(
+            self.x as f32 - half,
+            self.y as f32 - half,
+            self.width as f32 + bw,
+            self.height as f32 + bw,
+        );
+        let border_op = self.border_opacity.or(self.opacity);
+        let (r, g, b, a) = hex_with_opacity(bc, border_op);
+        paint.set_shader(None);
+        paint.set_color(Color::from_argb(a, r, g, b));
+        paint.set_style(skia_safe::paint::Style::Stroke);
+        paint.set_stroke_width(bw);
+        if radius > 0.0 {
+            canvas.draw_rrect(
+                RRect::new_rect_xy(outer, radius + half, radius + half),
+                paint,
+            );
+        } else {
+            canvas.draw_rect(outer, paint);
+        }
+    }
+
     fn draw_segmented(&self, canvas: &Canvas, paint: &mut Paint, n: u32, frac: f32, radius: f32) {
         let gap = self.gap.unwrap_or(0.0).max(0.0);
         let lit = (frac * n as f32).round() as u32;
         let grad = self.gradient.as_ref().filter(|g| !g.is_empty());
         for i in 0..n {
             let color = if i < lit {
+                let fill_op = self.fill_opacity.or(self.opacity);
                 let (r, g, b, a) = match grad {
                     Some(stops) => {
                         let t = (i as f32 + 0.5) / n as f32;
-                        lerp_gradient(stops, t, self.opacity)
+                        lerp_gradient(stops, t, fill_op)
                     }
-                    None => {
-                        hex_with_opacity(self.color.as_deref().unwrap_or("#ffffff"), self.opacity)
-                    }
+                    None => hex_with_opacity(self.color.as_deref().unwrap_or("#ffffff"), fill_op),
                 };
                 Some(Color::from_argb(a, r, g, b))
             } else {
                 self.background.as_deref().map(|bg| {
-                    let (r, g, b, a) = hex_with_opacity(bg, self.opacity);
+                    let bg_opacity = self.background_opacity;
+                    let (r, g, b, a) = hex_with_opacity(bg, bg_opacity);
                     Color::from_argb(a, r, g, b)
                 })
             };
@@ -405,6 +437,7 @@ impl OverlayElement for MeterConfig {
         if let Some(n) = self.segments.filter(|n| *n >= 1) {
             let frac = self.fraction(ctx.activity, frame_idx);
             self.draw_segmented(canvas, &mut paint, n, frac, radius);
+            self.draw_border(canvas, &mut paint, radius);
             if rotation != 0.0 {
                 canvas.restore();
             }
@@ -413,7 +446,8 @@ impl OverlayElement for MeterConfig {
 
         // Track (empty portion), if a background color is set.
         if let Some(bg) = self.background.as_deref() {
-            let (r, g, b, a) = hex_with_opacity(bg, self.opacity);
+            let bg_opacity = self.background_opacity;
+            let (r, g, b, a) = hex_with_opacity(bg, bg_opacity);
             paint.set_color(Color::from_argb(a, r, g, b));
             if radius > 0.0 {
                 canvas.draw_rrect(RRect::new_rect_xy(self.rect(), radius, radius), &paint);
@@ -428,22 +462,42 @@ impl OverlayElement for MeterConfig {
             let fr = self.fill_rect(frac);
 
             if let Some(stops) = self.gradient.as_ref().filter(|g| g.len() >= 2) {
-                // Linear gradient anchored to element bounds (left→right) so the
-                // color at any horizontal position is stable as the fill grows.
-                let x0 = self.x as f32;
-                let x1 = x0 + self.width as f32;
-                let y = self.y as f32 + self.height as f32 / 2.0;
+                // Direction-aware gradient anchored to the full element bounds so
+                // the gradient position is stable as the fill grows — a half-full
+                // "up" meter shows the low-value colors at the bottom.
+                let cx = self.x as f32 + self.width as f32 / 2.0;
+                let cy = self.y as f32 + self.height as f32 / 2.0;
+                let (p0, p1) = match self.direction.as_deref().unwrap_or("up") {
+                    "down" => (
+                        skia_safe::Point::new(cx, self.y as f32),
+                        skia_safe::Point::new(cx, self.y as f32 + self.height as f32),
+                    ),
+                    "right" => (
+                        skia_safe::Point::new(self.x as f32, cy),
+                        skia_safe::Point::new(self.x as f32 + self.width as f32, cy),
+                    ),
+                    "left" => (
+                        skia_safe::Point::new(self.x as f32 + self.width as f32, cy),
+                        skia_safe::Point::new(self.x as f32, cy),
+                    ),
+                    // "up": low color at bottom (fill grows upward), high at top.
+                    _ => (
+                        skia_safe::Point::new(cx, self.y as f32 + self.height as f32),
+                        skia_safe::Point::new(cx, self.y as f32),
+                    ),
+                };
+                let fill_op = self.fill_opacity.or(self.opacity);
                 let n = stops.len();
                 let colors: Vec<Color> = stops
                     .iter()
                     .map(|s| {
-                        let (r, g, b, a) = hex_with_opacity(s, self.opacity);
+                        let (r, g, b, a) = hex_with_opacity(s, fill_op);
                         Color::from_argb(a, r, g, b)
                     })
                     .collect();
                 let pos: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
                 let shader = skia_safe::gradient_shader::linear(
-                    (skia_safe::Point::new(x0, y), skia_safe::Point::new(x1, y)),
+                    (p0, p1),
                     skia_safe::gradient_shader::GradientShaderColors::Colors(&colors),
                     Some(pos.as_slice()),
                     skia_safe::TileMode::Clamp,
@@ -451,9 +505,14 @@ impl OverlayElement for MeterConfig {
                     None,
                 );
                 paint.set_shader(shader);
+                // A shader's output is still modulated by the paint's alpha.
+                // The background draw above may have left a low/zero alpha, so
+                // reset to opaque — the fill's own alpha is baked into the stops.
+                paint.set_alpha(255);
             } else {
                 let color_str = self.color.as_deref().unwrap_or("#ffffff");
-                let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+                let fill_op = self.fill_opacity.or(self.opacity);
+                let (r, g, b, a) = hex_with_opacity(color_str, fill_op);
                 paint.set_color(Color::from_argb(a, r, g, b));
             }
 
@@ -464,6 +523,8 @@ impl OverlayElement for MeterConfig {
             }
             paint.set_shader(None);
         }
+
+        self.draw_border(canvas, &mut paint, radius);
 
         if rotation != 0.0 {
             canvas.restore();
@@ -563,6 +624,103 @@ impl OverlayElement for GaugeConfig {
         // Hub.
         needle.set_style(skia_safe::paint::Style::Fill);
         canvas.draw_circle((cx, cy), needle_w * 1.5, &needle);
+
+        if rotation != 0.0 {
+            canvas.restore();
+        }
+    }
+}
+
+// ─── Rect ──────────────────────────────────────────────────────────────────
+
+impl OverlayElement for RectConfig {
+    fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: self.x as f32,
+            y: self.y as f32,
+            w: self.width as f32,
+            h: self.height as f32,
+        })
+    }
+
+    fn crop_extent(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<(f32, f32, f32, f32)> {
+        let rot = self.rotation.unwrap_or(0.0);
+        if rot != 0.0 {
+            let cx = self.x as f32 + self.width as f32 / 2.0;
+            let cy = self.y as f32 + self.height as f32 / 2.0;
+            let r = ((self.width as f32).powi(2) + (self.height as f32).powi(2)).sqrt() / 2.0;
+            Some((cx - r, cy - r, cx + r, cy + r))
+        } else {
+            Some((
+                self.x as f32,
+                self.y as f32,
+                self.x as f32 + self.width as f32,
+                self.y as f32 + self.height as f32,
+            ))
+        }
+    }
+
+    fn draw(&self, canvas: &Canvas, _ctx: &ElementCtx, _frame_idx: usize) {
+        let rotation = self.rotation.unwrap_or(0.0);
+        let rect = Rect::from_xywh(
+            self.x as f32,
+            self.y as f32,
+            self.width as f32,
+            self.height as f32,
+        );
+        if rotation != 0.0 {
+            let cx = self.x as f32 + self.width as f32 / 2.0;
+            let cy = self.y as f32 + self.height as f32 / 2.0;
+            canvas.save();
+            canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
+        }
+
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        let radius = self.radius.unwrap_or(0.0);
+
+        // fill_opacity is the primary fill control; opacity is the fallback
+        // and also gates the border. They are NOT multiplied — set fill_opacity
+        // to 0 for a transparent fill while keeping opacity:1 for a visible border.
+        let fill_op = self.fill_opacity.or(self.opacity);
+        let color_str = self.color.as_deref().unwrap_or("#ffffff");
+        let (r, g, b, a) = hex_with_opacity(color_str, fill_op);
+        paint.set_color(Color::from_argb(a, r, g, b));
+        paint.set_style(skia_safe::paint::Style::Fill);
+        if radius > 0.0 {
+            canvas.draw_rrect(RRect::new_rect_xy(rect, radius, radius), &paint);
+        } else {
+            canvas.draw_rect(rect, &paint);
+        }
+
+        // Border stroke — drawn outside the fill rect so the element's
+        // bounding box is the inner edge of the stroke, not the center.
+        // Skia strokes are centered by default, so we expand the rect by
+        // half the stroke width on every side to achieve an outside stroke.
+        if let Some(bc) = self.border_color.as_deref() {
+            let bw = self.border_width.unwrap_or(2.0);
+            let half = bw / 2.0;
+            let outer = Rect::from_xywh(
+                self.x as f32 - half,
+                self.y as f32 - half,
+                self.width as f32 + bw,
+                self.height as f32 + bw,
+            );
+            let border_op = self.border_opacity.or(self.opacity);
+            let (r, g, b, a) = hex_with_opacity(bc, border_op);
+            paint.set_color(Color::from_argb(a, r, g, b));
+            paint.set_style(skia_safe::paint::Style::Stroke);
+            paint.set_stroke_width(bw);
+            if radius > 0.0 {
+                canvas.draw_rrect(
+                    RRect::new_rect_xy(outer, radius + half, radius + half),
+                    &paint,
+                );
+            } else {
+                canvas.draw_rect(outer, &paint);
+            }
+        }
 
         if rotation != 0.0 {
             canvas.restore();

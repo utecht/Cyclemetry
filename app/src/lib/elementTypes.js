@@ -85,7 +85,9 @@ export const ADD_PRESETS = [
       max: 60,
       direction: 'up',
       color: '#ffffff',
-      background: '#ffffff33',
+      fill_opacity: 1,
+      background: '#ffffff',
+      background_opacity: 0.2,
       opacity: 1,
       radius: 8,
     }),
@@ -112,6 +114,22 @@ export const ADD_PRESETS = [
       needle_color: '#ef4444',
       needle_width: 6,
       opacity: 1,
+    }),
+  },
+  {
+    key: 'rect',
+    type: 'rect',
+    icon: 'rect',
+    title: 'Add rectangle',
+    defaults: () => ({
+      x: 100,
+      y: 100,
+      width: 300,
+      height: 200,
+      color: '#ffffff',
+      fill_opacity: 0.3,
+      opacity: 1,
+      radius: 0,
     }),
   },
 ]
@@ -145,6 +163,8 @@ export function elementMeta(el) {
       kind: 'gauge',
       unit: el.unit ?? null,
     }
+  if (el.type === 'rect')
+    return { icon: 'rect', name: 'rectangle', kind: 'rect', unit: null }
   // plot
   if (el.value === 'course')
     return { icon: 'map', name: 'map', kind: 'map', unit: null }
@@ -157,5 +177,6 @@ export function elementTypeName(el) {
   if (el?.type === 'value') return 'Metric Value'
   if (el?.type === 'meter') return 'Fill Meter'
   if (el?.type === 'gauge') return 'Gauge'
+  if (el?.type === 'rect') return 'Rectangle'
   return el?.value === 'course' ? 'Map' : 'Chart'
 }

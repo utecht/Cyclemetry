@@ -80,6 +80,13 @@
           w: el.width ?? 400,
           h: el.height ?? 150,
         })
+      } else if (el.type === 'rect') {
+        byId[id] = boundsFor(id) ?? fb({
+          id,
+          x: el.x ?? 100, y: el.y ?? 100,
+          w: el.width ?? 300,
+          h: el.height ?? 200,
+        })
       }
     }
     return [...(app.elementLayerOrder ?? [])]
@@ -94,6 +101,7 @@
     if (el.type === 'value') return el.value ?? 'value'
     if (el.type === 'meter') return `${el.value} meter`
     if (el.type === 'gauge') return `${el.value} gauge`
+    if (el.type === 'rect') return 'rect'
     return `${el.value} chart`
   }
 
@@ -134,7 +142,7 @@
 
   function getRotation(id) {
     const el = elById(id)
-    if (!el || !['plot', 'meter', 'gauge'].includes(el.type)) return 0
+    if (!el || !['plot', 'meter', 'gauge', 'rect'].includes(el.type)) return 0
     return el.rotation ?? 0
   }
 
@@ -150,7 +158,7 @@
   function handleRotateEnd(id, degrees) {
     liveRotation = null
     const el = elById(id)
-    if (!el || !['plot', 'meter', 'gauge'].includes(el.type)) return
+    if (!el || !['plot', 'meter', 'gauge', 'rect'].includes(el.type)) return
     app.updateElement(id, { rotation: Math.round(degrees) })
   }
 
@@ -177,7 +185,7 @@
     const baseElements = new SvelteMap()
     for (const sid of ids) {
       const item = elById(sid)
-      if (!item) continue
+      if (!item || item.locked) continue
       positions.set(sid, { id: sid, x: item.x ?? 0, y: item.y ?? 0 })
       const elData = elements.find(e => e.id === sid)
       if (elData) baseElements.set(sid, { id: sid, x: elData.x, y: elData.y, w: elData.w, h: elData.h })
@@ -187,34 +195,30 @@
   }
 
   // Crop each dragged element out of the current rendered frame so its real
-  // pixels can be floated under the cursor. Async (image decode); guarded so a
-  // click or a drag that ends before decode leaves no stale snapshot.
-  async function buildDragSnaps(ids) {
+  // pixels can be floated under the cursor. Uses SVG viewBox clipping so the
+  // original frame image is referenced directly — no canvas re-encode that
+  // corrupts semi-transparent pixels via premultiplied alpha.
+  function buildDragSnaps(ids) {
     if (!frameImage) return
-    const img = new Image()
-    img.src = frameImage
-    try {
-      await img.decode()
-    } catch {
-      return
-    }
-    if (!dragBase) return
-    const PAD = 2
     for (const id of ids) {
-      const b = dragBase.baseElements.get(id)
+      const b = dragBase?.baseElements.get(id)
       if (!b) continue
-      const sx = Math.max(0, Math.floor(b.x - PAD))
-      const sy = Math.max(0, Math.floor(b.y - PAD))
-      const sw = Math.min(img.width - sx, Math.ceil(b.w + PAD * 2))
-      const sh = Math.min(img.height - sy, Math.ceil(b.h + PAD * 2))
+      const el = elById(id)
+      // Outside-stroke borders extend beyond element bounds by border_width px;
+      // use a pad large enough to capture the full border.
+      const hasBorder = (el?.type === 'rect' || el?.type === 'meter') && el.border_color
+      const pad = hasBorder
+        ? Math.max(2, (el.border_width ?? 2) + 2)
+        : 2
+      const sx = Math.max(0, Math.floor(b.x - pad))
+      const sy = Math.max(0, Math.floor(b.y - pad))
+      const sw = Math.min(sceneWidth - sx, Math.ceil(b.w + pad * 2))
+      const sh = Math.min(sceneHeight - sy, Math.ceil(b.h + pad * 2))
       if (sw <= 0 || sh <= 0) continue
-      const c = document.createElement('canvas')
-      c.width = sw
-      c.height = sh
-      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
       const prev = dragSnaps.get(id)
       dragSnaps.set(id, {
-        url: c.toDataURL(),
+        url: frameImage,
+        sx, sy, sw, sh,
         baseX: sx,
         baseY: sy,
         x: prev?.x ?? sx,
@@ -276,6 +280,94 @@
       return { dx: liveGroup.dx, dy: liveGroup.dy }
     }
     return { dx: 0, dy: 0 }
+  }
+
+  // ── Resize ────────────────────────────────────────────────────────────────
+  // Captured at the start of a resize so deltas are always relative to the
+  // original authored dimensions, not intermediate live-updated values.
+  let resizeBase = $state(null) // { preConfig, id, origX, origY, origW, origH }
+
+  function applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey) {
+    const s = authorScale || 1
+    // dx/dy are in output px; element coords are authored → undo the scale.
+    const adx = dx / s
+    const ady = dy / s
+
+    // Raw dimension change per corner (positive = larger)
+    let dw, dh
+    switch (corner) {
+      case 'br': dw =  adx; dh =  ady; break
+      case 'bl': dw = -adx; dh =  ady; break
+      case 'tr': dw =  adx; dh = -ady; break
+      case 'tl': dw = -adx; dh = -ady; break
+      default:   dw =  adx; dh =  ady
+    }
+
+    let newW = origW + dw
+    let newH = origH + dh
+
+    if (shiftKey && origW > 0 && origH > 0) {
+      const ratio = origW / origH
+      // Lock aspect: project onto dominant axis
+      if (Math.abs(dw / origW) >= Math.abs(dh / origH)) {
+        newH = newW / ratio
+      } else {
+        newW = newH * ratio
+      }
+    }
+
+    // Minimum size
+    newW = Math.max(newW, 4)
+    newH = Math.max(newH, 4)
+
+    // Compute x/y: the corner opposite to the dragged one is fixed.
+    let newX = origX, newY = origY
+    switch (corner) {
+      case 'br': /* top-left fixed — x/y unchanged */                         break
+      case 'bl': newX = origX + origW - newW;                                 break
+      case 'tr':                               newY = origY + origH - newH;   break
+      case 'tl': newX = origX + origW - newW; newY = origY + origH - newH;   break
+    }
+
+    return {
+      x: Math.round(newX),
+      y: Math.round(newY),
+      width:  Math.round(newW),
+      height: Math.round(newH),
+    }
+  }
+
+  function handleResize(id, corner, dx, dy, shiftKey) {
+    if (!resizeBase) {
+      const el = elById(id)
+      if (!el) return
+      resizeBase = {
+        preConfig: JSON.stringify(app.config),
+        id,
+        origX: el.x ?? 0,
+        origY: el.y ?? 0,
+        origW: el.width ?? 100,
+        origH: el.height ?? 100,
+      }
+    }
+    const { origX, origY, origW, origH } = resizeBase
+    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey)
+    app.updateElementLive(id, updates)
+    // Mark stale so config-derived bounds are used until the next render.
+    const next = new SvelteSet(movedIds)
+    next.add(id)
+    movedIds = next
+  }
+
+  function handleResizeEnd(id, corner, dx, dy, shiftKey) {
+    if (!resizeBase) return
+    const { preConfig, origX, origY, origW, origH } = resizeBase
+    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey)
+    app.commitElementUpdate(preConfig, id, updates)
+    resizeBase = null
+    const next = new SvelteSet(movedIds)
+    next.add(id)
+    movedIds = next
   }
 
   // ── Marquee (rubber-band) selection ───────────────────────────────────────
@@ -368,18 +460,29 @@
   />
 
   <!-- Cropped real pixels of the dragged element(s), under the handle boxes
-       so the border/handles stay on top. -->
+       so the border/handles stay on top. Nested SVG viewBox clips the full
+       frame image to the element region without re-encoding, preserving
+       semi-transparent pixels correctly. -->
   {#each [...dragSnaps] as [sid, s] (sid)}
-    <image
-      href={s.url}
-      xlink:href={s.url}
+    <svg
       x={s.x}
       y={s.y}
       width={s.w}
       height={s.h}
-      preserveAspectRatio="none"
+      viewBox="{s.sx} {s.sy} {s.sw} {s.sh}"
+      overflow="hidden"
       style="pointer-events:none"
-    />
+    >
+      <image
+        href={s.url}
+        x="0"
+        y="0"
+        width={sceneWidth}
+        height={sceneHeight}
+        preserveAspectRatio="none"
+        style="pointer-events:none"
+      />
+    </svg>
   {/each}
 
   {#each elements as el (el.id)}
@@ -391,11 +494,15 @@
       rotation={rotationFor(el.id)}
       groupOffset={groupOffsetFor(el.id)}
       {zoom}
+      resizable={elById(el.id)?.type === 'rect'}
+      locked={elById(el.id)?.locked === true}
       onselect={(e) => handleSelect(el.id, e)}
       ondrag={(dx, dy) => handleDrag(el.id, dx, dy)}
       ondragend={(dx, dy) => handleDragEnd(el.id, dx, dy)}
       onrotate={(deg) => handleRotate(el.id, deg)}
       onrotateend={(deg) => handleRotateEnd(el.id, deg)}
+      onresize={(corner, dx, dy, shift) => handleResize(el.id, corner, dx, dy, shift)}
+      onresizeend={(corner, dx, dy, shift) => handleResizeEnd(el.id, corner, dx, dy, shift)}
     />
   {/each}
 
