@@ -21,6 +21,9 @@
     selected = false,
     rotation = 0,
     groupOffset = { dx: 0, dy: 0 },  // live offset when another group member is dragging
+    // WebKit's getScreenCTM() omits CSS ancestor transforms, so we correct
+    // the delta manually by dividing out the stage zoom.
+    zoom = 1,
     onselect,   // (event) — event carries shiftKey for multi-select
     ondrag,     // (dx, dy) live, every pointermove
     ondragend,  // (dx, dy) in scene/overlay coords
@@ -51,7 +54,9 @@
     const inv = ctm.inverse()
     const p0 = new DOMPoint(mx0, my0).matrixTransform(inv)
     const p1 = new DOMPoint(mx1, my1).matrixTransform(inv)
-    return { dx: p1.x - p0.x, dy: p1.y - p0.y }
+    // Divide by zoom: WebKit's getScreenCTM() doesn't include CSS ancestor
+    // transforms, so without this the delta is zoom× too large when zoomed in.
+    return { dx: (p1.x - p0.x) / zoom, dy: (p1.y - p0.y) / zoom }
   }
 
   function onpointerdown(e) {

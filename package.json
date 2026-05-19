@@ -5,7 +5,7 @@
     "dev": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev",
     "build": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri build",
     "lint": "pnpm --dir app lint",
-    "format": "pnpm --dir app format",
+    "format": "pnpm --dir app format && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "release": "pnpm --dir app release"
   },
   "packageManager": "pnpm@10.25.0"

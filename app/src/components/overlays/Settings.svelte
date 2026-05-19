@@ -9,13 +9,6 @@
 
   const PREVIEW_FPS_OPTIONS = [1, 5, 10, 15, 30]
 
-  const RESOLUTIONS = [
-    { label: '4K',    w: 3840, h: 2160 },
-    { label: '1080p', w: 1920, h: 1080 },
-    { label: '720p',  w: 1280, h: 720  },
-    { label: '480p',  w: 854,  h: 480  },
-  ]
-
   const formatHomePath = (path) => {
     if (!path) return ''
     const macHome = path.match(/^\/Users\/([^/]+)/)
@@ -108,27 +101,6 @@
                   : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
             >
               {fps} fps
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      <!-- Output resolution -->
-      <div class="space-y-2">
-        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Output Resolution</p>
-        <p class="text-[11px] text-zinc-500">Target resolution for rendered videos. Templates scale from their authored size.</p>
-        <div class="flex gap-1.5">
-          {#each RESOLUTIONS as r (r.label)}
-            {@const active = app.outputWidth === r.w && app.outputHeight === r.h}
-            <button
-              onclick={() => { app.outputWidth = r.w; app.outputHeight = r.h }}
-              class="flex-1 rounded-lg border py-2 text-xs font-medium transition-colors
-                {active
-                  ? 'border-zinc-400 text-zinc-100 bg-zinc-700'
-                  : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
-            >
-              <div>{r.label}</div>
-              <div class="text-[10px] font-normal mt-0.5 opacity-60">{r.w}×{r.h}</div>
             </button>
           {/each}
         </div>

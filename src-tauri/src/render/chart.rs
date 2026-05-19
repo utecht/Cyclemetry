@@ -359,12 +359,33 @@ impl ChartCache {
                 let (line_h, _) = font.metrics();
                 let n = units.len() as f32;
 
+                // Pre-format all lines and find max width to decide which side
+                // to place the label block. Near the right edge the block flips
+                // left so it never overflows the chart surface.
+                let lines: Vec<String> = units
+                    .iter()
+                    .map(|unit| format_point_label(raw, &self.value_attr, unit, dec))
+                    .collect();
+                let max_text_w = lines
+                    .iter()
+                    .map(|t| font.measure_str(t.as_str(), Some(&paint)).0)
+                    .fold(0.0_f32, f32::max);
+
+                let chart_right = self.x_offset as f32 + self.plot_bounds.right;
+                let flip_left = abs_pt.x + xo + max_text_w > chart_right;
+
                 // Stack the block above the marker: last line sits `yo` above
-                // the dot, earlier lines higher; `xo` shifts right.
-                for (i, unit) in units.iter().enumerate() {
-                    let text = format_point_label(raw, &self.value_attr, unit, dec);
+                // the dot, earlier lines higher. When flipped, each line is
+                // right-aligned to the left side of the marker.
+                for (i, text) in lines.iter().enumerate() {
+                    let text_w = font.measure_str(text.as_str(), Some(&paint)).0;
+                    let label_x = if flip_left {
+                        abs_pt.x - xo - text_w
+                    } else {
+                        abs_pt.x + xo
+                    };
                     let baseline_y = abs_pt.y - yo - (n - 1.0 - i as f32) * line_h;
-                    canvas.draw_str(&text, (abs_pt.x + xo, baseline_y), &font, &paint);
+                    canvas.draw_str(text.as_str(), (label_x, baseline_y), &font, &paint);
                 }
             }
         }

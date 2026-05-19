@@ -1,7 +1,7 @@
 <script>
   import { getContext, onMount } from 'svelte'
   import * as backend from '@/api/backend.js'
-  import { X } from 'lucide-svelte'
+  import { X, Trash2 } from 'lucide-svelte'
 
   const app = getContext('app')
   let { onclose } = $props()
@@ -186,10 +186,14 @@
                     <button
                       onclick={() => (confirmingDelete = tpl.id)}
                       disabled={busy}
-                      class="shrink-0 text-[10px] text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-1"
+                      class="shrink-0 p-1 rounded text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
                       title="Delete template"
                     >
-                      {busy ? '…' : '✕'}
+                      {#if busy}
+                        <span class="text-[10px]">…</span>
+                      {:else}
+                        <Trash2 size={13} />
+                      {/if}
                     </button>
                   {/if}
                 </div>
