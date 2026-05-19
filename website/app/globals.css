@@ -54,10 +54,18 @@ kbd {
   font-family: var(--font-mono);
 }
 
-/* Navbar logo accent dot */
-.cyclemetry-logo-dot {
-  color: var(--color-accent);
-  margin-right: 6px;
+.cyclemetry-navbar-logo {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+  gap: 0.5rem;
+}
+
+.cyclemetry-navbar-logo-mark {
+  display: block;
+  flex: 0 0 auto;
+  height: 1.5rem;
+  width: 1.5rem;
 }
 
 /* Blog post meta (date, etc.) */

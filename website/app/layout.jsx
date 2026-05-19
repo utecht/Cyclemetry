@@ -31,8 +31,8 @@ export const metadata = {
 const navbar = (
   <Navbar
     logo={
-      <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ color: '#dc143c', fontSize: '1.1em', lineHeight: 1 }}>■</span>
+      <span className="cyclemetry-navbar-logo">
+        <img src="/logo.png" alt="" width="24" height="24" className="cyclemetry-navbar-logo-mark" />
         Cyclemetry
       </span>
     }
@@ -60,7 +60,9 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head>
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/logo.png?v=2" />
+        <link rel="icon" href="/favicon.ico?v=2" />
+        <link rel="shortcut icon" href="/favicon.ico?v=2" />
       </Head>
       <body>
         <Layout
