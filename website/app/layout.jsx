@@ -1,6 +1,7 @@
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
+import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
 
@@ -65,6 +66,11 @@ export default async function RootLayout({ children }) {
         <link rel="shortcut icon" href="/favicon.ico?v=2" />
       </Head>
       <body>
+        <Script
+          data-goatcounter="https://cyclemetry.goatcounter.com/count"
+          src="https://gc.zgo.at/count.js"
+          strategy="afterInteractive"
+        />
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
