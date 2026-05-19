@@ -109,6 +109,7 @@ impl Element {
                 c.width = (c.width as f64 * factor).round() as u32;
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.radius = c.radius.map(|v| v * f32f);
+                c.gap = c.gap.map(|v| v * f32f);
             }
             Element::Gauge(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -229,13 +230,22 @@ pub struct MeterConfig {
     /// Fill growth direction: "up" (default), "down", "left", "right".
     pub direction: Option<String>,
     pub unit: Option<String>,
-    /// Fill color.
+    /// Fill color (used when `gradient` is unset).
     pub color: Option<String>,
+    /// Optional ordered color stops interpolated across the meter's value
+    /// range (min→max). When set, each lit portion takes the gradient color
+    /// sampled at its position; overrides `color`.
+    pub gradient: Option<Vec<String>>,
     /// Optional track (empty portion) color; omitted = no track drawn.
     pub background: Option<String>,
     pub opacity: Option<f32>,
     /// Corner radius in px (rounded rect). Default 0 (sharp corners).
     pub radius: Option<f32>,
+    /// When >= 1, render as that many discrete segments instead of one
+    /// continuous fill. Segments light up proportionally to the value.
+    pub segments: Option<u32>,
+    /// Gap in px between segments (only used when `segments` is set).
+    pub gap: Option<f32>,
 }
 
 /// A circular dial: an arc track plus a needle that points to the current

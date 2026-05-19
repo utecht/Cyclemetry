@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::render::activity::{Activity, ATTR_DISTANCE};
 use crate::render::chart::ChartCache;
-use crate::render::color::hex_with_opacity;
+use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
     Element, GaugeConfig, LabelConfig, MeterConfig, PlotConfig, SceneConfig, Template, ValueConfig,
 };
@@ -319,6 +319,63 @@ impl MeterConfig {
             _ => Rect::from_xywh(x, y + h * (1.0 - frac), w, h * frac),
         }
     }
+
+    /// Rect for segment `i` of `n`, where segment 0 is anchored at the
+    /// meter's `min` end (bottom for "up", top for "down", left for
+    /// "right", right for "left").
+    fn segment_rect(&self, i: u32, n: u32, gap: f32) -> Rect {
+        let (x0, y0, w, h) = (
+            self.x as f32,
+            self.y as f32,
+            self.width as f32,
+            self.height as f32,
+        );
+        let dir = self.direction.as_deref().unwrap_or("up");
+        let vertical = matches!(dir, "up" | "down");
+        let axis = if vertical { h } else { w };
+        let seg = ((axis - gap * (n as f32 - 1.0)) / n as f32).max(0.0);
+        let offset = i as f32 * (seg + gap);
+        match dir {
+            "down" => Rect::from_xywh(x0, y0 + offset, w, seg),
+            "right" => Rect::from_xywh(x0 + offset, y0, seg, h),
+            "left" => Rect::from_xywh(x0 + w - offset - seg, y0, seg, h),
+            _ => Rect::from_xywh(x0, y0 + h - offset - seg, w, seg),
+        }
+    }
+
+    fn draw_segmented(&self, canvas: &Canvas, paint: &mut Paint, n: u32, frac: f32, radius: f32) {
+        let gap = self.gap.unwrap_or(0.0).max(0.0);
+        let lit = (frac * n as f32).round() as u32;
+        let grad = self.gradient.as_ref().filter(|g| !g.is_empty());
+        for i in 0..n {
+            let color = if i < lit {
+                let (r, g, b, a) = match grad {
+                    Some(stops) => {
+                        let t = (i as f32 + 0.5) / n as f32;
+                        lerp_gradient(stops, t, self.opacity)
+                    }
+                    None => {
+                        hex_with_opacity(self.color.as_deref().unwrap_or("#ffffff"), self.opacity)
+                    }
+                };
+                Some(Color::from_argb(a, r, g, b))
+            } else {
+                self.background.as_deref().map(|bg| {
+                    let (r, g, b, a) = hex_with_opacity(bg, self.opacity);
+                    Color::from_argb(a, r, g, b)
+                })
+            };
+            if let Some(c) = color {
+                paint.set_color(c);
+                let rect = self.segment_rect(i, n, gap);
+                if radius > 0.0 {
+                    canvas.draw_rrect(RRect::new_rect_xy(rect, radius, radius), paint);
+                } else {
+                    canvas.draw_rect(rect, paint);
+                }
+            }
+        }
+    }
 }
 
 impl OverlayElement for MeterConfig {
@@ -336,6 +393,12 @@ impl OverlayElement for MeterConfig {
         let radius = self.radius.unwrap_or(0.0);
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
+
+        if let Some(n) = self.segments.filter(|n| *n >= 1) {
+            let frac = self.fraction(ctx.activity, frame_idx);
+            self.draw_segmented(canvas, &mut paint, n, frac, radius);
+            return;
+        }
 
         // Track (empty portion), if a background color is set.
         if let Some(bg) = self.background.as_deref() {

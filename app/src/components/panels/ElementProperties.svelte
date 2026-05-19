@@ -81,7 +81,7 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'segments', 'gap']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     app.updateElement(s.id, { [field]: value })
   }
@@ -215,6 +215,28 @@
     }
   }
 
+  // Meter gradient stops (ordered min→max). Absent = solid `color`.
+  function meterGradient() {
+    return selected()?.item.gradient ?? []
+  }
+  function setGradient(stops) {
+    const s = selected()
+    if (!s) return
+    app.updateElement(s.id, { gradient: stops.length ? stops : undefined })
+  }
+  function updateGradientStop(i, val) {
+    const stops = [...meterGradient()]
+    stops[i] = val
+    setGradient(stops)
+  }
+  function addGradientStop() {
+    const stops = meterGradient()
+    setGradient([...stops, stops[stops.length - 1] ?? '#ffffff'])
+  }
+  function removeGradientStop(i) {
+    setGradient(meterGradient().filter((_, idx) => idx !== i))
+  }
+
   // Progressive disclosure: most overlays reuse the same colors/fonts/line
   // weights, so detailed/structural controls hide behind "Advanced".
   let showAdvanced = $state(false)
@@ -346,6 +368,42 @@
             onchange={(v) => update('direction', v)}
           />
         </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Segments</span>
+            <Input type="number" value={item.segments ?? ''} min={0} step={1} placeholder="off"
+              oninput={(e) => update('segments', e.target.value)} />
+          </label>
+          {#if (item.segments ?? 0) >= 1}
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Gap (px)</span>
+            <Input type="number" value={item.gap ?? 0} min={0} step={1}
+              oninput={(e) => update('gap', e.target.value)} />
+          </label>
+          {/if}
+        </div>
+        {#if (item.segments ?? 0) >= 1}
+        <div class="space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-zinc-500">Gradient (min → max)</span>
+            <button type="button" class="text-xs text-primary hover:underline"
+              onclick={addGradientStop}>+ stop</button>
+          </div>
+          {#if meterGradient().length === 0}
+            <p class="text-[10px] text-zinc-600 italic">No stops — uses the solid color below.</p>
+          {/if}
+          {#each meterGradient() as stop, i (i)}
+            <div class="flex gap-2 items-center">
+              <input type="color" value={(stop ?? '#ffffff').slice(0, 7)}
+                oninput={(e) => updateGradientStop(i, e.target.value)}
+                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+              <Input value={stop ?? ''} oninput={(e) => updateGradientStop(i, e.target.value)} class="flex-1 font-mono text-xs" />
+              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1"
+                onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
+            </div>
+          {/each}
+        </div>
+        {/if}
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Corner radius (px)</span>
