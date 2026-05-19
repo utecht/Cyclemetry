@@ -1,0 +1,61 @@
+---
+title: Install on macOS
+description: How to download and install Cyclemetry on macOS — Apple Silicon and Intel Macs supported.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Install on macOS
+
+Cyclemetry runs natively on macOS 12 Monterey and later, on both Apple Silicon (M1/M2/M3/M4) and Intel Macs.
+
+<Steps>
+
+### Download the latest release
+
+Go to [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases) and download the `.dmg` file for your architecture:
+
+- `Cyclemetry_x.x.x_aarch64.dmg` — Apple Silicon (M1 and later)
+- `Cyclemetry_x.x.x_x64.dmg` — Intel
+
+### Open the DMG and drag to Applications
+
+Double-click the `.dmg` to mount it, then drag `Cyclemetry.app` to your `/Applications` folder.
+
+### Remove the quarantine attribute
+
+Because Cyclemetry is not signed with an Apple Developer certificate, macOS will block it from opening by default. Run this command once in Terminal:
+
+```sh
+xattr -cr /Applications/Cyclemetry.app
+```
+
+### Launch Cyclemetry
+
+Open `Cyclemetry.app` from your Applications folder or Spotlight (`⌘ Space`).
+
+</Steps>
+
+## Updates
+
+To check for updates manually, open Cyclemetry and choose **Cyclemetry → Check for Updates** from the menu bar.
+
+New releases should also be pushed to the app automatically. When an update is available, Cyclemetry is expected to show an update prompt on app open, but this automatic prompt still needs verification.
+
+<Callout type="info">
+  **Why the terminal command?** Apple requires a $99/year Developer Program membership to notarize apps for distribution. Rather than pass that cost on through the app price, the workaround above removes the macOS quarantine flag manually. It's a one-time step.
+</Callout>
+
+## Troubleshooting
+
+**"Cyclemetry is damaged and can't be opened"**
+
+This is the Gatekeeper quarantine flag. Run the `xattr -cr` command above and try again.
+
+**"Cyclemetry cannot be opened because the developer cannot be verified"**
+
+Same cause. You can also go to **System Settings → Privacy & Security** and click **Open Anyway** after attempting to launch.
+
+**App opens but render fails**
+
+Make sure your GPX file has timestamped trackpoints (`<trkpt>` elements with `<time>`). Some export tools strip timestamps. Re-export from your device or head unit directly.

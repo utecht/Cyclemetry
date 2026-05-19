@@ -1,0 +1,57 @@
+---
+title: Install on Windows
+description: How to download and install Cyclemetry on Windows.
+---
+
+import { Callout } from 'nextra/components'
+
+# Install on Windows
+
+<Callout type="info">
+  **Windows code signing is in progress.** Until signing is complete, Windows may show a SmartScreen warning because the publisher is unknown.
+</Callout>
+
+## Install
+
+1. Download the Windows artifact from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases).
+2. Unzip the artifact.
+3. Run `Cyclemetry_*_x64-setup.exe`.
+4. If Windows shows "Windows protected your PC", click **More info**.
+5. Confirm the app is `Cyclemetry_*_x64-setup.exe` and the publisher is `Unknown publisher`.
+6. Click **Run anyway**.
+7. Launch Cyclemetry from the Start Menu.
+
+No additional dependencies are required. FFmpeg is bundled with the app.
+
+## Updates
+
+To check for updates manually, open Cyclemetry and choose **Cyclemetry → Check for Updates** from the menu bar.
+
+New releases should also be pushed to the app automatically. When an update is available, Cyclemetry is expected to show an update prompt on app open, but this automatic prompt still needs verification.
+
+## Build From Source
+
+If you prefer to build Cyclemetry yourself:
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v20+)
+- [pnpm](https://pnpm.io/)
+- [Rust](https://www.rust-lang.org/) (via `rustup`)
+- [FFmpeg](https://ffmpeg.org/download.html) — add `ffmpeg.exe` to your `PATH`
+
+### Build Steps
+
+```powershell
+git clone https://github.com/walkersutton/cyclemetry.git
+cd cyclemetry
+pnpm install
+pnpm build
+```
+
+The built installer will appear in `src-tauri/target/release/bundle/`.
+
+## Stay Updated
+
+- ⭐ [Star the repo](https://github.com/walkersutton/cyclemetry) to get notified of releases
+- 👀 Watch → Releases only to get email notifications on new releases

@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+
+  /* Cyclemetry design tokens */
+  --color-bg: #09090b;
+  --color-surface: #18181b;
+  --color-surface-2: #1f1f23;
+  --color-border: #27272a;
+  --color-border-2: #3f3f46;
+  --color-dim: #52525b;
+  --color-muted: #a1a1aa;
+  --color-text: #fafafa;
+  --color-accent: #dc143c;
+  --color-accent-dim: #7f0a22;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+}
+
+/* Override Nextra's theme with Cyclemetry tokens */
+html {
+  font-family: var(--font-sans);
+}
+
+/* Force dark theme */
+html:not(.dark) {
+  --nextra-bg: var(--color-bg) !important;
+}
+
+html.dark {
+  --nextra-bg: var(--color-bg);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+/* Accent color overrides — Nextra uses CSS variables for its primary */
+:root,
+html.dark {
+  --nextra-primary-hue: 348;
+  --nextra-primary-saturation: 83%;
+}
+
+/* Code blocks */
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+/* Navbar logo accent dot */
+.cyclemetry-logo-dot {
+  color: var(--color-accent);
+  margin-right: 6px;
+}
+
+/* Blog post meta (date, etc.) */
+.blog-meta {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  letter-spacing: 0.02em;
+  margin-bottom: 1.5rem;
+}
+
+/* Feature card grid */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.not-found-page {
+  max-width: 42rem;
+  padding: 4rem 1.5rem 6rem;
+}
+
+.not-found-kicker {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+}
+
+.not-found-page h1 {
+  color: var(--color-text);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 0 0 1rem;
+}
+
+.not-found-page p {
+  color: var(--color-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.not-found-actions a {
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.55rem 0.85rem;
+  text-decoration: none;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.not-found-actions a:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

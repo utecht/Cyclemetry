@@ -1,0 +1,42 @@
+---
+title: v0.1.2
+description: Cyclemetry v0.1.2 release notes — GPX waypoint support, Windows build improvements, and rendering fixes.
+---
+
+import { Callout } from 'nextra/components'
+
+# v0.1.2
+
+<div className="blog-meta">Released 2026</div>
+
+<Callout type="info">
+  Download from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases/tag/v0.1.2)
+</Callout>
+
+## What's New
+
+### GPX Waypoint Support
+
+Cyclemetry can now parse GPX files that use `<wpt>` (waypoint) elements in addition to the standard `<trkpt>` (trackpoint) format. This improves compatibility with GPX exports from certain devices and tools that structure their data differently.
+
+### Windows FFmpeg Bundling
+
+The Windows build now bundles FFmpeg directly into the installer — no manual installation of FFmpeg required. This removes a significant friction point for Windows users and brings the installation experience closer to the macOS experience.
+
+### Software Encoding on Windows
+
+Windows builds now use `prores_ks` software-based encoding as a fallback, since hardware-accelerated encoding via VideoToolbox is macOS-only. This ensures render output is consistent across platforms while hardware acceleration is explored for a future release.
+
+## Bug Fixes
+
+- Fixed rendering failures caused by missing codec initialization on Windows
+- Improved error reporting when a render fails — logs are now written to the platform-appropriate app data directory
+
+## Known Issues
+
+- Hardware-accelerated encoding is macOS-only for now; Windows uses software encoding which is slower on long rides
+- Linux support is not yet available
+
+## Upgrading
+
+Download the latest `.dmg` (macOS) or `.msi` (Windows, when available) from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases).

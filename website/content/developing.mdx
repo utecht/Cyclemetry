@@ -1,0 +1,18 @@
+---
+title: Developing Cyclemetry
+description: Notes for developing and debugging Cyclemetry locally and from built app releases.
+---
+
+# Developing
+
+Cyclemetry is open source. The code lives on [GitHub](https://github.com/walkersutton/cyclemetry), and issues or pull requests are welcome.
+
+## Inspect Built App Logs
+
+When debugging the installed macOS app, stream the built app log from Terminal:
+
+```sh
+tail -f ~/Library/Logs/com.cyclemetry/cyclemetry.log
+```
+
+This is useful for inspecting startup problems, render failures, and other behavior that may not be visible in the app UI.

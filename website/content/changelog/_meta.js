@@ -1,0 +1,4 @@
+export default {
+  index: 'Release History',
+  'v0-1-2': 'v0.1.2',
+}
