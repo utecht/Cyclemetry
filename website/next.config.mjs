@@ -6,8 +6,7 @@ const withNextra = nextra({
 
 export default withNextra({
   output: 'export',
-  // Served at https://walkersutton.github.io/cyclemetry/
-  basePath: '/cyclemetry',
+  // Served from the root of https://cyclemetry.walkersutton.com/
   images: {
     unoptimized: true,
   },

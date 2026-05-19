@@ -5,7 +5,7 @@ import 'nextra-theme-docs/style.css'
 import './globals.css'
 
 export const metadata = {
-  metadataBase: new URL('https://walkersutton.github.io/cyclemetry'),
+  metadataBase: new URL('https://cyclemetry.walkersutton.com'),
   title: {
     template: '%s — Cyclemetry',
     default: 'Cyclemetry — Cycling Telemetry Video Overlays',
@@ -60,7 +60,7 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head>
-        <link rel="icon" href="/cyclemetry/favicon.ico" />
+        <link rel="icon" href="/favicon.ico" />
       </Head>
       <body>
         <Layout
