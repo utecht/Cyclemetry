@@ -3,13 +3,11 @@ use serde::Serialize;
 use skia_safe::{Canvas, Color, Font, FontMgr, FontStyle, ISize, ImageInfo, Paint, Typeface};
 use std::collections::HashMap;
 
-use crate::render::activity::{
-    Activity, ATTR_DISTANCE, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION,
-    KMH_CONVERSION, MI_CONVERSION, MPH_CONVERSION,
-};
+use crate::render::activity::{Activity, ATTR_DISTANCE};
 use crate::render::chart::ChartCache;
 use crate::render::color::hex_with_opacity;
 use crate::render::template::{LabelConfig, LayerElement, PlotConfig, Template, ValueConfig};
+use crate::render::units;
 
 /// Pixel-perfect bounding box for a single overlay element in overlay coordinates.
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +54,7 @@ pub fn measure_elements(
             if attr == ATTR_DISTANCE {
                 let target_m = val_cfg
                     .distance_target
-                    .map(|t| distance_target_to_m(t, val_cfg.unit.as_deref()));
+                    .map(|t| units::distance_target_to_m(t, val_cfg.unit.as_deref()));
                 activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
             } else {
                 activity.get_scalar(attr, frame_idx)
@@ -351,7 +349,7 @@ pub fn compute_crop_rect(
             let raw = if vc.value == ATTR_DISTANCE {
                 let target_m = vc
                     .distance_target
-                    .map(|t| distance_target_to_m(t, vc.unit.as_deref()));
+                    .map(|t| units::distance_target_to_m(t, vc.unit.as_deref()));
                 activity.get_distance(vc.distance_reference.as_deref(), target_m, i)
             } else {
                 activity.get_scalar(&vc.value, i)
@@ -420,7 +418,7 @@ fn draw_value(
     let raw = if attr == ATTR_DISTANCE {
         let target_m = val_cfg
             .distance_target
-            .map(|t| distance_target_to_m(t, val_cfg.unit.as_deref()));
+            .map(|t| units::distance_target_to_m(t, val_cfg.unit.as_deref()));
         activity.get_distance(val_cfg.distance_reference.as_deref(), target_m, frame_idx)
     } else {
         activity.get_scalar(attr, frame_idx)
@@ -567,50 +565,11 @@ fn load_font(font_name: &str, size: f32, fonts_dir: &str) -> Option<Font> {
 
 // ─── Value formatting ──────────────────────────────────────────────────────
 
-/// Convert a display-unit distance target to metres for "custom" reference mode.
-/// Unit string matches the distance element's `unit` field: "km", "m", "mi", or
-/// legacy "metric"/"imperial".
-fn distance_target_to_m(target: f64, unit: Option<&str>) -> f64 {
-    match unit.unwrap_or("km") {
-        "mi" | "imperial" => target / MI_CONVERSION,
-        "m" => target,
-        _ => target * 1000.0, // "km" or "metric" or default
-    }
-}
-
 fn format_value(raw: f64, cfg: &ValueConfig) -> String {
-    let mut v = raw;
-
-    // Unit conversion — default to metric when no unit is specified.
-    // GPX speed is in m/s, elevation in metres, temperature in °C.
-    let imperial = cfg.unit.as_deref() == Some("imperial");
-    match cfg.value.as_str() {
-        ATTR_DISTANCE => {
-            match cfg.unit.as_deref().unwrap_or("km") {
-                "mi" | "imperial" => v *= MI_CONVERSION,
-                "m" => {}
-                _ => v *= 0.001, // "km" or "metric" or default
-            }
-        }
-        ATTR_SPEED => {
-            v *= if imperial {
-                MPH_CONVERSION
-            } else {
-                KMH_CONVERSION
-            };
-        }
-        ATTR_ELEVATION => {
-            if imperial {
-                v *= FT_CONVERSION;
-            }
-        }
-        ATTR_TEMPERATURE => {
-            if imperial {
-                v = v * 1.8 + 32.0;
-            }
-        }
-        _ => {}
-    }
+    // Convert from the GPX-native unit. Value elements do not auto-append a
+    // unit suffix; the optional manual `suffix` field is applied below.
+    let (conv, _) = units::resolve(&cfg.value, cfg.unit.as_deref());
+    let v = conv.apply(raw);
 
     // Decimal rounding
     let text = match cfg.decimal_rounding {

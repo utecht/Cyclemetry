@@ -2,6 +2,8 @@
   import { getContext } from 'svelte'
   import { formatTime } from '@/lib/utils.js'
   import * as backend from '@/api/backend.js'
+  import Button from '@/components/ui/Button.svelte'
+  import { CircleStop } from 'lucide-svelte'
 
   const app = getContext('app')
 
@@ -78,13 +80,16 @@
 
       <!-- Cancel -->
       <div class="flex justify-center">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onclick={cancel}
           disabled={cancelling}
-          class="text-xs text-zinc-500 hover:text-primary transition-colors disabled:opacity-50"
+          class="min-w-28 border-zinc-700 text-zinc-300 hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
         >
+          <CircleStop size={13} />
           {cancelling ? 'Cancelling…' : 'Cancel'}
-        </button>
+        </Button>
       </div>
 
       <p class="text-[10px] text-center text-zinc-700 italic">Keep the app open during rendering</p>

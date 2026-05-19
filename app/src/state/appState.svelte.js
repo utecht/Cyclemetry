@@ -40,7 +40,7 @@ export function createAppState() {
 
   // ── Transient ────────────────────────────────────────────────────────────────
   let copiedElement = $state(null) // { category, item } — in-memory element clipboard
-  let previewFps = $state(1)
+  let previewFps = $state(parseInt(localStorage.getItem('previewFps') ?? '5'))
   let benchmarking = $state(false)
   let lastRenderFps = $state(
     parseFloat(localStorage.getItem('lastRenderFps') ?? '') || null,
@@ -97,6 +97,9 @@ export function createAppState() {
     if (pristineConfig != null)
       localStorage.setItem('pristineConfig', pristineConfig)
     else localStorage.removeItem('pristineConfig')
+  })
+  $effect(() => {
+    localStorage.setItem('previewFps', String(previewFps))
   })
 
   function markPristine() {
@@ -167,24 +170,42 @@ export function createAppState() {
   // wholesale config replacement clear it (you can't undo across a switch).
   const HISTORY_LIMIT = 50
   let history = $state([])
+  let redoStack = $state([])
 
   // Apply an edit, recording the pre-edit config so it can be undone.
+  // A fresh edit invalidates the redo stack.
   function commitConfig(next) {
     if (config) {
       history = [...history.slice(-(HISTORY_LIMIT - 1)), JSON.stringify(config)]
     }
+    redoStack = []
     config = next
   }
 
   function resetHistory() {
     history = []
+    redoStack = []
   }
 
   function undo() {
     if (history.length === 0) return
     const prev = history[history.length - 1]
     history = history.slice(0, -1)
+    if (config)
+      redoStack = [
+        ...redoStack.slice(-(HISTORY_LIMIT - 1)),
+        JSON.stringify(config),
+      ]
     config = JSON.parse(prev)
+  }
+
+  function redo() {
+    if (redoStack.length === 0) return
+    const next = redoStack[redoStack.length - 1]
+    redoStack = redoStack.slice(0, -1)
+    if (config)
+      history = [...history.slice(-(HISTORY_LIMIT - 1)), JSON.stringify(config)]
+    config = JSON.parse(next)
   }
 
   // ── Config mutation helpers ───────────────────────────────────────────────
@@ -239,6 +260,7 @@ export function createAppState() {
     if (!config) return
     if (preDragConfigJson) {
       history = [...history.slice(-(HISTORY_LIMIT - 1)), preDragConfigJson]
+      redoStack = []
     }
     if (moves.length === 0) return
     let next = config
@@ -694,7 +716,11 @@ export function createAppState() {
     get canUndo() {
       return history.length > 0
     },
+    get canRedo() {
+      return redoStack.length > 0
+    },
     undo,
+    redo,
     get elementLayerOrder() {
       return normalizedElementLayerIds()
     },

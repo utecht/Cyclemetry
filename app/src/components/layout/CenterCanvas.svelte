@@ -191,6 +191,61 @@
 
   let sceneStart = $derived(app.config?.scene?.start ?? 0)
   let sceneEnd = $derived(app.config?.scene?.end ?? app.activityDuration)
+
+  // ── Distance reference slider ─────────────────────────────────────────────────
+  // Show an amber dot on a second bar when a distance element with reference='custom' is selected.
+  let selectedDistanceEl = $derived.by(() => {
+    const id = app.selectedElementId
+    const config = app.config
+    if (!id || !config) return null
+    const m = id.match(/^value-(\d+)$/)
+    if (!m) return null
+    return config.values?.[parseInt(m[1])] ?? null
+  })
+
+  let showDistanceBar = $derived(
+    selectedDistanceEl?.value === 'distance' &&
+    selectedDistanceEl?.distance_reference === 'custom'
+  )
+
+  let customDistanceM = $derived.by(() => {
+    if (!showDistanceBar || !selectedDistanceEl) return null
+    const t = selectedDistanceEl.distance_target ?? 0
+    const u = selectedDistanceEl.unit ?? 'km'
+    if (u === 'm') return t
+    if (u === 'mi') return t * 1609.34
+    return t * 1000
+  })
+
+  let distanceInfo = $state(null)
+
+  $effect(() => {
+    if (!showDistanceBar || !app.config) {
+      distanceInfo = null
+      return
+    }
+    const raw = app.gpxFilename
+    const gpx = raw && raw !== 'null' && raw !== 'undefined' ? raw : 'demo.gpxinit'
+    const start = sceneStart
+    const end = sceneEnd
+    backend.getActivityDistanceInfo(gpx, start, end)
+      .then(info => { distanceInfo = info })
+      .catch(() => { distanceInfo = null })
+  })
+
+  function onCustomDistanceChange(newM) {
+    const id = app.selectedElementId
+    if (!id) return
+    const m = id.match(/^value-(\d+)$/)
+    if (!m) return
+    const idx = parseInt(m[1])
+    const unit = app.config?.values?.[idx]?.unit ?? 'km'
+    let displayVal
+    if (unit === 'm') displayVal = newM
+    else if (unit === 'mi') displayVal = Math.round((newM / 1609.34) * 100) / 100
+    else displayVal = Math.round((newM / 1000) * 100) / 100
+    app.updateElement('values', idx, { distance_target: displayVal })
+  }
   // Preview canvas matches the chosen output resolution (the backend renders
   // the demo frame retargeted to these dims), so the aspect ratio is honored.
   let sceneW = $derived(app.outputWidth ?? 1920)
@@ -396,5 +451,8 @@
     bind:previewFps={app.previewFps}
     buffered={bufferedSeconds}
     onseek={seek}
+    distanceInfo={showDistanceBar ? distanceInfo : null}
+    customDistanceM={showDistanceBar ? customDistanceM : null}
+    oncustomdistancechange={onCustomDistanceChange}
   />
 </main>

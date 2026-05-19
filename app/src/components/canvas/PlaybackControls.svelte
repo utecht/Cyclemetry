@@ -2,16 +2,17 @@
   import { formatTime } from '@/lib/utils.js'
   import { Play, Pause, SkipBack, SkipForward } from 'lucide-svelte'
 
-  const PREVIEW_FPS_OPTIONS = [1, 5, 10, 15, 30]
-
   let {
     playhead = $bindable(0),
     start = 0,
     end = 73,
     playing = $bindable(false),
-    previewFps = $bindable(1),
+    previewFps = $bindable(5),
     buffered = [],   // array of seconds that are ready in cache
     onseek,
+    distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }
+    customDistanceM = null,  // current custom reference point in metres
+    oncustomdistancechange,
   } = $props()
 
   function seek(s) {
@@ -26,8 +27,22 @@
     seek(parseFloat(e.target.value))
   }
 
+  function onDistanceScrub(e) {
+    oncustomdistancechange?.(parseFloat(e.target.value))
+  }
+
   let duration = $derived(end - start)
   let pct = $derived(duration > 0 ? ((playhead - start) / duration) * 100 : 0)
+
+  // Distance bar derived values — only computed when distanceInfo is present
+  let distTotal = $derived(distanceInfo?.total_m ?? 1)
+  let distStartPct = $derived(distanceInfo ? (distanceInfo.overlay_start_m / distTotal) * 100 : 0)
+  let distEndPct = $derived(distanceInfo ? (distanceInfo.overlay_end_m / distTotal) * 100 : 0)
+  let distDotPct = $derived(
+    distanceInfo && customDistanceM !== null
+      ? Math.max(0, Math.min(100, (customDistanceM / distTotal) * 100))
+      : 0
+  )
 </script>
 
 <div class="flex flex-col gap-2 px-4 py-3 border-t border-zinc-800">
@@ -51,55 +66,73 @@
       value={playhead}
       oninput={onScrub}
       style="--pct: {pct}%"
-      class="scrub-range absolute inset-x-0 h-1 w-full cursor-pointer appearance-none bg-transparent"
+      class="scrub-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
     />
   </div>
 
+  <!-- Distance reference bar — visible only when a distance element with reference='custom' is selected -->
+  {#if distanceInfo && customDistanceM !== null}
+    <div class="relative h-5 flex items-center">
+      <div class="relative w-full h-full flex items-center">
+        <!-- Track background -->
+        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800 overflow-visible">
+          <!-- Overlay window highlight -->
+          <div
+            class="absolute h-full bg-zinc-600/40 rounded-full"
+            style="left: {distStartPct}%; width: {distEndPct - distStartPct}%"
+          ></div>
+        </div>
+        <!-- Draggable amber dot -->
+        <input
+          type="range"
+          min={0}
+          max={distTotal}
+          step={10}
+          value={customDistanceM}
+          oninput={onDistanceScrub}
+          style="--dist-pct: {distDotPct}%"
+          class="dist-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
+          title="Custom distance reference: {customDistanceM >= 1000 ? (customDistanceM / 1000).toFixed(1) + ' km' : Math.round(customDistanceM) + ' m'}"
+        />
+      </div>
+    </div>
+  {/if}
+
   <!-- Controls row -->
-  <div class="flex items-center gap-3">
-    <button
-      onclick={stepBack}
-      class="text-zinc-500 hover:text-zinc-200 transition-colors"
-      aria-label="Step back"
-    >
-      <SkipBack size={14} />
-    </button>
+  <div class="relative flex items-center justify-center">
+    <div class="flex items-center gap-3">
+      <button
+        onclick={stepBack}
+        class="text-zinc-500 hover:text-zinc-200 transition-colors"
+        aria-label="Step back"
+      >
+        <SkipBack size={14} />
+      </button>
 
-    <button
-      onclick={() => playing = !playing}
-      class="flex h-7 w-7 items-center justify-center rounded-full bg-primary hover:bg-primary/80 transition-colors text-white"
-      aria-label={playing ? 'Pause' : 'Play'}
-    >
-      {#if playing}
-        <Pause size={13} />
-      {:else}
-        <Play size={13} class="translate-x-px" />
-      {/if}
-    </button>
+      <button
+        onclick={() => playing = !playing}
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary hover:bg-primary/80 transition-colors text-white"
+        aria-label={playing ? 'Pause' : 'Play'}
+      >
+        {#if playing}
+          <Pause size={13} />
+        {:else}
+          <Play size={13} class="translate-x-px" />
+        {/if}
+      </button>
 
-    <button
-      onclick={stepForward}
-      class="text-zinc-500 hover:text-zinc-200 transition-colors"
-      aria-label="Step forward"
-    >
-      <SkipForward size={14} />
-    </button>
+      <button
+        onclick={stepForward}
+        class="text-zinc-500 hover:text-zinc-200 transition-colors"
+        aria-label="Step forward"
+      >
+        <SkipForward size={14} />
+      </button>
+    </div>
 
-    <span class="ml-auto font-mono text-[11px] text-zinc-500 tabular-nums">
+    <span class="absolute right-0 font-mono text-[11px] text-zinc-500 tabular-nums">
       {formatTime(playhead - start)} / {formatTime(duration)}
     </span>
-
-    <!-- Preview FPS selector -->
-    <select
-      value={previewFps}
-      onchange={(e) => previewFps = Number(e.target.value)}
-      class="ml-2 bg-transparent text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 rounded px-1.5 py-0.5 cursor-pointer transition-colors"
-      title="Preview frame rate"
-    >
-      {#each PREVIEW_FPS_OPTIONS as fps (fps)}
-        <option value={fps} selected={fps === previewFps}>{fps}fps</option>
-      {/each}
-    </select>
   </div>
 </div>
 
@@ -113,6 +146,7 @@
     cursor: pointer;
     position: relative;
     z-index: 1;
+    margin-top: -4px;
   }
   .scrub-range::-webkit-slider-runnable-track {
     height: 4px;
@@ -121,6 +155,23 @@
       #DC143C calc(var(--pct, 0%) ),
       #3f3f46 calc(var(--pct, 0%))
     );
+    border-radius: 9999px;
+  }
+
+  .dist-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #F59E0B;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    margin-top: -4px;
+  }
+  .dist-range::-webkit-slider-runnable-track {
+    height: 4px;
+    background: transparent;
     border-radius: 9999px;
   }
 </style>

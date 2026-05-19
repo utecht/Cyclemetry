@@ -57,6 +57,13 @@ export const openVideo = (filename) =>
 
 export const loadGpxFromPath = (path) => invoke('backend_load_gpx', { path })
 
+export const getActivityDistanceInfo = (gpxFilename, sceneStart, sceneEnd) =>
+  invoke('backend_activity_distance_info', {
+    gpxFilename,
+    sceneStart,
+    sceneEnd,
+  })
+
 export async function uploadGpx(file) {
   const buffer = await file.arrayBuffer()
   const fileData = Array.from(new Uint8Array(buffer))

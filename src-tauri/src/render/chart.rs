@@ -7,12 +7,9 @@ use skia_safe::{
     Canvas, Color, Font, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Typeface,
 };
 
-use crate::render::activity::{
-    ATTR_DISTANCE, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
-    MI_CONVERSION, MPH_CONVERSION,
-};
 use crate::render::color::to_skia_color;
 use crate::render::template::{PlotConfig, PointLabelConfig};
+use crate::render::units;
 
 /// Pixel bounds of the data area inside a chart surface (excluding margins).
 #[derive(Debug, Clone)]
@@ -378,38 +375,8 @@ impl ChartCache {
 /// producing "<number> <SUFFIX>" (e.g. "960 M", "3150 FT"). `raw` is the
 /// attribute's native unit (elevation: metres, speed: m/s, temp: °C).
 fn format_point_label(raw: f64, attr: &str, unit: &str, decimals: i32) -> String {
-    let imperial = unit.eq_ignore_ascii_case("imperial");
-    let (value, suffix) = match attr {
-        ATTR_DISTANCE => match unit {
-            "mi" | "imperial" => (raw * MI_CONVERSION, "MI"),
-            "m" => (raw, "M"),
-            _ => (raw * 0.001, "KM"),
-        },
-        ATTR_ELEVATION => {
-            if imperial {
-                (raw * FT_CONVERSION, "FT")
-            } else {
-                (raw, "M")
-            }
-        }
-        ATTR_SPEED => {
-            if imperial {
-                (raw * MPH_CONVERSION, "MPH")
-            } else {
-                (raw * KMH_CONVERSION, "KM/H")
-            }
-        }
-        ATTR_TEMPERATURE => {
-            if imperial {
-                (raw * 1.8 + 32.0, "F")
-            } else {
-                (raw, "C")
-            }
-        }
-        // Unknown attribute: no conversion, echo the unit token uppercased.
-        _ => return format!("{} {}", round_str(raw, decimals), unit.to_uppercase()),
-    };
-    format!("{} {}", round_str(value, decimals), suffix)
+    let (conv, suffix) = units::resolve(attr, Some(unit));
+    format!("{} {}", round_str(conv.apply(raw), decimals), suffix)
 }
 
 fn round_str(v: f64, decimals: i32) -> String {
@@ -564,5 +531,18 @@ mod tests {
     #[test]
     fn unknown_attribute_echoes_unit_uppercased() {
         assert_eq!(format_point_label(5.0, "power", "watts", 0), "5 WATTS");
+    }
+
+    #[test]
+    fn precise_unit_tokens() {
+        assert_eq!(format_point_label(10.0, "speed", "kmh", 0), "36 KM/H");
+        assert_eq!(format_point_label(10.0, "speed", "mph", 0), "22 MPH");
+        assert_eq!(format_point_label(10.0, "speed", "ms", 0), "10 M/S");
+        assert_eq!(format_point_label(5000.0, "distance", "km", 0), "5 KM");
+        assert_eq!(format_point_label(5000.0, "distance", "m", 0), "5000 M");
+        assert_eq!(format_point_label(1609.34, "distance", "mi", 0), "1 MI");
+        assert_eq!(format_point_label(960.0, "elevation", "ft", 0), "3150 FT");
+        assert_eq!(format_point_label(0.0, "temperature", "f", 0), "32 F");
+        assert_eq!(format_point_label(20.0, "temperature", "c", 0), "20 C");
     }
 }

@@ -29,8 +29,6 @@
   let rendering = $state(false)
   let showSettings = $state(false)
   let buildInfo = $state('')
-  let confirmDeleteElement = $state(false)
-
   function onWindowKeydown(e) {
     const t = e.target
     const inField =
@@ -38,13 +36,24 @@
       t?.tagName === 'TEXTAREA' ||
       t?.tagName === 'SELECT' ||
       t?.isContentEditable
-    const blocked = confirmDeleteElement || showSettings || app.showTemplatePicker
+    const blocked = showSettings || app.showTemplatePicker
 
     // Undo (⌘/Ctrl+Z). Skip when typing in a field so native text undo works.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
       if (inField || blocked || !app.canUndo) return
       e.preventDefault()
       app.undo()
+      return
+    }
+
+    // Redo (⌘/Ctrl+Shift+Z or Ctrl+Y). Same in-field skip as undo.
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      ((e.shiftKey && (e.key === 'z' || e.key === 'Z')) || e.key === 'y' || e.key === 'Y')
+    ) {
+      if (inField || blocked || !app.canRedo) return
+      e.preventDefault()
+      app.redo()
       return
     }
 
@@ -68,7 +77,7 @@
     if (blocked || inField) return
     if (!app.selectedElementId) return
     e.preventDefault()
-    confirmDeleteElement = true
+    app.deleteSelectedElement()
   }
 
   onMount(() => {
@@ -89,7 +98,12 @@
         listen('menu_show_activities',  () => backend.openActivitiesFolder().catch(() => {})),
         listen('menu_show_templates',   () => backend.openTemplatesFolder().catch(() => {})),
         listen('menu_settings',         () => { showSettings = true }),
+        listen('menu_undo',             () => { if (app.canUndo) app.undo() }),
+        listen('menu_redo',             () => { if (app.canRedo) app.redo() }),
+        listen('menu_copy',             () => { if (app.selectedElementId) app.copyElement() }),
+        listen('menu_paste',            () => { if (app.copiedElement) app.pasteElement() }),
         listen('menu_browse_community_templates', () => { app.showTemplatePicker = true }),
+        listen('menu_add_custom_font',  () => app.addCustomFont().catch(e => { app.errorMessage = e.message })),
       ]
       return () => unlisteners.forEach(p => p.then(fn => fn()))
     }
@@ -199,15 +213,6 @@
   {/if}
   {#if app.showTemplatePicker}
     <TemplatePickerModal onclose={() => { app.showTemplatePicker = false }} />
-  {/if}
-  {#if confirmDeleteElement}
-    <ConfirmDialog
-      title="Delete element?"
-      message={`Delete ${app.selectedElementLabel() ?? 'this element'}? This cannot be undone.`}
-      confirmText="Delete"
-      onconfirm={() => { app.deleteSelectedElement(); confirmDeleteElement = false }}
-      oncancel={() => { confirmDeleteElement = false }}
-    />
   {/if}
   {#if app.pendingDiscard}
     <ConfirmDialog

@@ -6,21 +6,11 @@
 
   const app = getContext('app')
 
-  const ADD_FONT = '__add_font__'
-
   function fontOpts() {
-    return [
-      ...app.fonts.map((f) => ({ value: f, label: f.replace(/\.(ttf|otf)$/i, '') })),
-      { value: ADD_FONT, label: '+ Add custom font…' },
-    ]
+    return app.fonts.map((f) => ({ value: f, label: f.replace(/\.(ttf|otf)$/i, '') }))
   }
 
-  async function onSceneFont(v) {
-    if (v === ADD_FONT) {
-      const f = await app.addCustomFont()
-      if (f) app.updateScene({ font: f })
-      return
-    }
+  function onSceneFont(v) {
     app.updateScene({ font: v })
   }
 

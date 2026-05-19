@@ -655,6 +655,39 @@ fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
     .to_string())
 }
 
+/// Return total activity distance and the overlay window bounds in metres.
+/// Used by the frontend to render the distance-reference slider.
+#[tauri::command]
+async fn backend_activity_distance_info(
+    gpx_filename: String,
+    scene_start: f64,
+    scene_end: f64,
+) -> Result<String, String> {
+    // No bundled demo file: if the GPX can't be resolved, fall back to
+    // synthetic sample data so the slider still works (mirrors native_demo).
+    let gpx_path = match resolve_gpx_path(&gpx_filename) {
+        Ok((p, _)) => p,
+        Err(_) => "<synthetic>".to_string(),
+    };
+    let mut activity = if gpx_path == "<synthetic>" {
+        let duration = (scene_end.ceil() as usize).max(60);
+        render::activity::Activity::synthetic(duration)
+    } else {
+        render::activity::Activity::from_gpx(&gpx_path)?
+    };
+    let total_m = activity.total_activity_distance;
+    let len = activity.speed.len();
+    let start = (scene_start as usize).min(len.saturating_sub(1));
+    let end = (scene_end as usize).clamp(start + 1, len);
+    activity.trim(start, end).ok();
+    Ok(serde_json::json!({
+        "total_m": total_m,
+        "overlay_start_m": activity.distance.first().copied().unwrap_or(0.0),
+        "overlay_end_m": activity.distance.last().copied().unwrap_or(0.0),
+    })
+    .to_string())
+}
+
 // ─── Community templates ──────────────────────────────────────────────────────
 
 #[cfg(not(debug_assertions))]
@@ -1278,6 +1311,7 @@ pub fn run() {
             backend_install_community_template,
             backend_delete_template,
             backend_save_template_preview,
+            backend_activity_distance_info,
             record_gpx_opened,
         ])
         .setup(move |app| {
@@ -1440,17 +1474,23 @@ pub fn run() {
                     MenuItem::with_id(app, "help_docs", "Documentation", true, None::<&str>)?;
                 let help_issues =
                     MenuItem::with_id(app, "help_issues", "Report an Issue", true, None::<&str>)?;
+                let edit_undo = MenuItem::with_id(app, "edit_undo", "Undo", true, None::<&str>)?;
+                let edit_redo = MenuItem::with_id(app, "edit_redo", "Redo", true, None::<&str>)?;
+                let edit_copy =
+                    MenuItem::with_id(app, "edit_copy", "Copy Element", true, None::<&str>)?;
+                let edit_paste =
+                    MenuItem::with_id(app, "edit_paste", "Paste Element", true, None::<&str>)?;
                 let edit_submenu = Submenu::with_items(
                     app,
                     "Edit",
                     true,
                     &[
-                        &PredefinedMenuItem::undo(app, None)?,
-                        &PredefinedMenuItem::redo(app, None)?,
+                        &edit_undo,
+                        &edit_redo,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::cut(app, None)?,
-                        &PredefinedMenuItem::copy(app, None)?,
-                        &PredefinedMenuItem::paste(app, None)?,
+                        &edit_copy,
+                        &edit_paste,
                         &PredefinedMenuItem::select_all(app, None)?,
                     ],
                 )?;
@@ -1498,6 +1538,14 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                let tpl_sep3 = PredefinedMenuItem::separator(app)?;
+                let add_custom_font = MenuItem::with_id(
+                    app,
+                    "add_custom_font",
+                    "Add Custom Font…",
+                    true,
+                    None::<&str>,
+                )?;
                 let templates_submenu = Submenu::with_items(
                     app,
                     "Templates",
@@ -1511,6 +1559,8 @@ pub fn run() {
                         &show_tpl_dir,
                         &tpl_sep2,
                         &browse_community,
+                        &tpl_sep3,
+                        &add_custom_font,
                     ],
                 )?;
 
@@ -1530,6 +1580,18 @@ pub fn run() {
                     use tauri::Emitter;
                     let id = event.id().as_ref();
                     match id {
+                        "edit_undo" => {
+                            app_handle.emit("menu_undo", ()).ok();
+                        }
+                        "edit_redo" => {
+                            app_handle.emit("menu_redo", ()).ok();
+                        }
+                        "edit_copy" => {
+                            app_handle.emit("menu_copy", ()).ok();
+                        }
+                        "edit_paste" => {
+                            app_handle.emit("menu_paste", ()).ok();
+                        }
                         "settings" => {
                             app_handle.emit("menu_settings", ()).ok();
                         }
@@ -1556,6 +1618,9 @@ pub fn run() {
                         }
                         "browse_community_templates" => {
                             app_handle.emit("menu_browse_community_templates", ()).ok();
+                        }
+                        "add_custom_font" => {
+                            app_handle.emit("menu_add_custom_font", ()).ok();
                         }
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
@@ -1620,17 +1685,23 @@ pub fn run() {
                     ],
                 )?;
 
+                let edit_undo = MenuItem::with_id(app, "edit_undo", "Undo", true, None::<&str>)?;
+                let edit_redo = MenuItem::with_id(app, "edit_redo", "Redo", true, None::<&str>)?;
+                let edit_copy =
+                    MenuItem::with_id(app, "edit_copy", "Copy Element", true, None::<&str>)?;
+                let edit_paste =
+                    MenuItem::with_id(app, "edit_paste", "Paste Element", true, None::<&str>)?;
                 let edit_submenu = Submenu::with_items(
                     app,
                     "Edit",
                     true,
                     &[
-                        &PredefinedMenuItem::undo(app, None)?,
-                        &PredefinedMenuItem::redo(app, None)?,
+                        &edit_undo,
+                        &edit_redo,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::cut(app, None)?,
-                        &PredefinedMenuItem::copy(app, None)?,
-                        &PredefinedMenuItem::paste(app, None)?,
+                        &edit_copy,
+                        &edit_paste,
                         &PredefinedMenuItem::select_all(app, None)?,
                     ],
                 )?;
@@ -1672,6 +1743,13 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                let add_custom_font = MenuItem::with_id(
+                    app,
+                    "add_custom_font",
+                    "Add Custom Font...",
+                    true,
+                    None::<&str>,
+                )?;
                 let templates_submenu = Submenu::with_items(
                     app,
                     "Templates",
@@ -1685,6 +1763,8 @@ pub fn run() {
                         &show_tpl_dir,
                         &PredefinedMenuItem::separator(app)?,
                         &browse_community,
+                        &PredefinedMenuItem::separator(app)?,
+                        &add_custom_font,
                     ],
                 )?;
 
@@ -1702,8 +1782,24 @@ pub fn run() {
                     MenuItem::with_id(app, "help_docs", "Documentation", true, None::<&str>)?;
                 let help_issues =
                     MenuItem::with_id(app, "help_issues", "Report an Issue", true, None::<&str>)?;
-                let help_submenu =
-                    Submenu::with_items(app, "Help", true, &[&help_docs, &help_issues])?;
+                let check_updates = MenuItem::with_id(
+                    app,
+                    "check_updates",
+                    "Check for Updates...",
+                    true,
+                    None::<&str>,
+                )?;
+                let help_submenu = Submenu::with_items(
+                    app,
+                    "Help",
+                    true,
+                    &[
+                        &check_updates,
+                        &PredefinedMenuItem::separator(app)?,
+                        &help_docs,
+                        &help_issues,
+                    ],
+                )?;
 
                 app.set_menu(Menu::with_items(
                     app,
@@ -1720,6 +1816,18 @@ pub fn run() {
                     use tauri::Emitter;
                     let id = event.id().as_ref();
                     match id {
+                        "edit_undo" => {
+                            app_handle.emit("menu_undo", ()).ok();
+                        }
+                        "edit_redo" => {
+                            app_handle.emit("menu_redo", ()).ok();
+                        }
+                        "edit_copy" => {
+                            app_handle.emit("menu_copy", ()).ok();
+                        }
+                        "edit_paste" => {
+                            app_handle.emit("menu_paste", ()).ok();
+                        }
                         "settings" => {
                             app_handle.emit("menu_settings", ()).ok();
                         }
@@ -1744,11 +1852,17 @@ pub fn run() {
                         "browse_community_templates" => {
                             app_handle.emit("menu_browse_community_templates", ()).ok();
                         }
+                        "add_custom_font" => {
+                            app_handle.emit("menu_add_custom_font", ()).ok();
+                        }
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
                         }
                         "show_templates" => {
                             app_handle.emit("menu_show_templates", ()).ok();
+                        }
+                        "check_updates" => {
+                            app_handle.emit("check_for_updates", ()).ok();
                         }
                         "help_docs" => {
                             open_url("https://github.com/walkersutton/cyclemetry#readme");

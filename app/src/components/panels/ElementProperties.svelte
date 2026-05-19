@@ -10,21 +10,13 @@
 
   const app = getContext('app')
 
-  const ADD_FONT = '__add_font__'
-
-  // Single source of truth: app.fonts (bundled ∪ user-installed), plus an
-  // inline "add custom font" affordance.
+  // Single source of truth: app.fonts (bundled ∪ user-installed).
+  // Importing new fonts lives in the Templates menu (Add Custom Font…).
   function fontOpts(includeSceneDefault) {
     return [
       ...(includeSceneDefault ? [{ value: '', label: 'Scene default' }] : []),
       ...app.fonts.map((f) => ({ value: f, label: f.replace(/\.(ttf|otf)$/i, '') })),
-      { value: ADD_FONT, label: '+ Add custom font…' },
     ]
-  }
-
-  async function pickFont(apply) {
-    const f = await app.addCustomFont()
-    if (f) apply(f)
   }
   const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time', 'distance']
   const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'course', 'distance']
@@ -35,16 +27,41 @@
     { value: 'activity_end', label: 'Until activity end' },
     { value: 'custom', label: 'Until custom point' },
   ]
-  const DISTANCE_UNITS = [
-    { value: 'km', label: 'Kilometers (km)' },
-    { value: 'm', label: 'Meters (m)' },
-    { value: 'mi', label: 'Miles (mi)' },
-  ]
-  const UNITS = [
-    { value: '', label: 'Default' },
-    { value: 'imperial', label: 'Imperial' },
-    { value: 'metric', label: 'Metric' },
-  ]
+  // Per-metric explicit unit options. Metrics absent from this map (gradient,
+  // power, cadence, heartrate, time) have no unit choice and render raw.
+  // Legacy 'metric'/'imperial' tokens still render — the Rust side normalizes
+  // them — but new selections use these precise tokens.
+  const UNITS_BY_METRIC = {
+    distance: [
+      { value: 'km', label: 'Kilometers (km)' },
+      { value: 'm', label: 'Meters (m)' },
+      { value: 'mi', label: 'Miles (mi)' },
+    ],
+    speed: [
+      { value: 'kmh', label: 'km/h' },
+      { value: 'mph', label: 'mph' },
+      { value: 'ms', label: 'm/s' },
+    ],
+    elevation: [
+      { value: 'm', label: 'Meters (m)' },
+      { value: 'ft', label: 'Feet (ft)' },
+    ],
+    temperature: [
+      { value: 'c', label: 'Celsius (°C)' },
+      { value: 'f', label: 'Fahrenheit (°F)' },
+    ],
+  }
+  // Default unit token per metric, used when the element has none set yet
+  // (matches the Rust-side default so the picker reflects what renders).
+  const DEFAULT_UNIT = { distance: 'km', speed: 'kmh', elevation: 'm', temperature: 'c' }
+  // Resolve the unit token to show in the picker, mapping legacy
+  // metric/imperial (or unset) to the matching precise token.
+  function displayUnit(metric, unit) {
+    const opts = UNITS_BY_METRIC[metric] ?? []
+    if (opts.some((o) => o.value === unit)) return unit
+    if (unit === 'imperial') return { distance: 'mi', speed: 'mph', elevation: 'ft', temperature: 'f' }[metric]
+    return DEFAULT_UNIT[metric]
+  }
 
   let selected = $derived(() => {
     const id = app.selectedElementId
@@ -64,6 +81,25 @@
     const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'decimal_rounding', 'rotation', 'distance_target']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     app.updateElement(s.category, s.idx, { [field]: value })
+  }
+
+  // Switch the distance unit, converting distance_target to the equivalent
+  // value in the new unit so the on-screen target stays the same real distance.
+  function changeDistanceUnit(newUnit) {
+    const s = selected()
+    if (!s) return
+    const oldUnit = displayUnit('distance', s.item.unit)
+    const updates = { unit: newUnit }
+    const t = s.item.distance_target
+    if (oldUnit !== newUnit && t != null && t !== '' && !Number.isNaN(Number(t))) {
+      const toM = (v, u) => (u === 'm' ? v : u === 'mi' ? v * 1609.34 : v * 1000)
+      const fromM = (m, u) => (u === 'm' ? m : u === 'mi' ? m / 1609.34 : m / 1000)
+      const meters = toM(Number(t), oldUnit)
+      const conv = fromM(meters, newUnit)
+      updates.distance_target =
+        newUnit === 'm' ? Math.round(conv) : Math.round(conv * 100) / 100
+    }
+    app.updateElement(s.category, s.idx, updates)
   }
 
   // Update a nested object field: updateNested('line', 'color', '#fff')
@@ -396,7 +432,7 @@
             <Select
               value={pl.font ?? 'Furore.otf'}
               options={fontOpts(false)}
-              onchange={(v) => (v === ADD_FONT ? pickFont((f) => updatePL('font', f)) : updatePL('font', v))}
+              onchange={(v) => updatePL('font', v)}
             />
           </label>
           <label class="space-y-1 block">
@@ -445,7 +481,7 @@
           <Select
             value={item.font ?? ''}
             options={fontOpts(true)}
-            onchange={(v) => (v === ADD_FONT ? pickFont((f) => update('font', f)) : update('font', v || undefined))}
+            onchange={(v) => update('font', v || undefined)}
           />
         </label>
         {/if}
@@ -501,7 +537,7 @@
         {#if item.value === 'distance'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={item.unit ?? 'km'} options={DISTANCE_UNITS} onchange={(v) => update('unit', v)} />
+          <Select value={displayUnit('distance', item.unit)} options={UNITS_BY_METRIC.distance} onchange={(v) => changeDistanceUnit(v)} />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Reference</span>
@@ -513,15 +549,15 @@
         </label>
         {#if item.distance_reference === 'custom'}
         <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Target ({item.unit ?? 'km'})</span>
+          <span class="text-xs text-zinc-500">Target ({displayUnit('distance', item.unit)})</span>
           <Input type="number" value={numVal(item, 'distance_target')} min={0} step={0.1}
             oninput={(e) => update('distance_target', e.target.value)} />
         </label>
         {/if}
-        {:else}
+        {:else if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Unit system</span>
-          <Select value={item.unit ?? ''} options={UNITS} onchange={(v) => update('unit', v || undefined)} />
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
         </label>
         {/if}
         {#if showAdvanced}
