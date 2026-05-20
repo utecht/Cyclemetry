@@ -1,12 +1,12 @@
 {
   "name": "cyclemetry",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "scripts": {
     "dev": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev",
     "build": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri build",
     "lint": "pnpm --dir app lint",
     "format": "pnpm --dir app format && cargo fmt --manifest-path src-tauri/Cargo.toml",
-    "release": "pnpm --dir app release"
+    "release": "node scripts/release.mjs"
   },
   "packageManager": "pnpm@10.25.0"
 }

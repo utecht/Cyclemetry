@@ -848,12 +848,12 @@ impl OverlayElement for GaugeConfig {
                     .map(|c| self.argb(Some(c), self.opacity))
                     .collect();
                 let pos: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
-                // Gradient spans the full value range (0→sweep) so colors are
-                // proportional to position, not compressed to the current value.
-                // Rotate via local matrix instead of offsetting start angle so
-                // the angular range never crosses 360° and wraps to red.
-                let mut local_mat = skia_safe::Matrix::new_identity();
-                local_mat.set_rotate(start, Some(skia_safe::Point::new(cx, cy)));
+                // Rotate the canvas so the arc begins at 0° in local space.
+                // The sweep gradient range (0, sweep) then maps directly onto the
+                // arc without any local-matrix offset and without the 360°-wrap
+                // problem that occurs when the arc crosses the East axis.
+                canvas.save();
+                canvas.rotate(start, Some(skia_safe::Point::new(cx, cy)));
                 let shader = skia_safe::gradient_shader::sweep(
                     skia_safe::Point::new(cx, cy),
                     skia_safe::gradient_shader::GradientShaderColors::Colors(&colors),
@@ -861,16 +861,17 @@ impl OverlayElement for GaugeConfig {
                     skia_safe::TileMode::Clamp,
                     Some((0.0, sweep)),
                     None,
-                    Some(&local_mat),
+                    None::<&skia_safe::Matrix>,
                 );
                 arc_paint.set_shader(shader);
                 arc_paint.set_alpha(255);
+                canvas.draw_arc(oval, 0.0, progress_sweep, false, &arc_paint);
+                arc_paint.set_shader(None);
+                canvas.restore();
             } else if let Some(pc) = self.progress_color.as_deref() {
                 arc_paint.set_color(self.argb(Some(pc), self.opacity));
+                canvas.draw_arc(oval, start, progress_sweep, false, &arc_paint);
             }
-
-            canvas.draw_arc(oval, start, progress_sweep, false, &arc_paint);
-            arc_paint.set_shader(None);
         }
 
         // Cap dot at the tip of the progress arc.

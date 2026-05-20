@@ -7,6 +7,65 @@ description: Notes for developing and debugging Cyclemetry locally and from buil
 
 Cyclemetry is open source. The code lives on [GitHub](https://github.com/walkersutton/cyclemetry), and issues or pull requests are welcome.
 
+## Prerequisites
+
+- [Node.js](https://nodejs.org/)
+- [pnpm](https://pnpm.io/)
+- [Rust](https://www.rust-lang.org/)
+
+## Setup
+
+Install dependencies from the repo root:
+
+```bash
+pnpm install
+```
+
+## Running Locally
+
+Start the desktop app in development mode:
+
+```bash
+pnpm dev
+```
+
+## Adding a Bundled Font
+
+Drop a `.ttf` or `.otf` file into `resources/fonts/`. The Tauri bundler picks up the whole directory, and the font picker in the app lists it automatically. No config changes required.
+
+## Releasing
+
+1. Set the new release version in `src-tauri/Cargo.toml`.
+2. Run the release command from the repo root:
+
+```bash
+pnpm release
+```
+
+The release script syncs that version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata files, creates a `vX.Y.Z` git tag, and pushes `main` plus the tag.
+
+### Test a Release Build
+
+Run the Release workflow with publishing disabled for the platform you want to test:
+
+```bash
+gh workflow run release.yml -f platform=macos -f publish_release=false
+gh workflow run release.yml -f platform=windows -f publish_release=false
+gh workflow run release.yml -f platform=linux -f publish_release=false
+```
+
+This builds the release artifacts in GitHub Actions and uploads them as workflow artifacts, but does not publish anything to GitHub Releases. Use `-f platform=all` only when you want to test every platform in one run.
+
+### Publish a Release
+
+After the test build passes, publish the release assets:
+
+```bash
+gh workflow run release.yml -f platform=all -f publish_release=true
+```
+
+The Release workflow is manual-only. In the GitHub UI, choose a platform and leave `publish_release` unchecked to test builds, or choose `all` and check `publish_release` to publish assets to the `vX.Y.Z` release.
+
 ## Inspect Built App Logs
 
 When debugging the installed macOS app, stream the built app log from Terminal:

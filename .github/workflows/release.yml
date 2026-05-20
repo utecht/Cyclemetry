@@ -1,12 +1,27 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Upload build outputs to the GitHub Release for this version'
+        required: true
+        default: false
+        type: boolean
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: macos
+        type: choice
+        options:
+          - macos
+          - windows
+          - linux
+          - all
 
 jobs:
   build-macos:
+    if: ${{ inputs.platform == 'macos' || inputs.platform == 'all' }}
     runs-on: macos-latest
     # Signing secrets live in the "cyclemetry" GitHub Environment; a job only
     # receives environment-scoped secrets if it declares the environment.
@@ -17,6 +32,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Read release version
+        id: release-version
+        shell: bash
+        run: |
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,32 +53,46 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Setup FFmpeg
         run: |
-          # Statically-linked ffmpeg: one self-contained binary, no Homebrew
-          # dylibs, no install_name_tool (which corrupts the signature and gets
-          # the process SIGKILL'd by AMFI on Apple Silicon).
-          # evermeet.cx is x86_64-only; this app is native arm64. Martin Riedl's
-          # build service has a stable "latest" redirect for native arm64 macOS.
-          curl -L --fail -o ffmpeg.zip \
+          # Build a universal FFmpeg from static arm64 + x86_64 binaries so the
+          # app bundle and updater artifact work on both Apple Silicon and Intel.
+          mkdir -p ffmpeg-arm64 ffmpeg-x86_64
+
+          curl -L --fail -o ffmpeg-arm64.zip \
             https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip
-          unzip -o ffmpeg.zip
-          mv ffmpeg resources/ffmpeg
+          unzip -o ffmpeg-arm64.zip -d ffmpeg-arm64
+
+          curl -L --fail -o ffmpeg-x86_64.zip \
+            https://evermeet.cx/ffmpeg/getrelease/zip
+          unzip -o ffmpeg-x86_64.zip -d ffmpeg-x86_64
+
+          ARM64_FFMPEG=$(find ffmpeg-arm64 -type f -name ffmpeg | head -1)
+          X86_64_FFMPEG=$(find ffmpeg-x86_64 -type f -name ffmpeg | head -1)
+
+          test -n "$ARM64_FFMPEG"
+          test -n "$X86_64_FFMPEG"
+
+          chmod +x "$ARM64_FFMPEG" "$X86_64_FFMPEG"
+          lipo -create -output resources/ffmpeg "$ARM64_FFMPEG" "$X86_64_FFMPEG"
           chmod +x resources/ffmpeg
 
-          # Hard-fail the build if it isn't a self-contained arm64 binary
+          # Hard-fail the build if either macOS slice is missing.
           lipo -archs resources/ffmpeg
           lipo -archs resources/ffmpeg | grep -q arm64 \
             || { echo "ffmpeg missing arm64 slice"; exit 1; }
+          lipo -archs resources/ffmpeg | grep -q x86_64 \
+            || { echo "ffmpeg missing x86_64 slice"; exit 1; }
           otool -L resources/ffmpeg
           if otool -L resources/ffmpeg | tail -n +2 | grep -vqE '/usr/lib/|/System/'; then
             echo "ffmpeg has non-system dynamic dependencies — not static"; exit 1
           fi
 
-          # evermeet builds ship Developer-ID-signed + notarized. Keep that
-          # signature if valid; only ad-hoc re-sign as a fallback.
-          codesign --verify -vv resources/ffmpeg || codesign --force --sign - resources/ffmpeg
+          # lipo creates a new binary, so sign it before Tauri embeds it.
+          codesign --force --sign - resources/ffmpeg
           codesign -dv resources/ffmpeg 2>&1 | head -5
 
       - name: Install frontend dependencies
@@ -65,7 +102,7 @@ jobs:
         # createUpdaterArtifacts is enabled here (CI only) — not in
         # tauri.conf.json — so local `pnpm build` doesn't require the
         # signing key. CI has it via the secrets below.
-        run: app/node_modules/.bin/tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+        run: app/node_modules/.bin/tauri build --target universal-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":true}}'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -73,7 +110,7 @@ jobs:
       - name: Generate update manifest
         run: |
           VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          SIG=$(cat "src-tauri/target/release/bundle/macos/Cyclemetry.app.tar.gz.sig")
+          SIG=$(cat "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           jq -n \
@@ -89,16 +126,33 @@ jobs:
                 "darwin-aarch64": {
                   signature: $sig,
                   url: $url
+                },
+                "darwin-x86_64": {
+                  signature: $sig,
+                  url: $url
                 }
               }
             }' > latest.json
 
+      - name: Upload macOS workflow artifacts
+        if: ${{ !inputs.publish_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclemetry-macos-universal
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig
+            latest.json
+
       - name: Upload artifacts to release
+        if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.release-version.outputs.tag }}
           files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/Cyclemetry.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz
             latest.json
           draft: false
           prerelease: false
@@ -106,6 +160,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
+    if: ${{ inputs.platform == 'windows' || inputs.platform == 'all' }}
     runs-on: windows-latest
     environment: cyclemetry
     permissions:
@@ -116,6 +171,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Read release version
+        id: release-version
+        shell: bash
+        run: |
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -169,15 +232,25 @@ jobs:
           }
 
       - name: Upload artifacts to release
+        if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.release-version.outputs.tag }}
           files: src-tauri/target/release/bundle/nsis/*.exe
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload Windows workflow artifacts
+        if: ${{ !inputs.publish_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclemetry-windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+
   build-linux:
+    if: ${{ inputs.platform == 'linux' || inputs.platform == 'all' }}
     strategy:
       fail-fast: false
       matrix:
@@ -195,6 +268,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Read release version
+        id: release-version
+        shell: bash
+        run: |
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install system dependencies
         run: |
@@ -242,8 +323,10 @@ jobs:
         run: app/node_modules/.bin/tauri build --config src-tauri/tauri.linux.conf.json --bundles deb,appimage
 
       - name: Upload artifacts to release
+        if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.release-version.outputs.tag }}
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
@@ -251,3 +334,12 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux workflow artifacts
+        if: ${{ !inputs.publish_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclemetry-linux-${{ matrix.arch }}
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage

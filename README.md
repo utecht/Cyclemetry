@@ -15,62 +15,29 @@
 - **Rich Metrics**: Speed, Power, Heart Rate, Cadence, Gradient, and Temperature.
 - **Customizable Overlays**: Flexible designer to match your video style.
 
-![demo](https://github.com/user-attachments/assets/7e578b89-070b-4709-b016-075fcc364b13)
-
-## 🚀 Installation
-
-1. Download the latest version for macOS from **[GitHub Releases](https://github.com/walkersutton/cyclemetry/releases)**.
-2. You'll need to run this command once to open becuase I'm not paying $100/yr for Apple Developer Account
-
-```sh
-xattr -cr /Applications/Cyclemetry.app
-```
-
-Currently supported:
-
-- **macOS** (Apple Silicon & Intel) via `.dmg`
-
-## 🛠️ Development
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) & [pnpm](https://pnpm.io/)
-- [Rust](https://www.rust-lang.org/)
-
-### Setup
-
-```bash
-pnpm install
-```
-
-### Running Locally
-
-```bash
-pnpm dev
-```
-
 ## Videos Made With Cyclemetry
 
 See what cyclists around the world are creating with Cyclemetry.
 
-→ [Full showcase](https://www.cyclemetry.com/showcase)
+→ [Full showcase](https://cyclemetry.walkersutton.com/showcase)
 
+![demo](https://github.com/user-attachments/assets/7e578b89-070b-4709-b016-075fcc364b13)
 
+## 🚀 Installation
 
-## Adding a Bundled Font
+Cyclemetry is available for macOS, Windows, and Linux.
 
-Drop a `.ttf` or `.otf` file into `resources/fonts/`. That's it — the Tauri bundler picks up the whole directory, and the font picker in the app lists it automatically. No config changes required.
+Follow the platform-specific install guide at **[cyclemetry.walkersutton.com/install](https://cyclemetry.walkersutton.com/install)**.
 
-## 📦 Releasing
+Supported platforms:
 
-1. Bump `version` in `src-tauri/Cargo.toml`
-2. Run:
+- **macOS** (Apple Silicon & Intel) via `.dmg`
+- **Windows** via `.exe`
+- **Linux** via `.deb` and `.AppImage`
 
-```bash
-pnpm release
-```
+## 🛠️ Development
 
-This syncs the version to `package.json`, commits, tags, and pushes — which triggers the CI release build.
+See the **[development guide](https://cyclemetry.walkersutton.com/developing)** for local setup, bundled fonts, release steps, and debugging notes.
 
 ## 🤝 Contributing
 

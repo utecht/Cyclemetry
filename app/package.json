@@ -1,7 +1,7 @@
 {
   "name": "cyclemetry",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "sh -c 'cd .. && CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev'",
@@ -11,8 +11,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "sync-version": "node -e \"const fs=require('fs');const v=fs.readFileSync('../src-tauri/Cargo.toml','utf8').match(/^version = \\\"(.+)\\\"/m)[1];const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=v;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')\"",
-    "release": "VERSION=$(grep '^version' ../src-tauri/Cargo.toml | head -1 | sed 's/version = \"\\(.*\\)\"/\\1/') && pnpm sync-version && git -C .. add src-tauri/Cargo.toml app/package.json && git -C .. commit -m \"v$VERSION\" && git -C .. tag v$VERSION && git -C .. push origin main && git -C .. push origin v$VERSION"
+    "sync-version": "node ../scripts/sync-version.mjs",
+    "release": "node ../scripts/release.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
