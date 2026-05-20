@@ -42,7 +42,7 @@ Drop a `.ttf` or `.otf` file into `resources/fonts/`. The Tauri bundler picks up
 pnpm release
 ```
 
-The release script syncs that version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata files, creates a `vX.Y.Z` git tag, and pushes `main` plus the tag.
+The release script syncs that version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata files, creates a `vX.Y.Z` git tag, pushes `main` plus the tag, and starts the Release workflow for all platforms with publishing enabled.
 
 ### Test a Release Build
 
@@ -56,15 +56,7 @@ gh workflow run release.yml -f platform=linux -f publish_release=false
 
 This builds the release artifacts in GitHub Actions and uploads them as workflow artifacts, but does not publish anything to GitHub Releases. Use `-f platform=all` only when you want to test every platform in one run.
 
-### Publish a Release
-
-After the test build passes, publish the release assets:
-
-```bash
-gh workflow run release.yml -f platform=all -f publish_release=true
-```
-
-The Release workflow is manual-only. In the GitHub UI, choose a platform and leave `publish_release` unchecked to test builds, or choose `all` and check `publish_release` to publish assets to the `vX.Y.Z` release.
+The Release workflow is manual-only. In the GitHub UI, choose a platform and leave `publish_release` unchecked to test builds. The `pnpm release` command starts the all-platform publishing workflow for the `vX.Y.Z` release.
 
 ## Inspect Built App Logs
 

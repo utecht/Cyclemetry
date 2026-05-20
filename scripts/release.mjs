@@ -51,5 +51,16 @@ run('git', ['commit', '-m', tag])
 run('git', ['tag', tag])
 run('git', ['push', 'origin', 'main'])
 run('git', ['push', 'origin', tag])
+run('gh', [
+  'workflow',
+  'run',
+  'release.yml',
+  '--ref',
+  'main',
+  '-f',
+  'platform=all',
+  '-f',
+  'publish_release=true',
+])
 
-console.log(`Released ${tag}`)
+console.log(`Released ${tag} and started the release workflow`)
