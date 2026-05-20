@@ -87,7 +87,13 @@ jobs:
           lipo -archs resources/ffmpeg | grep -q x86_64 \
             || { echo "ffmpeg missing x86_64 slice"; exit 1; }
           otool -L resources/ffmpeg
-          if otool -L resources/ffmpeg | tail -n +2 | grep -vqE '/usr/lib/|/System/'; then
+          NON_SYSTEM_DEPS=$(otool -L resources/ffmpeg \
+            | tail -n +2 \
+            | grep -vE '^\S+ \(architecture (x86_64|arm64)\):$' \
+            | grep -vE '^[[:space:]]*(/usr/lib/|/System/)' \
+            || true)
+          if [ -n "$NON_SYSTEM_DEPS" ]; then
+            echo "$NON_SYSTEM_DEPS"
             echo "ffmpeg has non-system dynamic dependencies — not static"; exit 1
           fi
 
