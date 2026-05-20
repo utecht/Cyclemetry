@@ -58,8 +58,8 @@ jobs:
 
       - name: Setup FFmpeg
         run: |
-          # Build a universal FFmpeg from static arm64 + x86_64 binaries so the
-          # app bundle and updater artifact work on both Apple Silicon and Intel.
+          # Fetch separate static FFmpeg binaries so macOS releases can stay
+          # architecture-specific instead of shipping one large universal app.
           mkdir -p ffmpeg-arm64 ffmpeg-x86_64
 
           curl -L --fail -o ffmpeg-arm64.zip \
@@ -77,19 +77,27 @@ jobs:
           test -n "$X86_64_FFMPEG"
 
           chmod +x "$ARM64_FFMPEG" "$X86_64_FFMPEG"
-          lipo -create -output resources/ffmpeg "$ARM64_FFMPEG" "$X86_64_FFMPEG"
+
+          echo "ARM64_FFMPEG=$ARM64_FFMPEG" >> "$GITHUB_ENV"
+          echo "X86_64_FFMPEG=$X86_64_FFMPEG" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies
+        run: pnpm -C app install
+
+      - name: Build Apple Silicon Tauri app
+        # createUpdaterArtifacts is enabled here (CI only) — not in
+        # tauri.conf.json — so local `pnpm build` doesn't require the
+        # signing key. CI has it via the secrets below.
+        run: |
+          cp "$ARM64_FFMPEG" resources/ffmpeg
           chmod +x resources/ffmpeg
 
-          # Hard-fail the build if either macOS slice is missing.
           lipo -archs resources/ffmpeg
           lipo -archs resources/ffmpeg | grep -q arm64 \
             || { echo "ffmpeg missing arm64 slice"; exit 1; }
-          lipo -archs resources/ffmpeg | grep -q x86_64 \
-            || { echo "ffmpeg missing x86_64 slice"; exit 1; }
           otool -L resources/ffmpeg
           NON_SYSTEM_DEPS=$(otool -L resources/ffmpeg \
             | tail -n +2 \
-            | grep -vE '^\S+ \(architecture (x86_64|arm64)\):$' \
             | grep -vE '^[[:space:]]*(/usr/lib/|/System/)' \
             || true)
           if [ -n "$NON_SYSTEM_DEPS" ]; then
@@ -97,18 +105,36 @@ jobs:
             echo "ffmpeg has non-system dynamic dependencies — not static"; exit 1
           fi
 
-          # lipo creates a new binary, so sign it before Tauri embeds it.
           codesign --force --sign - resources/ffmpeg
           codesign -dv resources/ffmpeg 2>&1 | head -5
 
-      - name: Install frontend dependencies
-        run: pnpm -C app install
+          app/node_modules/.bin/tauri build --target aarch64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":true}}'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Build Tauri app
-        # createUpdaterArtifacts is enabled here (CI only) — not in
-        # tauri.conf.json — so local `pnpm build` doesn't require the
-        # signing key. CI has it via the secrets below.
-        run: app/node_modules/.bin/tauri build --target universal-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":true}}'
+      - name: Build Intel Mac Tauri app
+        run: |
+          cp "$X86_64_FFMPEG" resources/ffmpeg
+          chmod +x resources/ffmpeg
+
+          lipo -archs resources/ffmpeg
+          lipo -archs resources/ffmpeg | grep -q x86_64 \
+            || { echo "ffmpeg missing x86_64 slice"; exit 1; }
+          otool -L resources/ffmpeg
+          NON_SYSTEM_DEPS=$(otool -L resources/ffmpeg \
+            | tail -n +2 \
+            | grep -vE '^[[:space:]]*(/usr/lib/|/System/)' \
+            || true)
+          if [ -n "$NON_SYSTEM_DEPS" ]; then
+            echo "$NON_SYSTEM_DEPS"
+            echo "ffmpeg has non-system dynamic dependencies — not static"; exit 1
+          fi
+
+          codesign --force --sign - resources/ffmpeg
+          codesign -dv resources/ffmpeg 2>&1 | head -5
+
+          app/node_modules/.bin/tauri build --target x86_64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":true}}'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -120,28 +146,39 @@ jobs:
           VERSION="${{ steps.release-version.outputs.version }}"
           mkdir -p release-assets
 
-          DMG=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
-          test -n "$DMG"
+          ARM_DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
+          INTEL_DMG=$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
+          test -n "$ARM_DMG"
+          test -n "$INTEL_DMG"
 
-          cp "$DMG" "release-assets/Cyclemetry-macOS-Apple-Silicon-and-Intel-v${VERSION}.dmg"
-          cp "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz" \
-            "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz"
-          cp "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig" \
-            "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz.sig"
+          cp "$ARM_DMG" "release-assets/Cyclemetry-macOS-Apple-Silicon-v${VERSION}.dmg"
+          cp "$INTEL_DMG" "release-assets/Cyclemetry-macOS-Intel-v${VERSION}.dmg"
+          cp "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz" \
+            "release-assets/Cyclemetry-macOS-updater-Apple-Silicon-v${VERSION}.app.tar.gz"
+          cp "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig" \
+            "release-assets/Cyclemetry-macOS-updater-Apple-Silicon-v${VERSION}.app.tar.gz.sig"
+          cp "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz" \
+            "release-assets/Cyclemetry-macOS-updater-Intel-v${VERSION}.app.tar.gz"
+          cp "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig" \
+            "release-assets/Cyclemetry-macOS-updater-Intel-v${VERSION}.app.tar.gz.sig"
 
-          echo "updater_asset_name=Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "arm_updater_asset_name=Cyclemetry-macOS-updater-Apple-Silicon-v${VERSION}.app.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "intel_updater_asset_name=Cyclemetry-macOS-updater-Intel-v${VERSION}.app.tar.gz" >> "$GITHUB_OUTPUT"
           ls -la release-assets
 
       - name: Generate update manifest
         run: |
           VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          SIG=$(cat "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz.sig")
+          ARM_SIG=$(cat "release-assets/Cyclemetry-macOS-updater-Apple-Silicon-v${VERSION}.app.tar.gz.sig")
+          INTEL_SIG=$(cat "release-assets/Cyclemetry-macOS-updater-Intel-v${VERSION}.app.tar.gz.sig")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           jq -n \
             --arg version "$VERSION" \
-            --arg sig "$SIG" \
-            --arg url "https://github.com/walkersutton/cyclemetry/releases/download/v${VERSION}/${{ steps.release-assets.outputs.updater_asset_name }}" \
+            --arg arm_sig "$ARM_SIG" \
+            --arg intel_sig "$INTEL_SIG" \
+            --arg arm_url "https://github.com/walkersutton/cyclemetry/releases/download/v${VERSION}/${{ steps.release-assets.outputs.arm_updater_asset_name }}" \
+            --arg intel_url "https://github.com/walkersutton/cyclemetry/releases/download/v${VERSION}/${{ steps.release-assets.outputs.intel_updater_asset_name }}" \
             --arg pub_date "$PUB_DATE" \
             '{
               version: $version,
@@ -149,12 +186,12 @@ jobs:
               pub_date: $pub_date,
               platforms: {
                 "darwin-aarch64": {
-                  signature: $sig,
-                  url: $url
+                  signature: $arm_sig,
+                  url: $arm_url
                 },
                 "darwin-x86_64": {
-                  signature: $sig,
-                  url: $url
+                  signature: $intel_sig,
+                  url: $intel_url
                 }
               }
             }' > latest.json
@@ -163,7 +200,7 @@ jobs:
         if: ${{ !inputs.publish_release }}
         uses: actions/upload-artifact@v4
         with:
-          name: cyclemetry-macos-universal
+          name: cyclemetry-macos
           path: |
             release-assets/*
             latest.json
@@ -174,8 +211,10 @@ jobs:
         with:
           tag_name: ${{ steps.release-version.outputs.tag }}
           files: |
-            release-assets/Cyclemetry-macOS-Apple-Silicon-and-Intel-v${{ steps.release-version.outputs.version }}.dmg
-            release-assets/Cyclemetry-macOS-updater-universal-v${{ steps.release-version.outputs.version }}.app.tar.gz
+            release-assets/Cyclemetry-macOS-Apple-Silicon-v${{ steps.release-version.outputs.version }}.dmg
+            release-assets/Cyclemetry-macOS-Intel-v${{ steps.release-version.outputs.version }}.dmg
+            release-assets/Cyclemetry-macOS-updater-Apple-Silicon-v${{ steps.release-version.outputs.version }}.app.tar.gz
+            release-assets/Cyclemetry-macOS-updater-Intel-v${{ steps.release-version.outputs.version }}.app.tar.gz
             latest.json
           draft: false
           prerelease: false
