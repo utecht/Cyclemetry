@@ -113,16 +113,35 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Prepare macOS release assets
+        id: release-assets
+        shell: bash
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          mkdir -p release-assets
+
+          DMG=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
+          test -n "$DMG"
+
+          cp "$DMG" "release-assets/Cyclemetry-macOS-Apple-Silicon-and-Intel-v${VERSION}.dmg"
+          cp "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz" \
+            "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz"
+          cp "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig" \
+            "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz.sig"
+
+          echo "updater_asset_name=Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz" >> "$GITHUB_OUTPUT"
+          ls -la release-assets
+
       - name: Generate update manifest
         run: |
           VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          SIG=$(cat "src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig")
+          SIG=$(cat "release-assets/Cyclemetry-macOS-updater-universal-v${VERSION}.app.tar.gz.sig")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           jq -n \
             --arg version "$VERSION" \
             --arg sig "$SIG" \
-            --arg url "https://github.com/walkersutton/cyclemetry/releases/download/v${VERSION}/Cyclemetry.app.tar.gz" \
+            --arg url "https://github.com/walkersutton/cyclemetry/releases/download/v${VERSION}/${{ steps.release-assets.outputs.updater_asset_name }}" \
             --arg pub_date "$PUB_DATE" \
             '{
               version: $version,
@@ -146,9 +165,7 @@ jobs:
         with:
           name: cyclemetry-macos-universal
           path: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz.sig
+            release-assets/*
             latest.json
 
       - name: Upload artifacts to release
@@ -157,8 +174,8 @@ jobs:
         with:
           tag_name: ${{ steps.release-version.outputs.tag }}
           files: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/Cyclemetry.app.tar.gz
+            release-assets/Cyclemetry-macOS-Apple-Silicon-and-Intel-v${{ steps.release-version.outputs.version }}.dmg
+            release-assets/Cyclemetry-macOS-updater-universal-v${{ steps.release-version.outputs.version }}.app.tar.gz
             latest.json
           draft: false
           prerelease: false
@@ -237,12 +254,22 @@ jobs:
             app/node_modules/.bin/tauri build --bundles nsis
           }
 
+      - name: Prepare Windows release assets
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release-version.outputs.version }}"
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "No Windows installer found" }
+          Copy-Item $installer.FullName "release-assets/Cyclemetry-Windows-x64-Setup-v$version.exe"
+          Get-ChildItem release-assets
+
       - name: Upload artifacts to release
         if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.release-version.outputs.tag }}
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          files: release-assets/Cyclemetry-Windows-x64-Setup-v${{ steps.release-version.outputs.version }}.exe
           draft: false
           prerelease: false
         env:
@@ -253,7 +280,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cyclemetry-windows
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: release-assets/*
 
   build-linux:
     if: ${{ inputs.platform == 'linux' || inputs.platform == 'all' }}
@@ -328,14 +355,34 @@ jobs:
       - name: Build Tauri app
         run: app/node_modules/.bin/tauri build --config src-tauri/tauri.linux.conf.json --bundles deb,appimage
 
+      - name: Prepare Linux release assets
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          if [ "$ARCH" = "amd64" ]; then
+            ASSET_ARCH="x64"
+          else
+            ASSET_ARCH="ARM64"
+          fi
+          mkdir -p release-assets
+
+          DEB=$(find src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' | head -1)
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -1)
+          test -n "$DEB"
+          test -n "$APPIMAGE"
+
+          cp "$DEB" "release-assets/Cyclemetry-Linux-${ASSET_ARCH}-Debian-v${VERSION}.deb"
+          cp "$APPIMAGE" "release-assets/Cyclemetry-Linux-${ASSET_ARCH}-AppImage-v${VERSION}.AppImage"
+          ls -la release-assets
+
       - name: Upload artifacts to release
         if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.release-version.outputs.tag }}
           files: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            release-assets/*.deb
+            release-assets/*.AppImage
           draft: false
           prerelease: false
         env:
@@ -347,5 +394,4 @@ jobs:
         with:
           name: cyclemetry-linux-${{ matrix.arch }}
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            release-assets/*
