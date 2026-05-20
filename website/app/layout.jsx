@@ -38,7 +38,10 @@ const navbar = (
       </span>
     }
     projectLink="https://github.com/walkersutton/cyclemetry"
-  />
+  >
+    <a className="cyclemetry-navbar-link" href="/install/">Install</a>
+    <a className="cyclemetry-navbar-link" href="/blog/">Blog</a>
+  </Navbar>
 )
 
 const footer = (

@@ -1,64 +1,33 @@
 {
-  "scene": {
-    "color": "#ffffff",
-    "decimal_rounding": 0,
-    "end": 2520,
-    "font": "Arial.ttf",
-    "font_size": 30,
-    "fps": 30,
-    "height": 2160,
-    "layers": [
-      "plot-0",
-      "plot-1",
-      "value-0",
-      "value-1",
-      "value-2",
-      "value-3",
-      "label-0"
-    ],
-    "opacity": 0.5,
-    "start": 1380,
-    "width": 3840
-  },
   "elements": [
     {
-      "type": "label",
-      "id": "label-0",
-      "color": "#ffffff",
-      "font_size": 100,
-      "opacity": 1,
-      "text": "| \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 | \u2014\u2014\u2014\u2014 |",
-      "x": 1115,
-      "y": 1919
-    },
-    {
-      "type": "plot",
-      "id": "plot-0",
       "color": "#f4f4f4",
-      "height": 1000,
+      "height": 900,
+      "id": "plot-0",
       "line": {
-        "width": 6
+        "future_opacity": 0.5,
+        "width": 10
       },
       "margin": 0.1,
       "points": [
         {
           "opacity": 1,
-          "weight": 1000
+          "weight": 2000
         }
       ],
       "rotation": 0,
+      "type": "plot",
       "value": "course",
       "width": 600,
       "x": 3204,
-      "y": 41
+      "y": 40
     },
     {
-      "type": "plot",
-      "id": "plot-1",
       "fill": {
         "opacity": 0.5
       },
-      "height": 300,
+      "height": 250,
+      "id": "plot-1",
       "line": {
         "color": "#ffffff",
         "width": 5
@@ -66,54 +35,178 @@
       "opacity": 1,
       "points": [
         {
-          "color": "#ffffff",
-          "edge_color": "#ffffff",
-          "weight": 1000
+          "color": "#eed105",
+          "edge_color": "#eed105",
+          "edge_width": 0,
+          "remove_edge_color": false,
+          "weight": 800
         }
       ],
+      "type": "plot",
       "value": "elevation",
-      "width": 1000,
-      "x": 38,
-      "y": 1842
+      "width": 900,
+      "x": 0,
+      "y": 1910
     },
     {
-      "type": "value",
-      "id": "value-0",
       "font_size": 80,
+      "id": "value-0",
       "opacity": 1,
       "suffix": " mph",
+      "type": "value",
       "value": "speed",
-      "x": 3104,
-      "y": 1987
+      "x": 3100,
+      "y": 2000
     },
     {
-      "type": "value",
-      "id": "value-1",
       "font_size": 80,
+      "id": "value-1",
       "opacity": 1,
       "suffix": " bpm",
+      "type": "value",
       "value": "heartrate",
-      "x": 3070,
-      "y": 2096
+      "x": 3100,
+      "y": 2110
     },
     {
-      "type": "value",
+      "distance_reference": "overlay_end",
+      "font_size": 80,
       "id": "value-2",
-      "font_size": 80,
       "opacity": 1,
-      "suffix": " m to go",
-      "value": "speed",
-      "x": 3415,
-      "y": 2096
+      "suffix": " m",
+      "text_align": "right",
+      "type": "value",
+      "unit": "m",
+      "value": "distance",
+      "x": 3810,
+      "y": 2110
     },
     {
-      "type": "value",
-      "id": "value-3",
       "font_size": 80,
+      "id": "value-3",
       "opacity": 1,
+      "type": "value",
       "value": "power",
-      "x": 2017,
-      "y": 1795
+      "x": 1855,
+      "y": 1858
+    },
+    {
+      "arc_color": "#ffffff55",
+      "arc_width": 14,
+      "color": "#ffffff",
+      "height": 80,
+      "id": "gauge-0",
+      "max": 50,
+      "min": 0,
+      "needle_color": "#d6d6d6",
+      "needle_width": 6,
+      "opacity": 1,
+      "progress_color": "#ffffff",
+      "start_angle": 135,
+      "sweep_angle": 270,
+      "type": "gauge",
+      "value": "speed",
+      "width": 80,
+      "x": 3000,
+      "y": 1940
+    },
+    {
+      "background": "#ffffff",
+      "background_opacity": 0,
+      "border_width": 20,
+      "color": "#ffffff",
+      "direction": "right",
+      "fill_opacity": 1,
+      "gap": 0,
+      "gradient": ["#00d000", "#fffb00", "#ff2600"],
+      "height": 80,
+      "id": "meter-0",
+      "max": 1000,
+      "min": 0,
+      "opacity": 1,
+      "radius": 0,
+      "scale_font_size": 60,
+      "scale_labels": [],
+      "scale_offset": 20,
+      "scale_suffix": " W",
+      "scale_tick_length": 30,
+      "scale_tick_width": 6,
+      "scale_ticks": 9,
+      "segments": 0,
+      "type": "meter",
+      "value": "power",
+      "width": 1700,
+      "x": 1070,
+      "y": 1909
+    },
+    {
+      "file": "white_heart.png",
+      "height": 80,
+      "id": "image-0",
+      "natural_height": 1500,
+      "natural_width": 1500,
+      "opacity": 1,
+      "pulse_metric": "heartrate",
+      "type": "image",
+      "width": 80,
+      "x": 3000,
+      "y": 2045
+    },
+    {
+      "arc_color": "#ffffff55",
+      "arc_width": 14,
+      "color": "#ffffff",
+      "height": 360,
+      "id": "gauge-1",
+      "max": 60,
+      "min": 0,
+      "needle_color": "#ef4444",
+      "needle_width": 6,
+      "opacity": 1,
+      "progress_color": "#ffffff",
+      "start_angle": 135,
+      "sweep_angle": 270,
+      "type": "gauge",
+      "value": "speed",
+      "width": 360,
+      "x": 1575,
+      "y": 478
     }
-  ]
+  ],
+  "scene": {
+    "color": "#ffffff",
+    "decimal_rounding": 0,
+    "end": 2520,
+    "font": "Arial.ttf",
+    "font_size": 30,
+    "fps": 30,
+    "groups": [
+      {
+        "element_ids": ["gauge-0", "value-0"],
+        "id": "group-0",
+        "name": "speed group"
+      },
+      {
+        "element_ids": ["value-3", "meter-0"],
+        "id": "group-1",
+        "name": "power group"
+      }
+    ],
+    "height": 2160,
+    "layers": [
+      "plot-0",
+      "plot-1",
+      "value-1",
+      "value-2",
+      "value-0",
+      "gauge-0",
+      "value-3",
+      "meter-0",
+      "image-0",
+      "gauge-1"
+    ],
+    "opacity": 0.5,
+    "start": 1380,
+    "width": 3840
+  }
 }

@@ -43,6 +43,25 @@ fn fonts_user_dir() -> PathBuf {
     dir
 }
 
+fn window_size_file() -> PathBuf {
+    app_data_base().join("window-size.json")
+}
+
+fn save_window_size(width: u32, height: u32) {
+    if let Ok(json) = serde_json::to_string(&serde_json::json!({"width": width, "height": height}))
+    {
+        std::fs::write(window_size_file(), json).ok();
+    }
+}
+
+fn load_window_size() -> Option<(u32, u32)> {
+    let text = std::fs::read_to_string(window_size_file()).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let w = v["width"].as_u64()? as u32;
+    let h = v["height"].as_u64()? as u32;
+    Some((w, h))
+}
+
 /// Default render output directory, platform-appropriate.
 fn default_output_dir() -> PathBuf {
     let dir = {
@@ -241,6 +260,38 @@ fn resolve_fonts_dir() -> String {
         }
     }
     "./fonts".to_string()
+}
+
+/// User-uploaded image assets directory.
+fn assets_user_dir() -> PathBuf {
+    let dir = app_data_base().join("assets");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
+
+/// Ordered list of asset search directories: user dir first, then bundled.
+fn assets_search_dirs_vec() -> Vec<String> {
+    let mut dirs = vec![assets_user_dir().to_string_lossy().to_string()];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(root) = exe
+            .ancestors()
+            .find(|p| p.join("templates").join("assets").is_dir())
+        {
+            dirs.push(
+                root.join("templates")
+                    .join("assets")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
+            let prod = contents.join("Resources").join("assets");
+            if prod.exists() {
+                dirs.push(prod.to_string_lossy().to_string());
+            }
+        }
+    }
+    dirs
 }
 
 fn resolve_output_path(template_json: &serde_json::Value, output_dir: Option<&str>) -> String {
@@ -539,6 +590,80 @@ fn backend_import_font(path: String) -> Result<Vec<String>, String> {
     Ok(backend_list_fonts())
 }
 
+#[derive(serde::Serialize)]
+struct AssetItem {
+    name: String,
+    data_url: String,
+}
+
+fn asset_data_url(path: &Path) -> String {
+    use base64::{engine::general_purpose, Engine as _};
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        _ => "image/png",
+    };
+    match std::fs::read(path) {
+        Ok(bytes) => format!(
+            "data:{mime};base64,{}",
+            general_purpose::STANDARD.encode(&bytes)
+        ),
+        Err(_) => String::new(),
+    }
+}
+
+#[tauri::command]
+fn backend_list_assets() -> Vec<AssetItem> {
+    let mut items: Vec<AssetItem> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let dirs = assets_search_dirs_vec();
+    for dir in &dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str().map(str::to_string) {
+                    let ext = Path::new(&name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if matches!(ext.as_str(), "png" | "webp" | "svg") && seen.insert(name.clone()) {
+                        let data_url = asset_data_url(&entry.path());
+                        items.push(AssetItem { name, data_url });
+                    }
+                }
+            }
+        }
+    }
+    items.sort_by(|a, b| a.name.cmp(&b.name));
+    items
+}
+
+#[tauri::command]
+fn backend_import_asset(path: String) -> Result<String, String> {
+    let src = Path::new(&path);
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+    if !matches!(ext.as_deref(), Some("png") | Some("webp") | Some("svg")) {
+        return Err("Asset must be a .png, .webp, or .svg file".into());
+    }
+    let name = src
+        .file_name()
+        .ok_or("Invalid path")?
+        .to_string_lossy()
+        .to_string();
+    let dest = assets_user_dir().join(&name);
+    std::fs::copy(src, &dest).map_err(|e| format!("Could not import asset: {e}"))?;
+    Ok(name)
+}
+
 #[tauri::command]
 fn backend_open_downloads(path: Option<String>) -> Result<String, String> {
     let dir = match path {
@@ -602,6 +727,45 @@ fn open_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct ImageSize {
+    width: i32,
+    height: i32,
+}
+
+#[tauri::command]
+fn backend_image_size(filename: String) -> Result<ImageSize, String> {
+    let dirs_owned = assets_search_dirs_vec();
+    let dirs: Vec<&str> = dirs_owned.iter().map(String::as_str).collect();
+    let path = render::frame::resolve_asset_path(&filename, &dirs)
+        .ok_or_else(|| format!("Asset not found: {filename}"))?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext == "svg" {
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| format!("Could not read SVG: {e}"))?;
+        let tree = resvg::usvg::Tree::from_str(&content, &resvg::usvg::Options::default())
+            .map_err(|e| format!("Could not parse SVG: {e}"))?;
+        let size = tree.size().to_int_size();
+        Ok(ImageSize {
+            width: size.width() as i32,
+            height: size.height() as i32,
+        })
+    } else {
+        let bytes = std::fs::read(&path).map_err(|e| format!("Could not read image: {e}"))?;
+        let data = skia_safe::Data::new_copy(&bytes);
+        let img = skia_safe::Image::from_encoded(data)
+            .ok_or_else(|| "Could not decode image".to_string())?;
+        Ok(ImageSize {
+            width: img.width(),
+            height: img.height(),
+        })
+    }
+}
+
 fn open_url(url: &str) {
     #[cfg(target_os = "macos")]
     let cmd = ("open", url);
@@ -642,7 +806,7 @@ fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String
 
 /// Parse GPX at `path` and return `{ filename, duration_seconds, has_data }`.
 fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
-    let duration = match render::activity::Activity::from_gpx(path) {
+    let duration = match render::activity::Activity::from_file(path) {
         Ok(activity) => activity.data_len(),
         Err(_) => 0,
     };
@@ -673,7 +837,7 @@ async fn backend_activity_distance_info(
         let duration = (scene_end.ceil() as usize).max(60);
         render::activity::Activity::synthetic(duration)
     } else {
-        render::activity::Activity::from_gpx(&gpx_path)?
+        render::activity::Activity::from_file(&gpx_path)?
     };
     let total_m = activity.total_activity_distance;
     let len = activity.speed.len();
@@ -686,6 +850,49 @@ async fn backend_activity_distance_info(
         "overlay_end_m": activity.distance.last().copied().unwrap_or(0.0),
     })
     .to_string())
+}
+
+#[tauri::command]
+async fn backend_activity_metric_range(
+    gpx_filename: String,
+    metric: String,
+    unit: Option<String>,
+    scene_start: f64,
+    scene_end: f64,
+) -> Result<String, String> {
+    let gpx_path = match resolve_gpx_path(&gpx_filename) {
+        Ok((p, _)) => p,
+        Err(_) => "<synthetic>".to_string(),
+    };
+    let mut activity = if gpx_path == "<synthetic>" {
+        let duration = (scene_end.ceil() as usize).max(60);
+        render::activity::Activity::synthetic(duration)
+    } else {
+        render::activity::Activity::from_file(&gpx_path)?
+    };
+    let len = activity.speed.len();
+    if len == 0 {
+        return Err("No activity data".to_string());
+    }
+    let start = (scene_start as usize).min(len.saturating_sub(1));
+    let end = (scene_end as usize).clamp(start + 1, len);
+    activity.trim(start, end).ok();
+
+    let (conversion, _) = render::units::resolve(&metric, unit.as_deref());
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for idx in 0..activity.data_len() {
+        let value = conversion.apply(activity.get_scalar(&metric, idx));
+        if value.is_finite() {
+            min = min.min(value);
+            max = max.max(value);
+        }
+    }
+    if !min.is_finite() || !max.is_finite() {
+        return Err(format!("No finite values for metric: {metric}"));
+    }
+
+    Ok(serde_json::json!({ "metric": metric, "min": min, "max": max }).to_string())
 }
 
 // ─── Community templates ──────────────────────────────────────────────────────
@@ -910,15 +1117,29 @@ async fn native_render(
     target_height: Option<u32>,
     state: tauri::State<'_, SharedRenderState>,
 ) -> Result<String, String> {
+    log::info!(
+        "native_render: requested gpx={gpx_filename}, output_dir={:?}, target={:?}x{:?}",
+        output_dir,
+        target_width,
+        target_height
+    );
     let target = match (target_width, target_height) {
         (Some(w), Some(h)) => Some((w, h)),
         _ => None,
     };
     let template = render::template::Template::from_value_scaled(config.clone(), target)
         .map_err(|e| format!("Template parse error: {e}"))?;
+    log::info!(
+        "native_render: template parsed ({} elements, {}x{} @ {}fps)",
+        template.elements.len(),
+        template.scene.width,
+        template.scene.height,
+        template.scene.fps
+    );
     let output_path = resolve_output_path(&config, output_dir.as_deref());
     let fonts_dir = resolve_fonts_dir();
     let (gpx_path, _) = resolve_gpx_path(&gpx_filename)?;
+    log::info!("native_render: resolved gpx={gpx_path}, output={output_path}");
 
     let progress_clone = {
         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -932,17 +1153,21 @@ async fn native_render(
     };
     let state_clone = state.inner().clone();
     let output_path_for_response = output_path.clone();
+    let assets_dirs_owned = assets_search_dirs_vec();
 
     tokio::task::spawn_blocking(move || {
+        log::info!("native_render: worker started");
         // catch_unwind ensures is_running is always cleared even if render_video panics
         // (e.g. Skia surface failure, rayon worker panic). Without this, a panic would
         // silently swallow the JoinHandle error and leave is_running=true forever.
+        let assets_dirs: Vec<&str> = assets_dirs_owned.iter().map(String::as_str).collect();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             render::scene::render_video(
                 &gpx_path,
                 &template,
                 &output_path,
                 &fonts_dir,
+                &assets_dirs,
                 &progress_clone,
             )
         }))
@@ -1060,7 +1285,7 @@ async fn native_demo(
             let mut activity = if gpx_path == "<synthetic>" {
                 render::activity::Activity::synthetic(60)
             } else {
-                render::activity::Activity::from_gpx(&gpx_path)
+                render::activity::Activity::from_file(&gpx_path)
                     .map_err(|e| format!("GPX parse error: {e}"))?
             };
 
@@ -1081,8 +1306,11 @@ async fn native_demo(
                 activity.interpolate(preview_fps);
             }
 
-            let scene_cache = render::frame::SceneCache::build(&activity, &template, &fonts_dir)
-                .map_err(|e| format!("SceneCache build failed: {e}"))?;
+            let assets_dirs_owned = assets_search_dirs_vec();
+            let assets_dirs: Vec<&str> = assets_dirs_owned.iter().map(String::as_str).collect();
+            let scene_cache =
+                render::frame::SceneCache::build(&activity, &template, &fonts_dir, &assets_dirs)
+                    .map_err(|e| format!("SceneCache build failed: {e}"))?;
 
             *guard = Some(DemoCache {
                 gpx_key: gpx_path,
@@ -1183,7 +1411,7 @@ async fn native_benchmark(
         let mut activity = if gpx_path == "<synthetic>" {
             render::activity::Activity::synthetic(60)
         } else {
-            render::activity::Activity::from_gpx(&gpx_path)
+            render::activity::Activity::from_file(&gpx_path)
                 .map_err(|e| format!("GPX parse: {e}"))?
         };
         activity.interpolate(template.scene.fps);
@@ -1201,8 +1429,11 @@ async fn native_benchmark(
         if activity.data_len() == 0 {
             return Err("No activity data".to_string());
         }
-        let cache = render::frame::SceneCache::build(&activity, &template, &fonts_dir)
-            .map_err(|e| format!("SceneCache: {e}"))?;
+        let assets_dirs_owned = assets_search_dirs_vec();
+        let assets_dirs: Vec<&str> = assets_dirs_owned.iter().map(String::as_str).collect();
+        let cache =
+            render::frame::SceneCache::build(&activity, &template, &fonts_dir, &assets_dirs)
+                .map_err(|e| format!("SceneCache: {e}"))?;
 
         let total = activity.data_len();
         let n = frames.min(total);
@@ -1302,6 +1533,9 @@ pub fn run() {
             backend_default_output_dir,
             backend_list_fonts,
             backend_import_font,
+            backend_list_assets,
+            backend_import_asset,
+            backend_image_size,
             backend_open_activities,
             backend_open_downloads,
             backend_open_video,
@@ -1312,6 +1546,7 @@ pub fn run() {
             backend_delete_template,
             backend_save_template_preview,
             backend_activity_distance_info,
+            backend_activity_metric_range,
             record_gpx_opened,
         ])
         .setup(move |app| {
@@ -1345,6 +1580,27 @@ pub fn run() {
                 APP_DATA_DIR.set(dir).ok();
             }
             log::info!("startup: app_data_dir = {:?}", app_data_base());
+
+            // ── Window size: restore saved, then persist on close ───────────
+            if let Some(win) = app.get_webview_window("main") {
+                if let Some((w, h)) = load_window_size() {
+                    win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: w as f64,
+                        height: h as f64,
+                    }))
+                    .ok();
+                }
+                let win2 = win.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        if let (Ok(s), Ok(sf)) = (win2.inner_size(), win2.scale_factor()) {
+                            let w = (s.width as f64 / sf).round() as u32;
+                            let h = (s.height as f64 / sf).round() as u32;
+                            save_window_size(w, h);
+                        }
+                    }
+                });
+            }
 
             #[cfg(all(debug_assertions, target_os = "macos"))]
             {

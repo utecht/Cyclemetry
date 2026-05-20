@@ -51,17 +51,32 @@ pub fn render_video(
     template: &Template,
     output_path: &str,
     fonts_dir: &str,
+    assets_dirs: &[&str],
     progress: &RenderProgress,
 ) -> Result<(), String> {
-    // Clear any stale cancel flag from a previous render that may have raced
-    // with this call between NativeRenderState::new() and spawn_blocking starting.
-    progress
-        .cancelled
-        .store(false, std::sync::atomic::Ordering::SeqCst);
+    log::info!(
+        "render_video: start gpx={gpx_path}, output={output_path}, assets_dirs={assets_dirs:?}"
+    );
 
     // --- Load and prepare activity data ---
-    let mut activity = Activity::from_gpx(gpx_path)?;
+    log::info!("render_video: loading activity");
+    let mut activity = Activity::from_file(gpx_path)?;
+    if progress.cancelled.load(Ordering::Relaxed) {
+        return Err("Render cancelled".to_string());
+    }
+    log::info!(
+        "render_video: activity loaded ({} samples)",
+        activity.data_len()
+    );
     activity.interpolate(template.scene.fps);
+    if progress.cancelled.load(Ordering::Relaxed) {
+        return Err("Render cancelled".to_string());
+    }
+    log::info!(
+        "render_video: activity interpolated to {}fps ({} frames)",
+        template.scene.fps,
+        activity.data_len()
+    );
 
     // scene.start/end are in seconds; convert to frame indices before trimming.
     let fps = template.scene.fps as usize;
@@ -81,14 +96,29 @@ pub fn render_video(
         .store(total_frames as u64, Ordering::Relaxed);
 
     // --- Build caches ---
-    let cache = SceneCache::build(&activity, template, fonts_dir)
+    log::info!("render_video: building scene cache");
+    let cache = SceneCache::build(&activity, template, fonts_dir, assets_dirs)
         .map_err(|e| format!("Cache build failed: {e}"))?;
+    if progress.cancelled.load(Ordering::Relaxed) {
+        return Err("Render cancelled".to_string());
+    }
+    log::info!("render_video: scene cache built");
 
     // --- Crop to the union of all visible elements ---
     // The overlay is mostly transparent; rasterising + piping + encoding the
     // full 4K frame is overhead. compute_crop_rect returns None when cropping
     // wouldn't pay off, in which case we keep the full-frame path.
-    let crop = crate::render::frame::compute_crop_rect(&activity, template, fonts_dir);
+    log::info!("render_video: computing crop rect");
+    let crop = crate::render::frame::compute_crop_rect(
+        &activity,
+        template,
+        fonts_dir,
+        Some(&progress.cancelled),
+    );
+    if progress.cancelled.load(Ordering::Relaxed) {
+        return Err("Render cancelled".to_string());
+    }
+    log::info!("render_video: crop rect computed");
     let (w, h) = match &crop {
         Some(c) => {
             log::info!(

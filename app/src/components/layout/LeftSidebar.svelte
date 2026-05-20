@@ -129,7 +129,7 @@
           <span class="text-[11px] text-zinc-500">Timeline</span>
           <button
             onclick={() => app.updateScene({ end: app.activityDuration })}
-            title="Set end to GPX duration"
+            title="Set end to activity duration"
             class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
           >{secToTimecode(app.activityDuration)} total</button>
         </div>

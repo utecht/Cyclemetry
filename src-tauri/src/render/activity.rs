@@ -41,6 +41,196 @@ impl Activity {
         Self::parse_gpx(&content)
     }
 
+    /// Dispatch to the correct parser based on file extension.
+    pub fn from_file(path: &str) -> Result<Self, String> {
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        match ext.as_str() {
+            "fit" => Self::from_fit(path),
+            "tcx" => {
+                let content = std::fs::read_to_string(path)
+                    .map_err(|e| format!("Failed to read TCX file: {e}"))?;
+                Self::parse_tcx(&content)
+            }
+            _ => Self::from_gpx(path),
+        }
+    }
+
+    pub fn from_fit(path: &str) -> Result<Self, String> {
+        use fitparser::profile::MesgNum;
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let file = File::open(path).map_err(|e| format!("Failed to open FIT file: {e}"))?;
+        let mut reader = BufReader::new(file);
+        let records = fitparser::from_reader(&mut reader)
+            .map_err(|e| format!("Failed to parse FIT file: {e}"))?;
+
+        let mut points: Vec<TrackPoint> = Vec::new();
+
+        for record in records {
+            if record.kind() != MesgNum::Record {
+                continue;
+            }
+            let mut lat: Option<f64> = None;
+            let mut lon: Option<f64> = None;
+            let mut elevation: Option<f64> = None;
+            let mut heartrate: Option<f64> = None;
+            let mut cadence: Option<f64> = None;
+            let mut power: Option<f64> = None;
+            let mut temperature: Option<f64> = None;
+            let mut time_str: Option<String> = None;
+
+            for field in record.fields() {
+                match field.name() {
+                    "position_lat" => {
+                        // FIT stores lat/lon as semicircles (SInt32); convert to degrees.
+                        lat = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
+                    }
+                    "position_long" => {
+                        lon = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
+                    }
+                    "altitude" | "enhanced_altitude" => {
+                        if elevation.is_none() {
+                            elevation = fit_f64(field.value());
+                        }
+                    }
+                    "heart_rate" => heartrate = fit_f64(field.value()),
+                    "cadence" => cadence = fit_f64(field.value()),
+                    "power" => power = fit_f64(field.value()),
+                    "temperature" => temperature = fit_f64(field.value()),
+                    "timestamp" => {
+                        if let fitparser::Value::Timestamp(dt) = field.value() {
+                            time_str = Some(dt.to_rfc3339());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let (Some(lat), Some(lon)) = (lat, lon) {
+                points.push(TrackPoint {
+                    lat,
+                    lon,
+                    elevation,
+                    time_str,
+                    heartrate,
+                    cadence,
+                    power,
+                    temperature,
+                });
+            }
+        }
+
+        if points.is_empty() {
+            return Err("No GPS track points found in FIT file. \
+                 Indoor activities without GPS are not supported."
+                .to_string());
+        }
+
+        Self::build_from_points(points)
+    }
+
+    pub fn parse_tcx(content: &str) -> Result<Self, String> {
+        let mut reader = Reader::from_str(content);
+        reader.config_mut().trim_text(true);
+
+        let mut points: Vec<TrackPoint> = Vec::new();
+        let mut current: Option<TrackPoint> = None;
+        let mut in_trackpoint = false;
+        let mut in_position = false;
+        let mut in_heartrate = false;
+        let mut in_extensions = false;
+        let mut has_position = false;
+        let mut current_text = String::new();
+        let mut buf = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                    let ename = e.name();
+                    let local = local_name(ename.as_ref());
+                    match local {
+                        "Trackpoint" => {
+                            current = Some(TrackPoint::default());
+                            in_trackpoint = true;
+                            has_position = false;
+                            in_position = false;
+                            in_heartrate = false;
+                            in_extensions = false;
+                        }
+                        "Position" if in_trackpoint => in_position = true,
+                        "HeartRateBpm" if in_trackpoint => in_heartrate = true,
+                        "Extensions" if in_trackpoint => in_extensions = true,
+                        _ => {}
+                    }
+                    current_text.clear();
+                }
+                Ok(Event::Text(e)) => {
+                    if let Ok(t) = e.unescape() {
+                        current_text = t.to_string();
+                    }
+                }
+                Ok(Event::End(ref e)) => {
+                    let ename = e.name();
+                    let local = local_name(ename.as_ref());
+                    if let Some(ref mut pt) = current {
+                        match local {
+                            "LatitudeDegrees" if in_position => {
+                                pt.lat = current_text.parse().unwrap_or(0.0);
+                                has_position = true;
+                            }
+                            "LongitudeDegrees" if in_position => {
+                                pt.lon = current_text.parse().unwrap_or(0.0);
+                            }
+                            "AltitudeMeters" => {
+                                pt.elevation = current_text.parse().ok();
+                            }
+                            "Time" if in_trackpoint => {
+                                pt.time_str = Some(current_text.clone());
+                            }
+                            "Value" if in_heartrate => {
+                                pt.heartrate = current_text.parse().ok();
+                            }
+                            "Cadence" | "RunCadence" => {
+                                pt.cadence = current_text.parse().ok();
+                            }
+                            "Watts" | "PowerInWatts" if in_extensions => {
+                                pt.power = current_text.parse().ok();
+                            }
+                            "Position" => in_position = false,
+                            "HeartRateBpm" => in_heartrate = false,
+                            "Extensions" => in_extensions = false,
+                            "Trackpoint" => {
+                                in_trackpoint = false;
+                                if let Some(pt) = current.take() {
+                                    if has_position {
+                                        points.push(pt);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    current_text.clear();
+                }
+                Ok(Event::Eof) => break,
+                Err(e) => return Err(format!("XML parse error: {e}")),
+                _ => {}
+            }
+            buf.clear();
+        }
+
+        if points.is_empty() {
+            return Err("No track points found in TCX file".to_string());
+        }
+
+        Self::build_from_points(points)
+    }
+
     /// Plausible sample ride used for the WYSIWYG preview when no GPX is
     /// loaded. Avoids shipping a bundled demo file: every metric is populated
     /// so any template element has something to render.
@@ -630,6 +820,28 @@ fn time_delta_seconds(t1: Option<&str>, t2: Option<&str>) -> f64 {
             }
         }
         _ => 0.0,
+    }
+}
+
+// ─── FIT helpers ──────────────────────────────────────────────────────────
+
+/// FIT stores lat/lon as signed 32-bit semicircles; multiply by this to get degrees.
+const SEMICIRCLES_TO_DEG: f64 = 180.0 / 2_147_483_648.0;
+
+fn fit_f64(value: &fitparser::Value) -> Option<f64> {
+    use fitparser::Value::*;
+    match value {
+        SInt8(v) => Some(*v as f64),
+        UInt8(v) => Some(*v as f64),
+        SInt16(v) => Some(*v as f64),
+        UInt16(v) => Some(*v as f64),
+        SInt32(v) => Some(*v as f64),
+        UInt32(v) => Some(*v as f64),
+        Float32(v) if v.is_finite() => Some(*v as f64),
+        Float64(v) if v.is_finite() => Some(*v),
+        SInt64(v) => Some(*v as f64),
+        UInt64(v) => Some(*v as f64),
+        _ => None,
     }
 }
 

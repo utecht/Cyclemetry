@@ -36,6 +36,19 @@ pub struct SceneConfig {
     /// Stable element ids in back-to-front draw order. Unknown/missing ids are
     /// ignored; elements absent from the list fall back to array order.
     pub layers: Option<Vec<String>>,
+    /// Named groups of elements for list organisation and bulk repositioning.
+    /// Render pipeline ignores this field entirely.
+    #[serde(default)]
+    pub groups: Vec<GroupConfig>,
+}
+
+/// A named collection of element IDs used for list organisation and bulk
+/// drag in the editor. Has no effect on rendering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupConfig {
+    pub id: String,
+    pub name: String,
+    pub element_ids: Vec<String>,
 }
 
 fn default_fps() -> u32 {
@@ -55,6 +68,7 @@ pub enum Element {
     Meter(MeterConfig),
     Gauge(GaugeConfig),
     Rect(RectConfig),
+    Image(ImageConfig),
 }
 
 impl Element {
@@ -66,6 +80,7 @@ impl Element {
             Element::Meter(c) => &c.id,
             Element::Gauge(c) => &c.id,
             Element::Rect(c) => &c.id,
+            Element::Image(c) => &c.id,
         }
     }
 
@@ -102,6 +117,7 @@ impl Element {
                 if let Some(points) = c.points.as_mut() {
                     for p in points {
                         p.weight = p.weight.map(|v| v * f32f);
+                        p.edge_width = p.edge_width.map(|v| v * f32f);
                     }
                 }
             }
@@ -113,6 +129,10 @@ impl Element {
                 c.radius = c.radius.map(|v| v * f32f);
                 c.gap = c.gap.map(|v| v * f32f);
                 c.border_width = c.border_width.map(|v| v * f32f);
+                c.scale_font_size = c.scale_font_size.map(|v| v * f32f);
+                c.scale_offset = c.scale_offset.map(|v| v * f32f);
+                c.scale_tick_length = c.scale_tick_length.map(|v| v * f32f);
+                c.scale_tick_width = c.scale_tick_width.map(|v| v * f32f);
             }
             Element::Gauge(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -121,6 +141,8 @@ impl Element {
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.arc_width = c.arc_width.map(|v| v * f32f);
                 c.needle_width = c.needle_width.map(|v| v * f32f);
+                c.cap_radius = c.cap_radius.map(|v| v * f32f);
+                c.background_margin = c.background_margin.map(|v| v * f32f);
             }
             Element::Rect(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -129,6 +151,12 @@ impl Element {
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.radius = c.radius.map(|v| v * f32f);
                 c.border_width = c.border_width.map(|v| v * f32f);
+            }
+            Element::Image(c) => {
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
+                c.width = (c.width as f64 * factor).round() as u32;
+                c.height = (c.height as f64 * factor).round() as u32;
             }
         }
     }
@@ -142,9 +170,12 @@ pub struct LabelConfig {
     pub y: f32,
     pub font_size: Option<f32>,
     pub font: Option<String>,
+    pub italic: Option<bool>,
     pub color: Option<String>,
     pub opacity: Option<f32>,
     pub decimal_rounding: Option<i32>,
+    /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
+    pub text_align: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +186,7 @@ pub struct ValueConfig {
     pub y: f32,
     pub font_size: Option<f32>,
     pub font: Option<String>,
+    pub italic: Option<bool>,
     pub color: Option<String>,
     pub opacity: Option<f32>,
     pub unit: Option<String>,
@@ -168,6 +200,8 @@ pub struct ValueConfig {
     /// For `distance_reference: "custom"` — the finish-line distance in the element's display
     /// unit (km, mi, or m per `unit`). Converted to metres at render time.
     pub distance_target: Option<f64>,
+    /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
+    pub text_align: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +246,8 @@ pub struct PointConfig {
     pub weight: Option<f32>,
     pub opacity: Option<f32>,
     pub edge_color: Option<String>,
+    /// Edge stroke width in px. Default 1.
+    pub edge_width: Option<f32>,
     pub remove_edge_color: Option<bool>,
 }
 
@@ -220,6 +256,7 @@ pub struct PointLabelConfig {
     pub font_size: Option<f32>,
     pub color: Option<String>,
     pub font: Option<String>,
+    pub italic: Option<bool>,
     pub x_offset: Option<f32>,
     pub y_offset: Option<f32>,
     pub units: Option<Vec<String>>,
@@ -271,6 +308,25 @@ pub struct MeterConfig {
     pub border_width: Option<f32>,
     /// Border opacity (0–1). Falls back to `opacity` when unset.
     pub border_opacity: Option<f32>,
+    /// When set, draws tick marks + value labels beside the meter.
+    /// Empty vec → auto labels at min, mid, max. Non-empty → those exact values.
+    pub scale_labels: Option<Vec<f64>>,
+    /// Color for scale ticks and labels. Falls back to fill color.
+    pub scale_color: Option<String>,
+    /// Font size for scale labels in px. Default 20.
+    pub scale_font_size: Option<f32>,
+    /// Typeface for scale labels. Falls back to system sans-serif.
+    pub scale_font: Option<String>,
+    /// Gap between the bar edge and the label text in px. Default 8.
+    pub scale_offset: Option<f32>,
+    /// How far end ticks (min/max) extend beyond the bar edge in px. Default 6. Set 0 for flush.
+    pub scale_tick_length: Option<f32>,
+    /// Stroke width of tick lines in px. Default 1.
+    pub scale_tick_width: Option<f32>,
+    /// Optional suffix appended to every tick label (e.g. "mph").
+    pub scale_suffix: Option<String>,
+    /// Number of evenly-spaced unlabeled tick marks to draw across the full bar range.
+    pub scale_ticks: Option<u32>,
 }
 
 /// A circular dial: an arc track plus a needle that points to the current
@@ -297,8 +353,21 @@ pub struct GaugeConfig {
     pub arc_width: Option<f32>,
     /// Optional filled arc from `start_angle` to the current value.
     pub progress_color: Option<String>,
+    /// Gradient color stops for the progress arc (min→max). Overrides `progress_color` when set.
+    pub gradient: Option<Vec<String>>,
     pub needle_color: Option<String>,
     pub needle_width: Option<f32>,
+    /// Filled circle drawn at the tip of the progress arc. Omit for no cap.
+    pub cap_color: Option<String>,
+    /// Radius of the cap dot in pixels. Default = arc_width / 2.
+    pub cap_radius: Option<f32>,
+    /// Filled circle behind the whole gauge. Requires `background_opacity > 0`.
+    pub background_color: Option<String>,
+    pub background_opacity: Option<f32>,
+    /// Extra radius beyond the gauge bounds for the background circle in px. Default 0.
+    pub background_margin: Option<f32>,
+    /// When true, the unfilled portion of the arc (current value → max) is not drawn.
+    pub hide_track: Option<bool>,
     pub opacity: Option<f32>,
     /// Clockwise rotation in degrees around the element center. Default 0.
     pub rotation: Option<f32>,
@@ -334,6 +403,31 @@ pub struct RectConfig {
     pub radius: Option<f32>,
     /// Clockwise rotation in degrees around the element center. Default 0.
     pub rotation: Option<f32>,
+}
+
+/// A static image asset (PNG, WebP, or SVG) placed at an absolute position.
+/// `file` is resolved against the assets search path at render time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageConfig {
+    pub id: String,
+    /// Asset filename (e.g. "bolt.svg") resolved via the assets search path,
+    /// or an absolute filesystem path.
+    pub file: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Master opacity (0–1). Default 1.
+    pub opacity: Option<f32>,
+    /// Clockwise rotation in degrees around the element center. Default 0.
+    pub rotation: Option<f32>,
+    /// Activity metric to read BPM from (e.g. "heartrate"). When set, the
+    /// image pulses at the live metric value. Overridden by `pulse_bpm`.
+    pub pulse_metric: Option<String>,
+    /// Fixed BPM for the pulse animation. Takes priority over `pulse_metric`.
+    pub pulse_bpm: Option<f64>,
+    /// Peak scale added on each beat (e.g. 0.2 = 20% larger). Default 0.15.
+    pub pulse_amplitude: Option<f32>,
 }
 
 impl PlotConfig {

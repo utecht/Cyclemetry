@@ -66,6 +66,7 @@ export function createAppState() {
   let showTemplatePicker = $state(false)
   let selectedElementId = $state(null)
   let selectedElementIds = $state([])
+  let selectedGroupId = $state(null)
   let renderProgress = $state({
     current: 0,
     total: 0,
@@ -154,6 +155,7 @@ export function createAppState() {
   // selectedElementIds is the full set for shift-click multi-select + group drag.
 
   function selectOnly(id) {
+    selectedGroupId = null
     selectedElementId = id
     selectedElementIds = id ? [id] : []
   }
@@ -361,7 +363,12 @@ export function createAppState() {
   function removeElement(id) {
     if (!config?.elements) return
     const elements = config.elements.filter((e) => e.id !== id)
-    commitConfig(withNormalizedLayers({ ...config, elements }))
+    const groups = (config.scene?.groups ?? []).map((g) => ({
+      ...g,
+      element_ids: g.element_ids.filter((eid) => eid !== id),
+    }))
+    const next = withNormalizedLayers({ ...config, elements })
+    commitConfig({ ...next, scene: { ...next.scene, groups } })
     if (selectedElementId === id) selectOnly(null)
   }
 
@@ -384,6 +391,96 @@ export function createAppState() {
     if (ids.length !== validIds.length) return
     if (!ids.every((id) => validIds.includes(id))) return
     commitConfig({ ...config, scene: { ...config.scene, layers: [...ids] } })
+  }
+
+  // ── Group management ──────────────────────────────────────────────────────
+
+  function selectGroup(groupId) {
+    const group = (config?.scene?.groups ?? []).find((g) => g.id === groupId)
+    if (!group) return
+    selectedGroupId = groupId
+    selectedElementIds = [...group.element_ids]
+    selectedElementId = group.element_ids[0] ?? null
+  }
+
+  function newGroupId() {
+    const existing = (config?.scene?.groups ?? []).map((g) => g.id)
+    let n = 0
+    let id
+    do {
+      id = `group-${n++}`
+    } while (existing.includes(id))
+    return id
+  }
+
+  function createGroup(name, elementIds) {
+    if (!config?.scene) return null
+    const id = newGroupId()
+    const groups = (config.scene.groups ?? [])
+      .map((g) => ({
+        ...g,
+        element_ids: g.element_ids.filter((eid) => !elementIds.includes(eid)),
+      }))
+      .concat({ id, name, element_ids: [...elementIds] })
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
+    return id
+  }
+
+  function deleteGroup(groupId) {
+    if (!config?.scene) return
+    const groups = (config.scene.groups ?? []).filter((g) => g.id !== groupId)
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
+    if (selectedGroupId === groupId) selectOnly(null)
+  }
+
+  function renameGroup(groupId, name) {
+    if (!config?.scene?.groups) return
+    const groups = config.scene.groups.map((g) =>
+      g.id === groupId ? { ...g, name } : g,
+    )
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
+  }
+
+  function removeElementFromGroups(elementId) {
+    if (!config?.scene?.groups) return
+    const groups = config.scene.groups.map((g) => ({
+      ...g,
+      element_ids: g.element_ids.filter((id) => id !== elementId),
+    }))
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
+  }
+
+  function removeFromGroupAndReorder(elementId, newLayerOrder) {
+    if (!config?.scene) return
+    const groups = (config.scene.groups ?? []).map((g) => ({
+      ...g,
+      element_ids: g.element_ids.filter((id) => id !== elementId),
+    }))
+    const validIds = normalizedElementLayerIds()
+    if (
+      newLayerOrder.length !== validIds.length ||
+      !newLayerOrder.every((id) => validIds.includes(id))
+    )
+      return
+    commitConfig({
+      ...config,
+      scene: { ...config.scene, groups, layers: newLayerOrder },
+    })
+  }
+
+  function addElementToGroup(elementId, groupId) {
+    if (!config?.scene?.groups) return
+    const groups = config.scene.groups.map((g) => {
+      if (g.id === groupId) {
+        if (g.element_ids.includes(elementId)) return g
+        return { ...g, element_ids: [...g.element_ids, elementId] }
+      }
+      return {
+        ...g,
+        element_ids: g.element_ids.filter((id) => id !== elementId),
+      }
+    })
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
   }
 
   function parseSelectedElement() {
@@ -513,8 +610,7 @@ export function createAppState() {
     showSuccess(`Saved "${filename}"`)
   }
 
-  async function newTemplate() {
-    const name = prompt('New template name:', 'my_overlay')
+  async function newTemplate(name) {
     if (!name) return
     const filename = toFilename(name)
     if (!filename) return
@@ -747,6 +843,16 @@ export function createAppState() {
     },
     toggleElementSelection,
     setSelectedElements,
+    get selectedGroupId() {
+      return selectedGroupId
+    },
+    selectGroup,
+    createGroup,
+    deleteGroup,
+    renameGroup,
+    removeElementFromGroups,
+    removeFromGroupAndReorder,
+    addElementToGroup,
     get canUndo() {
       return history.length > 0
     },

@@ -51,16 +51,15 @@ pnpm dev
 
 ## Videos Made With Cyclemetry
 
-| [![Testing Cyclemetry By Paolo Tagliaferri](https://img.youtube.com/vi/JmavtEU6Vvo/0.jpg)](https://www.youtube.com/watch?v=JmavtEU6Vvo)                                     | [![Descent into Rincon by Walker Sutton](https://img.youtube.com/vi/i2vdPIfIswc/0.jpg)](https://www.youtube.com/watch?v=i2vdPIfIswc) |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| [![Stunt Descent by Walker Sutton](https://img.youtube.com/vi/96_nwEF-Bfc/0.jpg)](https://www.youtube.com/watch?v=96_nwEF-Bfc)                                              | [![Seward Park Crit by Walker Sutton](https://img.youtube.com/vi/gKugPA0xGhw/0.jpg)](https://www.youtube.com/watch?v=gKugPA0xGhw)    |
-| [![Çamköy Tırmanışı ve Yağmurda Sürüş Disiplini by Berkay DEDEOĞLU](https://img.youtube.com/vi/mIcd7nUfpWU/0.jpg)](https://youtu.be/mIcd7nUfpWU?si=aqM1VSgaBr6MmCGa&t=1249) |                                                                                                                                      |
+See what cyclists around the world are creating with Cyclemetry.
 
-## [Alternative Tools](https://alternativeto.net/software/garmin-virb-edit/)
+→ [Full showcase](https://www.cyclemetry.com/showcase)
 
-- [DashWare](http://www.dashware.net/) (only available on Windows)
-- [Garmin VIRB Edit](https://www.garmin.com/en-US/p/573412)
-- [GoPro Telemetry Extractor](https://goprotelemetryextractor.com/) ($150/$300? - fuck that)
+
+
+## Adding a Bundled Font
+
+Drop a `.ttf` or `.otf` file into `resources/fonts/`. That's it — the Tauri bundler picks up the whole directory, and the font picker in the app lists it automatically. No config changes required.
 
 ## 📦 Releasing
 

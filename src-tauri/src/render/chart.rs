@@ -3,9 +3,7 @@
 /// Pre-renders an entire chart to a cached Image once at scene init.
 /// Per-frame cost is then: one image blit + one circle draw.
 /// This replaces matplotlib's plt.savefig() which was 50–200ms per frame.
-use skia_safe::{
-    Canvas, Color, Font, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Typeface,
-};
+use skia_safe::{Canvas, Color, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Typeface};
 
 use crate::render::color::to_skia_color;
 use crate::render::template::{PlotConfig, PointLabelConfig};
@@ -300,11 +298,9 @@ impl ChartCache {
             let x = self.x_data[frame_idx];
             let y = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
             let local_pt = self.data_to_pixel(x, y);
-            // Snap to integer pixels so the anti-aliasing pattern is stable
-            // across frames — sub-pixel drift causes a visible shimmer/wobble.
             let abs_pt = Point::new(
-                (local_pt.x + self.x_offset as f32).round(),
-                (local_pt.y + self.y_offset as f32).round(),
+                local_pt.x + self.x_offset as f32,
+                local_pt.y + self.y_offset as f32,
             );
 
             for pc in &self.point_configs {
@@ -329,7 +325,7 @@ impl ChartCache {
                     ep.set_anti_alias(true);
                     ep.set_color(to_skia_color(ec, None));
                     ep.set_style(PaintStyle::Stroke);
-                    ep.set_stroke_width(1.0);
+                    ep.set_stroke_width(pc.edge_width.unwrap_or(1.0));
                     canvas.draw_circle(abs_pt, radius, &ep);
                 }
             }
@@ -339,7 +335,11 @@ impl ChartCache {
             if let (Some(pl), Some(tf)) = (&self.point_label, &self.label_typeface) {
                 let raw = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
                 let size = pl.font_size.unwrap_or(32.0);
-                let font = Font::new(tf.clone(), size);
+                let font = crate::render::frame::font_from_typeface(
+                    tf.clone(),
+                    size,
+                    pl.italic.unwrap_or(false),
+                );
                 let color = pl
                     .color
                     .as_deref()

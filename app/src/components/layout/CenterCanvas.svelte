@@ -25,6 +25,7 @@
   let rafHandle = null
   let lastTick = null
   let stallTimer = null
+  let configDebounce = null
 
   const PREFETCH_AHEAD = 5
   const MAX_CACHE = 30
@@ -72,7 +73,7 @@
     pending.add(frameIdx)
     try {
       const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Preview timed out. Try reloading, or check that your GPX file is valid.')), 8000)
+        setTimeout(() => reject(new Error('Preview timed out. Try reloading, or check that your activity file is valid.')), 8000)
       )
       let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, app.outputWidth, app.outputHeight), timeout])
       if (data?.image) {
@@ -114,36 +115,39 @@
     }
   }
 
-  // Re-fetch when config, gpx, or previewFps changes.
+  // Re-fetch when config, gpx, or previewFps changes — debounced so a burst of
+  // edits (e.g. dragging the color-picker wheel, which fires an input event per
+  // hovered color) coalesces into a single render once the user pauses. The old
+  // frame stays visible during the debounce window, so there's no flicker.
   $effect(() => {
     const _config = app.config
     const _fps = app.previewFps ?? 1
     void app.gpxFilename // reactive dep: re-run when GPX changes
     void app.outputWidth // reactive dep: re-render preview on resolution change
     void app.outputHeight
-    clearBuffer()
-    console.debug('[tpl-diag] config effect ran', {
-      hasConfig: !!_config,
-      elements: _config?.elements?.length,
-      sceneStart: _config?.scene?.start,
-      sceneEnd: _config?.scene?.end,
-    })
-    if (_config) {
+
+    if (configDebounce) clearTimeout(configDebounce)
+    configDebounce = setTimeout(() => {
+      configDebounce = null
+      clearBuffer()
+      if (!_config) return
       const start = _config.scene?.start ?? 0
       const end = _config.scene?.end ?? app.activityDuration
       // Don't attempt to fetch when the timeline range is invalid — the sidebar
       // already shows a validation error; no point spinning here too.
       if (end <= start) {
-        console.debug('[tpl-diag] config effect: INVALID range, currentFrameData=null', { start, end })
         currentFrameData = null
         return
       }
-      // untrack selectedSecond — only needed for initial seek position
-      const s = Math.max(start, untrack(() => app.selectedSecond))
+      const s = Math.max(start, app.selectedSecond)
       const frameIdx = secToFrameIdx(s, _fps, start)
-      console.debug('[tpl-diag] config effect -> fetchFrame', { frameIdx, s, start, end })
-      untrack(() => fetchFrame(frameIdx))
+      fetchFrame(frameIdx)
+      if (stallTimer) clearTimeout(stallTimer)
       stallTimer = setTimeout(() => { stallTimer = null }, 5000)
+    }, 160)
+
+    return () => {
+      if (configDebounce) { clearTimeout(configDebounce); configDebounce = null }
     }
   })
 
@@ -336,6 +340,19 @@
 <svelte:window onkeydown={onKeydown} />
 
 <main class="flex-1 flex flex-col overflow-hidden bg-[#09090b]">
+  <!-- Zoom indicator — pinned above the canvas, visible regardless of pan position -->
+  {#if app.config && zoom !== 1}
+    <div class="shrink-0 flex items-center justify-end px-3 py-1 border-b border-zinc-800/60 bg-zinc-950/80">
+      <button
+        onclick={resetZoom}
+        class="text-[10px] font-mono text-zinc-400 hover:text-primary transition-colors"
+        title="Reset zoom (or double-click the canvas)"
+      >
+        {Math.round(zoom * 100)}% · reset
+      </button>
+    </div>
+  {/if}
+
   <!-- Canvas area (flexible height) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -413,18 +430,6 @@
           {zoom}
         />
 
-        <!-- Top-right badges -->
-        <div class="absolute top-2 right-2 flex items-center gap-1.5">
-          {#if zoom !== 1}
-            <button
-              onclick={resetZoom}
-              class="text-[10px] font-mono text-zinc-300 bg-zinc-950/70 rounded px-1.5 py-0.5 hover:text-primary transition-colors"
-              title="Reset zoom (or double-click the canvas)"
-            >
-              {Math.round(zoom * 100)}% · reset
-            </button>
-          {/if}
-        </div>
       </div>
     {:else}
       <!-- No template loaded -->

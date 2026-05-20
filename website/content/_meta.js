@@ -1,27 +1,26 @@
 export default {
   index: {
     title: 'Home',
-    type: 'page',
-    display: 'hidden',
+  },
+  comparison: {
+    title: 'Comparison',
+  },
+  showcase: {
+    title: 'Showcase',
   },
   install: {
     title: 'Install',
-    type: 'page',
-  },
-  changelog: {
-    title: 'Changelog',
-    type: 'page',
-  },
-  developing: {
-    title: 'Developing',
-    type: 'page',
   },
   faq: {
     title: 'FAQ',
-    type: 'page',
+  },
+  changelog: {
+    title: 'Changelog',
+  },
+  developing: {
+    title: 'Developing',
   },
   blog: {
     title: 'Blog',
-    type: 'page',
   },
 }

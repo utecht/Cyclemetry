@@ -1,7 +1,8 @@
 <script>
   import { getContext, onMount } from 'svelte'
   import * as backend from '@/api/backend.js'
-  import { X, Trash2 } from 'lucide-svelte'
+  import { X, Trash2, Plus } from 'lucide-svelte'
+  import NewTemplateDialog from './NewTemplateDialog.svelte'
 
   const app = getContext('app')
   let { onclose } = $props()
@@ -13,6 +14,8 @@
   let deleting = $state([])
   let confirmingDelete = $state(null)
   let failedPreviews = $state([])
+  let creating = $state(false)
+  let showNameDialog = $state(false)
 
   onMount(async () => {
     window.addEventListener('keydown', onKeydown)
@@ -97,6 +100,25 @@
       deleting = deleting.filter((x) => x !== id)
     }
   }
+
+  function handleCreate() {
+    app.confirmIfModified(() => {
+      showNameDialog = true
+    })
+  }
+
+  async function handleNameConfirm(name) {
+    showNameDialog = false
+    creating = true
+    try {
+      await app.newTemplate(name)
+      onclose()
+    } catch (e) {
+      app.errorMessage = `Create failed: ${e?.message ?? e}`
+    } finally {
+      creating = false
+    }
+  }
 </script>
 
 <div
@@ -114,13 +136,23 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
       <h2 class="text-sm font-semibold text-zinc-100">Choose Template</h2>
-      <button
-        onclick={onclose}
-        class="text-zinc-500 hover:text-zinc-200 transition-colors rounded-md p-0.5"
-        aria-label="Close"
-      >
-        <X size={16} />
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          onclick={handleCreate}
+          disabled={creating}
+          class="inline-flex items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus size={12} />
+          {creating ? 'Creating…' : 'New template'}
+        </button>
+        <button
+          onclick={onclose}
+          class="text-zinc-500 hover:text-zinc-200 transition-colors rounded-md p-0.5"
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
 
     <!-- Scrollable body -->
@@ -260,3 +292,10 @@
     </div>
   </div>
 </div>
+
+{#if showNameDialog}
+  <NewTemplateDialog
+    oncreate={handleNameConfirm}
+    oncancel={() => (showNameDialog = false)}
+  />
+{/if}

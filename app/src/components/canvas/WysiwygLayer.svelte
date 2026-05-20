@@ -47,6 +47,7 @@
     //  • Recently moved (stale measured) → skip measured, use config-derived.
     //  • Otherwise → prefer pixel-perfect measured, fall back to config-derived.
     function boundsFor(id) {
+      if (liveResize?.id === id) return liveResize.bounds
       if (draggingIds.has(id)) return dragBase.baseElements.get(id) ?? null
       if (movedIds.has(id)) return null
       return measured.get(id) ?? null
@@ -80,7 +81,7 @@
           w: el.width ?? 400,
           h: el.height ?? 150,
         })
-      } else if (el.type === 'rect') {
+      } else if (el.type === 'rect' || el.type === 'image') {
         byId[id] = boundsFor(id) ?? fb({
           id,
           x: el.x ?? 100, y: el.y ?? 100,
@@ -102,6 +103,7 @@
     if (el.type === 'meter') return `${el.value} meter`
     if (el.type === 'gauge') return `${el.value} gauge`
     if (el.type === 'rect') return 'rect'
+    if (el.type === 'image') return el.file || 'image'
     return `${el.value} chart`
   }
 
@@ -112,6 +114,10 @@
 
   // Live rotation state: { id, degrees } while the user is dragging the handle.
   let liveRotation = $state(null)
+
+  // Live resize state: { id, bounds } while the user is dragging a resize corner.
+  // Output-space bounds (x, y, w, h). Config is NOT mutated until release.
+  let liveResize = $state(null)
 
   // Snapshot captured at drag start so live updates don't shift the base coords.
   // { preDragConfig: string, positions: Map<id,{category,idx,x,y}>, baseElements: Map<id,{x,y,w,h}> }
@@ -142,7 +148,7 @@
 
   function getRotation(id) {
     const el = elById(id)
-    if (!el || !['plot', 'meter', 'gauge', 'rect'].includes(el.type)) return 0
+    if (!el || !['plot', 'meter', 'gauge', 'rect', 'image'].includes(el.type)) return 0
     return el.rotation ?? 0
   }
 
@@ -158,7 +164,7 @@
   function handleRotateEnd(id, degrees) {
     liveRotation = null
     const el = elById(id)
-    if (!el || !['plot', 'meter', 'gauge', 'rect'].includes(el.type)) return
+    if (!el || !['plot', 'meter', 'gauge', 'rect', 'image'].includes(el.type)) return
     app.updateElement(id, { rotation: Math.round(degrees) })
   }
 
@@ -287,7 +293,7 @@
   // original authored dimensions, not intermediate live-updated values.
   let resizeBase = $state(null) // { preConfig, id, origX, origY, origW, origH }
 
-  function applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey) {
+  function applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey, naturalW = null, naturalH = null) {
     const s = authorScale || 1
     // dx/dy are in output px; element coords are authored → undo the scale.
     const adx = dx / s
@@ -307,7 +313,9 @@
     let newH = origH + dh
 
     if (shiftKey && origW > 0 && origH > 0) {
-      const ratio = origW / origH
+      const aw = naturalW ?? origW
+      const ah = naturalH ?? origH
+      const ratio = aw / ah
       // Lock aspect: project onto dominant axis
       if (Math.abs(dw / origW) >= Math.abs(dh / origH)) {
         newH = newW / ratio
@@ -348,23 +356,32 @@
         origY: el.y ?? 0,
         origW: el.width ?? 100,
         origH: el.height ?? 100,
+        naturalW: el.natural_width ?? null,
+        naturalH: el.natural_height ?? null,
       }
     }
-    const { origX, origY, origW, origH } = resizeBase
-    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey)
-    app.updateElementLive(id, updates)
-    // Mark stale so config-derived bounds are used until the next render.
-    const next = new SvelteSet(movedIds)
-    next.add(id)
-    movedIds = next
+    const { origX, origY, origW, origH, naturalW, naturalH } = resizeBase
+    const lockAspect = shiftKey || elById(id)?.type === 'image'
+    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, lockAspect, naturalW, naturalH)
+    // Store live bounds locally — do NOT write to config until release.
+    // This keeps the reactive cascade (ElementProperties, CenterCanvas debounce,
+    // etc.) from firing on every pointer move.
+    const s = authorScale || 1
+    liveResize = {
+      id,
+      bounds: { x: updates.x * s, y: updates.y * s, w: updates.width * s, h: updates.height * s },
+    }
   }
 
   function handleResizeEnd(id, corner, dx, dy, shiftKey) {
     if (!resizeBase) return
-    const { preConfig, origX, origY, origW, origH } = resizeBase
-    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, shiftKey)
+    const { preConfig, origX, origY, origW, origH, naturalW, naturalH } = resizeBase
+    const lockAspect = shiftKey || elById(id)?.type === 'image'
+    const updates = applyResizeDelta(origX, origY, origW, origH, corner, dx, dy, lockAspect, naturalW, naturalH)
     app.commitElementUpdate(preConfig, id, updates)
     resizeBase = null
+    liveResize = null
+    // Mark moved so config-derived bounds are used until the fresh render arrives.
     const next = new SvelteSet(movedIds)
     next.add(id)
     movedIds = next
@@ -494,7 +511,7 @@
       rotation={rotationFor(el.id)}
       groupOffset={groupOffsetFor(el.id)}
       {zoom}
-      resizable={elById(el.id)?.type === 'rect'}
+      resizable={['rect', 'meter', 'gauge', 'plot', 'image'].includes(elById(el.id)?.type)}
       locked={elById(el.id)?.locked === true}
       onselect={(e) => handleSelect(el.id, e)}
       ondrag={(dx, dy) => handleDrag(el.id, dx, dy)}

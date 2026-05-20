@@ -16,6 +16,7 @@
   import Settings from './components/overlays/Settings.svelte'
   import TemplatePickerModal from './components/overlays/TemplatePickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
+  import NewTemplateDialog from './components/overlays/NewTemplateDialog.svelte'
   import Button from './components/ui/Button.svelte'
   import Tooltip from './components/ui/Tooltip.svelte'
 
@@ -28,6 +29,7 @@
 
   let rendering = $state(false)
   let showSettings = $state(false)
+  let showNewTemplateDialog = $state(false)
   let buildInfo = $state('')
   function onWindowKeydown(e) {
     const t = e.target
@@ -36,7 +38,7 @@
       t?.tagName === 'TEXTAREA' ||
       t?.tagName === 'SELECT' ||
       t?.isContentEditable
-    const blocked = showSettings || app.showTemplatePicker
+    const blocked = showSettings || app.showTemplatePicker || showNewTemplateDialog
 
     // Undo (⌘/Ctrl+Z). Skip when typing in a field so native text undo works.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -93,7 +95,7 @@
         listen('menu_save_template',    () => app.saveTemplate().catch(e => { app.errorMessage = e.message })),
         listen('menu_save_template_as', () => app.saveTemplateAs().catch(e => { app.errorMessage = e.message })),
         listen('menu_rename_template',  () => app.renameTemplate().catch(e => { app.errorMessage = e.message })),
-        listen('menu_new_template',     () => app.confirmIfModified(() => app.newTemplate().catch(e => { app.errorMessage = e.message }))),
+        listen('menu_new_template',     () => app.confirmIfModified(() => { showNewTemplateDialog = true })),
         listen('menu_show_downloads',   () => handleOpenDownloads()),
         listen('menu_show_activities',  () => backend.openActivitiesFolder().catch(() => {})),
         listen('menu_show_templates',   () => backend.openTemplatesFolder().catch(() => {})),
@@ -116,8 +118,8 @@
       if (inTauri) {
         const selected = await open({
           multiple: false,
-          filters: [{ name: 'GPX', extensions: ['gpx'] }],
-          title: 'Select GPX Activity',
+          filters: [{ name: 'Activity (GPX, FIT, TCX)', extensions: ['gpx', 'fit', 'tcx'] }],
+          title: 'Select Activity File',
         })
         if (!selected) return
         await loadGpx(selected, app)
@@ -133,7 +135,7 @@
       } else {
         const input = document.createElement('input')
         input.type = 'file'
-        input.accept = '.gpx'
+        input.accept = '.gpx,.fit,.tcx'
         input.onchange = async (e) => {
           const file = e.target.files?.[0]
           if (file) await loadGpx(file, app)
@@ -141,7 +143,7 @@
         input.click()
       }
     } catch (err) {
-      app.errorMessage = `GPX load failed: ${err.message}`
+      app.errorMessage = `Activity load failed: ${err.message}`
     }
   }
 
@@ -196,9 +198,9 @@
   })
 
   let gpxLabel = $derived.by(() => {
-    if (!app.gpxFilename) return 'Load GPX'
+    if (!app.gpxFilename) return 'Load Activity'
     const basename = app.gpxFilename.split(/[\\/]/).pop()
-    return basename === 'demo.gpxinit' ? 'Load GPX' : basename
+    return basename === 'demo.gpxinit' ? 'Load Activity' : basename
   })
 </script>
 
@@ -213,6 +215,15 @@
   {/if}
   {#if app.showTemplatePicker}
     <TemplatePickerModal onclose={() => { app.showTemplatePicker = false }} />
+  {/if}
+  {#if showNewTemplateDialog}
+    <NewTemplateDialog
+      oncreate={async (name) => {
+        showNewTemplateDialog = false
+        await app.newTemplate(name).catch((e) => { app.errorMessage = e.message })
+      }}
+      oncancel={() => { showNewTemplateDialog = false }}
+    />
   {/if}
   {#if app.pendingDiscard}
     <ConfirmDialog
@@ -236,8 +247,8 @@
     <div class="h-5 w-px bg-zinc-800"></div>
     {#if buildInfo}<span class="text-[10px] text-zinc-600 font-mono">{buildInfo}</span>{/if}
 
-    <!-- GPX picker -->
-    <Tooltip content={!app.gpxFilename ? 'Load a .gpx activity file' : gpxLabel} side="bottom">
+    <!-- Activity file picker -->
+    <Tooltip content={!app.gpxFilename ? 'Load a GPX, FIT, or TCX activity file' : gpxLabel} side="bottom">
       <Button variant="outline" size="sm" onclick={handleOpenGpx} class="gap-1.5 max-w-[160px]">
         <Activity size={13} />
         <span class="truncate">{gpxLabel}</span>

@@ -1,0 +1,98 @@
+---
+title: Comparison — Cyclemetry
+description: How Cyclemetry compares to Garmin VIRB Edit, GoPro Telemetry Extractor, RaceRender, GPXrender, Telemetry Overlay, and more.
+---
+
+import { Callout } from 'nextra/components'
+
+# Cyclemetry vs. Alternatives
+
+See how Cyclemetry stacks up against other telemetry overlay tools.
+
+## Feature Comparison
+
+| Feature | Cyclemetry | Garmin VIRB Edit | GoPro Telemetry Extractor | DashWare | Telemetry Overlay | RaceRender | GPXrender | gpx2video |
+|---------|-----------|-----------------|--------------------------|----------|------------------|-----------|-----------|----------|
+| **Price** | Free | Free* | $150–$300 | Free | ~$30 | ~$59/€59 | ~$39/€39 | Free |
+| **Platform** | macOS | Windows / macOS | Windows / macOS | Windows (discontinued) | Windows | Windows | macOS / Linux | Linux |
+| **Supported File Types** | | | | | | | | |
+| GPX | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| FIT | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| TCX | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Route Map** | ✅ Live synced | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Elevation Profile** | ✅ Scrolling | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Gauges** | ✅ Custom | ✅ | ✅ | ✅ | ✅ | Limited | ✅ | ✅ |
+| **Charts** | ✅ Custom | ✅ | ✅ | ✅ | ✅ | Limited | ✅ | ✅ |
+| **Custom Overlays** | ✅ Freeform | ❌ Fixed | ❌ Fixed | ❌ | ✅ Full | ❌ | ❌ | ❌ |
+| **Data Sources** | GPX, FIT, TCX | Garmin devices | GoPro GPMF | USB device | Phone, camera, drone, GPS logger | Camera USB | GPX file | Action cam |
+| **Output Format** | Overlay video | Overlay video | Overlay video | Overlay video | Overlay video | Overlay video | Overlay video | Overlay video |
+| **Sports** | Cycling focused | Cycling | Cycling | Automotive | Cycling | Track / Racing | Cycling | Cycling |
+| **Maintained** | ✅ Active | ❌ Discontinued | ❌ Discontinued | ❌ Discontinued | ✅ Active | ❌ Stalled | ✅ Active | ✅ Active |
+
+---
+
+> *VIRB Edit is free but requires a Garmin VIRB camera or Garmin account.
+
+## What Each Tool Is For
+
+### Cyclemetry
+
+Open-source desktop app built specifically for cyclists. Creates professional telemetry overlays synced to your ride footage. Uses standard GPX files from any cycling computer or app.
+
+[→ Learn more](/)
+
+### Garmin VIRB Edit
+
+Garmin's own editing software. Tightly integrated with the Garmin ecosystem — cameras, watches, and GPS devices. Good if you're already deep in Garmin, but limited if you use another brand.
+
+[→ Garmin VIRB Edit](https://www.garmin.com/en-US/p/573412)
+
+### GoPro Telemetry Extractor
+
+Extracts telemetry from GoPro's GPMF format and overlays it onto your footage. Powerful for GoPro users, but locked to GoPro's proprietary format. No GPX support.
+
+[→ GoPro Telemetry Extractor](https://goprotelemetryextractor.com/)
+
+### DashWare
+
+Automotive-focused telemetry logging software. Built for motorsport and car data (boost, RPM, oil temp, etc.). **Discontinued** — the company no longer develops or supports it. May not work on modern systems due to age and incompatibility. Not designed for cycling, with no map rendering or elevation profiles.
+
+[→ DashWare](http://www.dashware.net/)
+
+### Telemetry Overlay
+
+Professional overlay software with wide compatibility for action cameras, Garmin devices, and even phone-based GPS. Offers full access to all telemetry data (gyro, GPS, compass, IMU), complete customization of gauges/layouts, and dynamic map overlays. Supports multiple data sources — camera, phone, drone, GPS logger. Designed and maintained by a single developer; widely regarded as strong value for the depth of options and customization.
+
+### RaceRender
+
+Good software built mainly for track days and car racing. Not much available for other sports, and quite limited in customization. **No longer actively maintained** — the owner is looking for a programmer to release a long-awaited update. Does not support newer cameras (e.g., GoPro Hero13). Some users extract data with third-party tools and feed it into RaceRender manually.
+
+[→ RaceRender](https://www.racerender.com/)
+
+### GPXrender
+
+Creates a nice overlay video that can be imported into DaVinci Resolve for further editing. One of the few tools that produces a standalone overlay track rather than burning into footage. Around €39.
+
+[→ GPXrender](https://gpxrender.com/)
+
+### gpx2video
+
+Open source tool that converts GPX data into video overlays. Supports most action cameras. Good for users who want a free, transparent, community-driven option. Currently Linux-focused.
+
+[→ gpx2video](https://github.com/progweb/gpx2video)
+
+### GoPro Quik App
+
+GoPro's official app offers basic GPS telemetry stickers (only 4 basic options, not counting the GoPro logo or path sticker). GoPro has repeatedly stated that GPS is not a priority for them, so updating GPS stickers is not a priority either. At ~$30 with a GoPro subscription (which also includes unlimited cloud storage and accessory discounts), it's the cheapest option for GoPro users — but very limited in what you can customize.
+
+## Why GPX Matters
+
+GPX is the universal standard for cycling data. Every cycling computer and app — Garmin, Wahoo, Strava, RideWithGPS, Komoot — exports GPX.
+
+Tools that lock you into a proprietary format (GoPro's GPMF, Garmin's ecosystem, DashWare's format) limit what devices and apps you can use. With Cyclemetry, you're free to switch devices, apps, or platforms without losing your workflow.
+
+---
+
+<Callout type="info">
+  Found a mistake or want to update this page? [Edit it on GitHub](https://github.com/walkersutton/cyclemetry/blob/develop/website/content/comparison.mdx).
+</Callout>

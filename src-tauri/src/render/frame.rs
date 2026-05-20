@@ -1,4 +1,5 @@
 /// Per-frame Skia rendering — draws one video frame to a raw RGBA byte buffer.
+use resvg;
 use serde::Serialize;
 use skia_safe::{
     Canvas, Color, Font, FontMgr, FontStyle, ISize, ImageInfo, Paint, RRect, Rect, Typeface,
@@ -9,10 +10,12 @@ use crate::render::activity::{Activity, ATTR_DISTANCE};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
-    Element, GaugeConfig, LabelConfig, MeterConfig, PlotConfig, RectConfig, SceneConfig, Template,
-    ValueConfig,
+    Element, GaugeConfig, ImageConfig, LabelConfig, MeterConfig, PlotConfig, RectConfig,
+    SceneConfig, Template, ValueConfig,
 };
 use crate::render::units;
+
+const ITALIC_SKEW_X: f32 = -0.25;
 
 /// Pixel-perfect bounding box for a single overlay element in overlay coordinates.
 #[derive(Debug, Clone, Serialize)]
@@ -33,6 +36,8 @@ pub struct ElementCtx<'a> {
     /// One ChartCache per plot element, keyed by element id.
     pub charts: &'a HashMap<String, ChartCache>,
     pub fonts_dir: &'a str,
+    /// Pre-decoded images keyed by element id.
+    pub images: &'a HashMap<String, skia_safe::Image>,
 }
 
 /// One overlay graphic. Every element family implements this; rendering,
@@ -78,6 +83,7 @@ impl Element {
             Element::Meter(c) => c,
             Element::Gauge(c) => c,
             Element::Rect(c) => c,
+            Element::Image(c) => c,
         }
     }
 }
@@ -101,11 +107,17 @@ impl OverlayElement for LabelConfig {
             .or(ctx.scene.font.as_deref())
             .unwrap_or("Arial.ttf");
         let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
-        let font = load_font(font_name, font_size, ctx.fonts_dir)?;
-        let (_, rect) = font.measure_str(&self.text, None);
+        let italic = self.italic.unwrap_or(false);
+        let font = ctx
+            .typefaces
+            .get(font_name)
+            .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
+            .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
+        let (text_w, rect) = font.measure_str(&self.text, None);
+        let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
-            x: self.x + rect.left,
+            x: draw_x + rect.left,
             y: self.y + rect.top,
             w: rect.width(),
             h: rect.height(),
@@ -119,6 +131,7 @@ impl OverlayElement for LabelConfig {
             .or(ctx.scene.font.as_deref())
             .unwrap_or("Arial.ttf");
         let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let italic = self.italic.unwrap_or(false);
         let color_str = self.color.as_deref().unwrap_or("#ffffff");
         let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
         let color = Color::from_argb(a, r, g, b);
@@ -126,13 +139,15 @@ impl OverlayElement for LabelConfig {
         let font = ctx
             .typefaces
             .get(font_name)
-            .map(|tf| Font::new(tf.clone(), font_size))
-            .or_else(|| load_font(font_name, font_size, ctx.fonts_dir));
+            .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
+            .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic));
         if let Some(font) = font {
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
             paint.set_color(color);
-            canvas.draw_str(&self.text, (self.x, self.y), &font, &paint);
+            let text_w = font.measure_str(&self.text, Some(&paint)).0;
+            let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
+            canvas.draw_str(&self.text, (draw_x, self.y), &font, &paint);
         }
     }
 }
@@ -178,11 +193,17 @@ impl OverlayElement for ValueConfig {
             .or(ctx.scene.font.as_deref())
             .unwrap_or("Arial.ttf");
         let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
-        let font = load_font(font_name, font_size, ctx.fonts_dir)?;
-        let (_, rect) = font.measure_str(&text, None);
+        let italic = self.italic.unwrap_or(false);
+        let font = ctx
+            .typefaces
+            .get(font_name)
+            .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
+            .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
+        let (text_w, rect) = font.measure_str(&text, None);
+        let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
-            x: self.x + rect.left,
+            x: draw_x + rect.left,
             y: self.y + rect.top,
             w: rect.width(),
             h: rect.height(),
@@ -202,16 +223,19 @@ impl OverlayElement for ValueConfig {
             .or(ctx.scene.font.as_deref())
             .unwrap_or("Arial.ttf");
         let font_size = self.font_size.or(ctx.scene.font_size).unwrap_or(32.0);
+        let italic = self.italic.unwrap_or(false);
         let color_str = self.color.as_deref().unwrap_or("#ffffff");
         let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
         let color = Color::from_argb(a, r, g, b);
 
         if let Some(tf) = ctx.typefaces.get(font_name) {
-            let font = Font::new(tf.clone(), font_size);
+            let font = font_from_typeface(tf.clone(), font_size, italic);
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
             paint.set_color(color);
-            canvas.draw_str(&display, (self.x, self.y), &font, &paint);
+            let text_w = font.measure_str(&display, Some(&paint)).0;
+            let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
+            canvas.draw_str(&display, (draw_x, self.y), &font, &paint);
         }
     }
 }
@@ -375,6 +399,187 @@ impl MeterConfig {
         }
     }
 
+    /// Two-pass scale rendering.
+    /// `under_fill = true`  → draw unlabeled ticks + mid labeled tick lines (called before fill).
+    /// `under_fill = false` → draw end tick lines + all labels (called after fill).
+    fn draw_scale(&self, canvas: &Canvas, ctx: &ElementCtx, under_fill: bool) {
+        let tick_count = self.scale_ticks.unwrap_or(0);
+        let has_labels = self.scale_labels.is_some();
+        if tick_count == 0 && !has_labels {
+            return;
+        }
+
+        let color_str = self
+            .scale_color
+            .as_deref()
+            .or(self.color.as_deref())
+            .unwrap_or("#ffffff");
+        let (r, g, b, a) = hex_with_opacity(color_str, self.opacity);
+        let color = Color::from_argb(a, r, g, b);
+
+        let end_ext = self.scale_tick_length.unwrap_or(6.0);
+        let tick_w = self.scale_tick_width.unwrap_or(1.0);
+        let offset = self.scale_offset.unwrap_or(8.0);
+        let suffix = self.scale_suffix.as_deref().unwrap_or("");
+
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        paint.set_color(color);
+
+        let dir = self.direction.as_deref().unwrap_or("up");
+        let x0 = self.x as f32;
+        let y0 = self.y as f32;
+        let w = self.width as f32;
+        let h = self.height as f32;
+
+        if under_fill {
+            // ── Unlabeled ticks (all span bar width, go under fill) ──────────
+            if tick_count >= 1 && tick_w > 0.0 {
+                paint.set_style(skia_safe::paint::Style::Stroke);
+                paint.set_stroke_width(tick_w);
+                for i in 0..tick_count {
+                    let t = if tick_count == 1 {
+                        0.5_f32
+                    } else {
+                        i as f32 / (tick_count - 1) as f32
+                    };
+                    if matches!(dir, "up" | "down") {
+                        let ref_y = if dir == "down" {
+                            y0 + h * t
+                        } else {
+                            y0 + h * (1.0 - t)
+                        };
+                        canvas.draw_line((x0, ref_y), (x0 + w, ref_y), &paint);
+                    } else {
+                        let ref_x = if dir == "left" {
+                            x0 + w * (1.0 - t)
+                        } else {
+                            x0 + w * t
+                        };
+                        canvas.draw_line((ref_x, y0), (ref_x, y0 + h), &paint);
+                    }
+                }
+            }
+
+            // ── Mid labeled tick lines (no extension, go under fill) ─────────
+            if has_labels && tick_w > 0.0 {
+                let labels = self.scale_labels.as_ref().unwrap();
+                let mid = (self.min + self.max) / 2.0;
+                let values: Vec<f64> = if labels.is_empty() {
+                    vec![self.min, mid, self.max]
+                } else {
+                    labels.clone()
+                };
+                let span = (self.max - self.min) as f32;
+                let n = values.len();
+                paint.set_style(skia_safe::paint::Style::Stroke);
+                paint.set_stroke_width(tick_w);
+                for (idx, &v) in values.iter().enumerate() {
+                    if idx == 0 || idx == n - 1 {
+                        continue; // end ticks drawn in the over pass
+                    }
+                    let t = if span.abs() < f32::EPSILON {
+                        0.0_f32
+                    } else {
+                        ((v - self.min) as f32 / span).clamp(0.0, 1.0)
+                    };
+                    if matches!(dir, "up" | "down") {
+                        let ref_y = if dir == "down" {
+                            y0 + h * t
+                        } else {
+                            y0 + h * (1.0 - t)
+                        };
+                        canvas.draw_line((x0, ref_y), (x0 + w, ref_y), &paint);
+                    } else {
+                        let ref_x = if dir == "left" {
+                            x0 + w * (1.0 - t)
+                        } else {
+                            x0 + w * t
+                        };
+                        canvas.draw_line((ref_x, y0), (ref_x, y0 + h), &paint);
+                    }
+                }
+            }
+        } else {
+            // ── Over fill: end tick lines + all labels ───────────────────────
+            if !has_labels {
+                return;
+            }
+            let labels = self.scale_labels.as_ref().unwrap();
+            let mid = (self.min + self.max) / 2.0;
+            let values: Vec<f64> = if labels.is_empty() {
+                vec![self.min, mid, self.max]
+            } else {
+                labels.clone()
+            };
+
+            let font_name = self.scale_font.as_deref().unwrap_or("Arial.ttf");
+            let font_size = self.scale_font_size.unwrap_or(20.0);
+            let font = ctx
+                .typefaces
+                .get(font_name)
+                .map(|tf| font_from_typeface(tf.clone(), font_size, false))
+                .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, false));
+            let font = match font {
+                Some(f) => f,
+                None => return,
+            };
+
+            let span = (self.max - self.min) as f32;
+            let (_, metrics) = font.metrics();
+            let cap_h = metrics.cap_height.abs();
+            let n = values.len();
+
+            for (idx, &v) in values.iter().enumerate() {
+                let t = if span.abs() < f32::EPSILON {
+                    0.0_f32
+                } else {
+                    ((v - self.min) as f32 / span).clamp(0.0, 1.0)
+                };
+                let is_end = idx == 0 || idx == n - 1;
+                let ext = if is_end { end_ext } else { 0.0 };
+                let label = if (v.fract()).abs() < 1e-9 {
+                    format!("{}{}", v as i64, suffix)
+                } else {
+                    format!("{:.1}{}", v, suffix)
+                };
+
+                if matches!(dir, "up" | "down") {
+                    let ref_y = if dir == "down" {
+                        y0 + h * t
+                    } else {
+                        y0 + h * (1.0 - t)
+                    };
+                    if is_end && tick_w > 0.0 {
+                        paint.set_style(skia_safe::paint::Style::Stroke);
+                        paint.set_stroke_width(tick_w);
+                        canvas.draw_line((x0 - ext, ref_y), (x0 + w + ext, ref_y), &paint);
+                    }
+                    let label_x = x0 + w + end_ext + offset;
+                    let label_y = ref_y + cap_h / 2.0;
+                    paint.set_style(skia_safe::paint::Style::Fill);
+                    canvas.draw_str(&label, (label_x, label_y), &font, &paint);
+                } else {
+                    let ref_x = if dir == "left" {
+                        x0 + w * (1.0 - t)
+                    } else {
+                        x0 + w * t
+                    };
+                    if is_end && tick_w > 0.0 {
+                        paint.set_style(skia_safe::paint::Style::Stroke);
+                        paint.set_stroke_width(tick_w);
+                        canvas.draw_line((ref_x, y0 - ext), (ref_x, y0 + h + ext), &paint);
+                    }
+                    let text_w = font.measure_str(&label, Some(&paint)).0;
+                    let label_x = ref_x - text_w / 2.0;
+                    let label_y = y0 + h + end_ext + offset + cap_h;
+                    paint.set_style(skia_safe::paint::Style::Fill);
+                    canvas.draw_str(&label, (label_x, label_y), &font, &paint);
+                }
+            }
+        }
+    }
+
     fn draw_segmented(&self, canvas: &Canvas, paint: &mut Paint, n: u32, frac: f32, radius: f32) {
         let gap = self.gap.unwrap_or(0.0).max(0.0);
         let lit = (frac * n as f32).round() as u32;
@@ -438,6 +643,7 @@ impl OverlayElement for MeterConfig {
             let frac = self.fraction(ctx.activity, frame_idx);
             self.draw_segmented(canvas, &mut paint, n, frac, radius);
             self.draw_border(canvas, &mut paint, radius);
+            self.draw_scale(canvas, ctx, false);
             if rotation != 0.0 {
                 canvas.restore();
             }
@@ -455,6 +661,9 @@ impl OverlayElement for MeterConfig {
                 canvas.draw_rect(self.rect(), &paint);
             }
         }
+
+        // Mid ticks go under the fill so the fill bar overlaps them.
+        self.draw_scale(canvas, ctx, true);
 
         // Fill.
         let frac = self.fraction(ctx.activity, frame_idx);
@@ -525,6 +734,8 @@ impl OverlayElement for MeterConfig {
         }
 
         self.draw_border(canvas, &mut paint, radius);
+        // End tick lines + all labels go on top of the fill.
+        self.draw_scale(canvas, ctx, false);
 
         if rotation != 0.0 {
             canvas.restore();
@@ -591,6 +802,20 @@ impl OverlayElement for GaugeConfig {
         let sweep = self.sweep_angle.unwrap_or(270.0);
         let frac = self.fraction(ctx.activity, frame_idx);
 
+        // Background circle.
+        if let Some(bg_op) = self.background_opacity.filter(|&op| op > 0.0) {
+            let bg_str = self.background_color.as_deref().unwrap_or("#000000");
+            let (r2, g2, b2, _) = crate::render::color::parse_hex_color(bg_str);
+            let alpha = (bg_op.clamp(0.0, 1.0) * 255.0) as u8;
+            let mut bg_paint = Paint::default();
+            bg_paint.set_anti_alias(true);
+            bg_paint.set_color(Color::from_argb(alpha, r2, g2, b2));
+            bg_paint.set_style(skia_safe::paint::Style::Fill);
+            let full_r =
+                self.width.min(self.height) as f32 / 2.0 + self.background_margin.unwrap_or(0.0);
+            canvas.draw_circle((cx, cy), full_r, &bg_paint);
+        }
+
         let oval = Rect::from_ltrb(cx - r, cy - r, cx + r, cy + r);
 
         let mut arc_paint = Paint::default();
@@ -598,32 +823,86 @@ impl OverlayElement for GaugeConfig {
         arc_paint.set_style(skia_safe::paint::Style::Stroke);
         arc_paint.set_stroke_cap(skia_safe::paint::Cap::Round);
 
-        // Track arc.
         arc_paint.set_stroke_width(arc_w);
-        arc_paint.set_color(self.argb(self.arc_color.as_deref(), self.opacity));
-        canvas.draw_arc(oval, start, sweep, false, &arc_paint);
 
-        // Progress arc (start → current), if a color is set.
-        if let Some(pc) = self.progress_color.as_deref() {
-            arc_paint.set_color(self.argb(Some(pc), self.opacity));
-            canvas.draw_arc(oval, start, sweep * frac, false, &arc_paint);
+        // Track arc (unfilled portion, start → max). Hidden when hide_track is set.
+        if !self.hide_track.unwrap_or(false) {
+            arc_paint.set_color(self.argb(self.arc_color.as_deref(), self.opacity));
+            canvas.draw_arc(oval, start, sweep, false, &arc_paint);
         }
 
-        // Needle.
-        let theta = (start + sweep * frac).to_radians();
-        let nx = cx + theta.cos() * r;
-        let ny = cy + theta.sin() * r;
-        let mut needle = Paint::default();
-        needle.set_anti_alias(true);
-        needle.set_style(skia_safe::paint::Style::Stroke);
-        needle.set_stroke_cap(skia_safe::paint::Cap::Round);
-        needle.set_stroke_width(needle_w);
-        needle.set_color(self.argb(self.needle_color.as_deref(), self.opacity));
-        canvas.draw_line((cx, cy), (nx, ny), &needle);
+        // Progress arc (start → current).
+        if frac > 0.0 {
+            let progress_sweep = sweep * frac;
+            let has_gradient = self
+                .gradient
+                .as_ref()
+                .map(|g| g.len() >= 2)
+                .unwrap_or(false);
 
-        // Hub.
-        needle.set_style(skia_safe::paint::Style::Fill);
-        canvas.draw_circle((cx, cy), needle_w * 1.5, &needle);
+            if has_gradient {
+                let grad = self.gradient.as_ref().unwrap();
+                let n = grad.len();
+                let colors: Vec<Color> = grad
+                    .iter()
+                    .map(|c| self.argb(Some(c), self.opacity))
+                    .collect();
+                let pos: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
+                // Gradient spans the full value range (0→sweep) so colors are
+                // proportional to position, not compressed to the current value.
+                // Rotate via local matrix instead of offsetting start angle so
+                // the angular range never crosses 360° and wraps to red.
+                let mut local_mat = skia_safe::Matrix::new_identity();
+                local_mat.set_rotate(start, Some(skia_safe::Point::new(cx, cy)));
+                let shader = skia_safe::gradient_shader::sweep(
+                    skia_safe::Point::new(cx, cy),
+                    skia_safe::gradient_shader::GradientShaderColors::Colors(&colors),
+                    pos.as_slice(),
+                    skia_safe::TileMode::Clamp,
+                    Some((0.0, sweep)),
+                    None,
+                    Some(&local_mat),
+                );
+                arc_paint.set_shader(shader);
+                arc_paint.set_alpha(255);
+            } else if let Some(pc) = self.progress_color.as_deref() {
+                arc_paint.set_color(self.argb(Some(pc), self.opacity));
+            }
+
+            canvas.draw_arc(oval, start, progress_sweep, false, &arc_paint);
+            arc_paint.set_shader(None);
+        }
+
+        // Cap dot at the tip of the progress arc.
+        if let Some(cap_str) = self.cap_color.as_deref() {
+            let theta = (start + sweep * frac).to_radians();
+            let dot_x = cx + theta.cos() * r;
+            let dot_y = cy + theta.sin() * r;
+            let cap_r = self.cap_radius.unwrap_or(arc_w / 2.0);
+            let mut cap_paint = Paint::default();
+            cap_paint.set_anti_alias(true);
+            cap_paint.set_color(self.argb(Some(cap_str), self.opacity));
+            cap_paint.set_style(skia_safe::paint::Style::Fill);
+            canvas.draw_circle((dot_x, dot_y), cap_r, &cap_paint);
+        }
+
+        // Needle (traditional pointer from center). Skipped when needle_width = 0.
+        if needle_w > 0.0 {
+            let theta = (start + sweep * frac).to_radians();
+            let nx = cx + theta.cos() * r;
+            let ny = cy + theta.sin() * r;
+            let mut needle = Paint::default();
+            needle.set_anti_alias(true);
+            needle.set_style(skia_safe::paint::Style::Stroke);
+            needle.set_stroke_cap(skia_safe::paint::Cap::Round);
+            needle.set_stroke_width(needle_w);
+            needle.set_color(self.argb(self.needle_color.as_deref(), self.opacity));
+            canvas.draw_line((cx, cy), (nx, ny), &needle);
+
+            // Hub.
+            needle.set_style(skia_safe::paint::Style::Fill);
+            canvas.draw_circle((cx, cy), needle_w * 1.5, &needle);
+        }
 
         if rotation != 0.0 {
             canvas.restore();
@@ -740,12 +1019,14 @@ pub fn measure_elements(
 ) -> Vec<ElementBounds> {
     let charts: HashMap<String, ChartCache> = HashMap::new();
     let typefaces: HashMap<String, Typeface> = HashMap::new();
+    let images: HashMap<String, skia_safe::Image> = HashMap::new();
     let ctx = ElementCtx {
         activity,
         scene: &template.scene,
         typefaces: &typefaces,
         charts: &charts,
         fonts_dir,
+        images: &images,
     };
     template
         .elements
@@ -766,6 +1047,8 @@ pub struct SceneCache {
     /// Pre-loaded typefaces keyed by filename. Eliminates disk I/O inside the per-frame
     /// hot path — Font::new(typeface.clone(), size) is trivially cheap.
     pub typefaces: HashMap<String, Typeface>,
+    /// Pre-decoded images keyed by element id.
+    pub images: HashMap<String, skia_safe::Image>,
 }
 
 impl SceneCache {
@@ -773,6 +1056,7 @@ impl SceneCache {
         activity: &Activity,
         template: &Template,
         fonts_dir: &str,
+        assets_dirs: &[&str],
     ) -> Result<Self, String> {
         let w = template.scene.width;
         let h = template.scene.height;
@@ -802,6 +1086,35 @@ impl SceneCache {
             }
         }
 
+        // --- Pre-decode images (static assets, loaded once per render session) ---
+        let mut images: HashMap<String, skia_safe::Image> = HashMap::new();
+        for el in &template.elements {
+            if let Element::Image(cfg) = el {
+                if cfg.file.trim().is_empty() {
+                    log::warn!(
+                        "SceneCache: image element '{}' has no asset selected; skipping",
+                        cfg.id
+                    );
+                    continue;
+                }
+                log::info!(
+                    "SceneCache: loading image asset '{}' for element '{}'",
+                    cfg.file,
+                    cfg.id
+                );
+                match load_asset_image(&cfg.file, assets_dirs) {
+                    Some(img) => {
+                        images.insert(cfg.id.clone(), img);
+                    }
+                    None => log::warn!(
+                        "SceneCache: could not load image asset '{}' for element '{}'; skipping",
+                        cfg.file,
+                        cfg.id
+                    ),
+                }
+            }
+        }
+
         // --- Pre-render transparent base frame as a Skia Image ---
         let base_image = render_base_frame(w, h)?;
 
@@ -811,6 +1124,7 @@ impl SceneCache {
             width: w,
             height: h,
             typefaces,
+            images,
         })
     }
 }
@@ -884,6 +1198,7 @@ pub fn render_frame(
             typefaces: &cache.typefaces,
             charts: &cache.charts,
             fonts_dir: "",
+            images: &cache.images,
         };
         for idx in template.layer_order() {
             if let Some(el) = template.elements.get(idx) {
@@ -907,6 +1222,7 @@ pub fn compute_crop_rect(
     activity: &Activity,
     template: &Template,
     fonts_dir: &str,
+    cancelled: Option<&std::sync::atomic::AtomicBool>,
 ) -> Option<CropRect> {
     let fw = template.scene.width as f32;
     let fh = template.scene.height as f32;
@@ -921,13 +1237,26 @@ pub fn compute_crop_rect(
     };
 
     let charts: HashMap<String, ChartCache> = HashMap::new();
-    let typefaces: HashMap<String, Typeface> = HashMap::new();
+    let mut typefaces: HashMap<String, Typeface> = HashMap::new();
+    for font_name in template
+        .elements
+        .iter()
+        .flat_map(|e| e.as_overlay().fonts(&template.scene))
+    {
+        if let std::collections::hash_map::Entry::Vacant(e) = typefaces.entry(font_name.clone()) {
+            if let Some(tf) = load_typeface(&font_name, fonts_dir) {
+                e.insert(tf);
+            }
+        }
+    }
+    let images: HashMap<String, skia_safe::Image> = HashMap::new();
     let ctx = ElementCtx {
         activity,
         scene: &template.scene,
         typefaces: &typefaces,
         charts: &charts,
         fonts_dir,
+        images: &images,
     };
 
     let n = activity.data_len();
@@ -935,6 +1264,13 @@ pub fn compute_crop_rect(
         let ov = el.as_overlay();
         if ov.is_dynamic() {
             for i in 0..n {
+                if i % 1024 == 0
+                    && cancelled
+                        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+                        .unwrap_or(false)
+                {
+                    return None;
+                }
                 if let Some((x0, y0, x1, y1)) = ov.crop_extent(&ctx, i) {
                     acc(x0, y0, x1, y1);
                 }
@@ -1032,8 +1368,26 @@ pub(crate) fn load_typeface(font_name: &str, fonts_dir: &str) -> Option<Typeface
     None
 }
 
-fn load_font(font_name: &str, size: f32, fonts_dir: &str) -> Option<Font> {
-    load_typeface(font_name, fonts_dir).map(|tf| Font::new(tf, size))
+pub(crate) fn font_from_typeface(typeface: Typeface, size: f32, italic: bool) -> Font {
+    let mut font = Font::new(typeface, size);
+    if italic {
+        font.set_skew_x(ITALIC_SKEW_X);
+    }
+    font
+}
+
+fn load_font(font_name: &str, size: f32, fonts_dir: &str, italic: bool) -> Option<Font> {
+    load_typeface(font_name, fonts_dir).map(|tf| font_from_typeface(tf, size, italic))
+}
+
+/// Adjust a base x coordinate for text alignment.
+/// `base_x` is the authored position; returns the draw-origin x for Skia (left edge of glyphs).
+fn align_x(base_x: f32, text_width: f32, align: Option<&str>) -> f32 {
+    match align.unwrap_or("left") {
+        "right" => base_x - text_width,
+        "center" => base_x - text_width / 2.0,
+        _ => base_x, // "left" default
+    }
 }
 
 // ─── Value formatting ──────────────────────────────────────────────────────
@@ -1056,6 +1410,195 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
         Some(s) => format!("{text}{s}"),
         None => text,
     }
+}
+
+// ─── Image element ─────────────────────────────────────────────────────────
+
+/// Beat-pulse envelope: quick attack, smooth quadratic decay. Returns 0..=1.
+fn beat_curve(phase: f32) -> f32 {
+    const ATTACK: f32 = 0.12;
+    if phase < ATTACK {
+        phase / ATTACK
+    } else {
+        ((1.0 - phase) / (1.0 - ATTACK)).powf(2.0)
+    }
+}
+
+impl ImageConfig {
+    fn pulse_scale(&self, ctx: &ElementCtx, frame_idx: usize) -> f32 {
+        let amplitude = self.pulse_amplitude.unwrap_or(0.15);
+        if amplitude <= 0.0 {
+            return 1.0;
+        }
+        let bpm = if let Some(fixed) = self.pulse_bpm {
+            fixed
+        } else if let Some(metric) = self.pulse_metric.as_deref() {
+            if ctx.activity.valid_attributes.contains(&metric.to_string()) {
+                ctx.activity.get_scalar(metric, frame_idx)
+            } else {
+                return 1.0;
+            }
+        } else {
+            return 1.0;
+        };
+        if bpm <= 0.0 {
+            return 1.0;
+        }
+        let fps = ctx.scene.fps as f64;
+        let time_sec = frame_idx as f64 / fps;
+        let phase = ((time_sec * bpm / 60.0).fract() as f32).clamp(0.0, 1.0);
+        1.0 + amplitude * beat_curve(phase)
+    }
+}
+
+impl OverlayElement for ImageConfig {
+    fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds> {
+        let max_scale = 1.0 + self.pulse_amplitude.unwrap_or(0.0).max(0.0);
+        let w = self.width as f32 * max_scale;
+        let h = self.height as f32 * max_scale;
+        let cx = self.x as f32 + self.width as f32 / 2.0;
+        let cy = self.y as f32 + self.height as f32 / 2.0;
+        // Suppress unused warning — frame_idx not needed for measure but
+        // signature must match the trait.
+        let _ = (ctx, frame_idx);
+        Some(ElementBounds {
+            id: self.id.clone(),
+            x: cx - w / 2.0,
+            y: cy - h / 2.0,
+            w,
+            h,
+        })
+    }
+
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
+        let Some(img) = ctx.images.get(&self.id) else {
+            return;
+        };
+        let opacity = self.opacity.unwrap_or(1.0);
+        let rotation = self.rotation.unwrap_or(0.0);
+        let w = self.width as f32;
+        let h = self.height as f32;
+        let cx = self.x as f32 + w / 2.0;
+        let cy = self.y as f32 + h / 2.0;
+        let scale = self.pulse_scale(ctx, frame_idx);
+
+        let needs_transform = rotation != 0.0 || scale != 1.0;
+        if needs_transform {
+            canvas.save();
+            if scale != 1.0 {
+                canvas.translate((cx, cy));
+                canvas.scale((scale, scale));
+                canvas.translate((-cx, -cy));
+            }
+            if rotation != 0.0 {
+                canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
+            }
+        }
+
+        let dst = Rect::from_xywh(self.x as f32, self.y as f32, w, h);
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        paint.set_alpha_f(opacity);
+        let sampling = skia_safe::SamplingOptions::new(
+            skia_safe::FilterMode::Linear,
+            skia_safe::MipmapMode::None,
+        );
+        canvas.draw_image_rect_with_sampling_options(img, None, dst, sampling, &paint);
+
+        if needs_transform {
+            canvas.restore();
+        }
+    }
+}
+
+/// Resolve an asset filename against an ordered list of search directories.
+/// Checks absolute path first, then each directory in order.
+pub(crate) fn resolve_asset_path(file: &str, search_dirs: &[&str]) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(file);
+    if p.is_absolute() && p.exists() {
+        return Some(p.to_path_buf());
+    }
+    let basename = p.file_name().unwrap_or(p.as_os_str());
+    for dir in search_dirs {
+        let candidate = std::path::Path::new(dir).join(basename);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Load a PNG/WebP/SVG asset into a Skia Image, searching the given directories.
+pub(crate) fn load_asset_image(file: &str, search_dirs: &[&str]) -> Option<skia_safe::Image> {
+    if file.trim().is_empty() {
+        return None;
+    }
+    let path = resolve_asset_path(file, search_dirs)?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext == "svg" {
+        load_svg_image(&path)
+    } else if ext == "webp" {
+        load_webp_image(&path)
+    } else {
+        let bytes = std::fs::read(&path).ok()?;
+        let data = skia_safe::Data::new_copy(&bytes);
+        skia_safe::Image::from_encoded(data)
+    }
+}
+
+fn load_webp_image(path: &std::path::Path) -> Option<skia_safe::Image> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes)).ok()?;
+    let (w, h) = decoder.dimensions();
+    if w == 0 || h == 0 {
+        return None;
+    }
+
+    let mut decoded = vec![0; decoder.output_buffer_size()?];
+    decoder.read_image(&mut decoded).ok()?;
+
+    let rgba = if decoder.has_alpha() {
+        decoded
+    } else {
+        let mut out = Vec::with_capacity(w as usize * h as usize * 4);
+        for px in decoded.chunks_exact(3) {
+            out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+        }
+        out
+    };
+
+    let info = ImageInfo::new(
+        ISize::new(w as i32, h as i32),
+        skia_safe::ColorType::RGBA8888,
+        skia_safe::AlphaType::Unpremul,
+        None,
+    );
+    let data = skia_safe::Data::new_copy(&rgba);
+    skia_safe::images::raster_from_data(&info, data, (w * 4) as usize)
+}
+
+fn load_svg_image(path: &std::path::Path) -> Option<skia_safe::Image> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let opt = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(&content, &opt).ok()?;
+    let size = tree.size().to_int_size();
+    let (w, h) = (size.width(), size.height());
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+    let png_bytes = pixmap.encode_png().ok()?;
+    let data = skia_safe::Data::new_copy(&png_bytes);
+    skia_safe::Image::from_encoded(data)
 }
 
 #[cfg(test)]
