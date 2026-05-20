@@ -77,6 +77,29 @@ kbd {
   white-space: nowrap;
 }
 
+.cyclemetry-github-link {
+  align-items: center;
+  color: var(--color-muted);
+  display: inline-flex;
+  gap: 0.35rem;
+  line-height: 1;
+  order: 3;
+  text-decoration: none;
+  transition: color 150ms ease;
+  white-space: nowrap;
+}
+
+.cyclemetry-github-icon {
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+.cyclemetry-github-stars {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .nextra-navbar nav > div:has(.nextra-search) {
   order: 2;
 }
@@ -91,6 +114,10 @@ kbd {
 
 @media (hover: hover) and (pointer: fine) {
   .cyclemetry-navbar-link:hover {
+    color: var(--color-text);
+  }
+
+  .cyclemetry-github-link:hover {
     color: var(--color-text);
   }
 }

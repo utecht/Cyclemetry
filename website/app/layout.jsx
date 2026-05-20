@@ -2,6 +2,7 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import Script from 'next/script'
+import GitHubStarsLink from '../components/GitHubStarsLink'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
 
@@ -37,10 +38,10 @@ const navbar = (
         Cyclemetry
       </span>
     }
-    projectLink="https://github.com/walkersutton/cyclemetry"
   >
     <a className="cyclemetry-navbar-link" href="/install/">Install</a>
     <a className="cyclemetry-navbar-link" href="/blog/">Blog</a>
+    <GitHubStarsLink />
   </Navbar>
 )
 
