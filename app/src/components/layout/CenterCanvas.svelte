@@ -21,15 +21,19 @@
 
   let currentFrameData = $state(null)  // { image, elements }
   let fetchError = $state(null)
+  let previewNotice = $state(null)
   let playing = $state(false)
   let rafHandle = null
   let lastTick = null
   let stallTimer = null
   let configDebounce = null
+  let previewGeneration = 0
 
   const PREFETCH_AHEAD = 5
   const MAX_CACHE = 30
   const MAX_CONCURRENT = 3
+  const PREVIEW_SLOW_MS = 8000
+  const PREVIEW_HARD_TIMEOUT_MS = 45000
 
   let previewFps = $derived(app.previewFps ?? 1)
 
@@ -44,9 +48,11 @@
   )
 
   function clearBuffer() {
+    previewGeneration += 1
     cache.clear()
     pending.clear()
     fetchError = null
+    previewNotice = null
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null }
   }
 
@@ -71,14 +77,26 @@
       raw && raw !== 'null' && raw !== 'undefined' ? raw : 'demo.gpxinit'
 
     pending.add(frameIdx)
+    const generation = previewGeneration
+    let slowTimer = null
+    let hardTimer = null
     try {
-      const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Preview timed out. Try reloading, or check that your activity file is valid.')), 8000)
-      )
+      slowTimer = setTimeout(() => {
+        if (generation !== previewGeneration || currentFrameData) return
+        previewNotice = 'Preparing preview is taking a little longer than usual…'
+      }, PREVIEW_SLOW_MS)
+      const timeout = new Promise((_, reject) => {
+        hardTimer = setTimeout(
+          () => reject(new Error('Preview is taking too long to generate. Choose an activity and template again, or retry if this keeps happening.')),
+          PREVIEW_HARD_TIMEOUT_MS,
+        )
+      })
       let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, app.outputWidth, app.outputHeight), timeout])
+      if (generation !== previewGeneration) return
       if (data?.image) {
         console.debug('[tpl-diag] fetchFrame got image', { frameIdx, elements: data.elements?.length })
         fetchError = null
+        previewNotice = null
         if (stallTimer) { clearTimeout(stallTimer); stallTimer = null }
         // Surface any backend warning (e.g. GPX not found, using demo) — once per message
         if (data.warning && !shownWarnings.has(data.warning)) {
@@ -101,6 +119,7 @@
         }
       }
     } catch (e) {
+      if (generation !== previewGeneration) return
       console.warn('Frame fetch failed for frame', frameIdx, e)
       const fps2 = app.previewFps ?? 1
       const start2 = app.config?.scene?.start ?? 0
@@ -111,6 +130,8 @@
         fetchError = e?.message ?? String(e)
       }
     } finally {
+      if (slowTimer) clearTimeout(slowTimer)
+      if (hardTimer) clearTimeout(hardTimer)
       pending.delete(frameIdx)
     }
   }
@@ -419,7 +440,7 @@
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            <p class="text-xs text-zinc-600">Generating preview…</p>
+            <p class="text-xs text-zinc-600">{previewNotice ?? 'Generating preview…'}</p>
           </div>
         {/if}
 
