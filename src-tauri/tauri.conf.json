@@ -37,7 +37,10 @@
     "createUpdaterArtifacts": false,
     "targets": "all",
     "resources": {
-      "../resources/fonts/*": "fonts/"
+      "../resources/fonts/*": "fonts/",
+      "../templates/assets/*.png": "assets/",
+      "../templates/assets/*.svg": "assets/",
+      "../templates/assets/*.webp": "assets/"
     },
     "icon": [
       "icons/32x32.png",

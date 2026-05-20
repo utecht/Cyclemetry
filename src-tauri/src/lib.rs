@@ -290,6 +290,51 @@ fn assets_search_dirs_vec() -> Vec<String> {
                 dirs.push(prod.to_string_lossy().to_string());
             }
         }
+        #[cfg(windows)]
+        if let Some(exe_dir) = exe.parent() {
+            for candidate in &[
+                exe_dir.join("assets"),
+                exe_dir.join("resources").join("assets"),
+            ] {
+                if candidate.exists() {
+                    dirs.push(candidate.to_string_lossy().to_string());
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(exe_dir) = exe.parent() {
+            let app_name = exe
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "cyclemetry".to_string());
+            for candidate in &[
+                exe_dir.join("assets"),
+                exe_dir.join("resources").join("assets"),
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("lib")
+                    .join(&app_name)
+                    .join("assets"),
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("lib")
+                    .join(&app_name)
+                    .join("resources")
+                    .join("assets"),
+            ] {
+                if candidate.exists() {
+                    dirs.push(
+                        candidate
+                            .canonicalize()
+                            .unwrap_or_else(|_| candidate.to_path_buf())
+                            .to_string_lossy()
+                            .to_string(),
+                    );
+                }
+            }
+        }
     }
     dirs
 }

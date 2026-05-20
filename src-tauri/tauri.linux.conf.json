@@ -2,7 +2,10 @@
   "bundle": {
     "resources": {
       "../resources/ffmpeg": ".",
-      "../resources/fonts/*": "fonts/"
+      "../resources/fonts/*": "fonts/",
+      "../templates/assets/*.png": "assets/",
+      "../templates/assets/*.svg": "assets/",
+      "../templates/assets/*.webp": "assets/"
     }
   }
 }
