@@ -20,6 +20,13 @@ function check(command, args) {
   }).status === 0
 }
 
+function output(command, args) {
+  return execFileSync(command, args, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).trim()
+}
+
 const cargoToml = readFileSync(join(repoRoot, 'src-tauri/Cargo.toml'), 'utf8')
 const version = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
 
@@ -47,7 +54,14 @@ run('git', [
   'scripts/sync-version.mjs',
   'scripts/release.mjs',
 ])
-run('git', ['commit', '-m', tag])
+
+if (check('git', ['diff', '--cached', '--quiet'])) {
+  const head = output('git', ['rev-parse', '--short', 'HEAD'])
+  console.log(`No release metadata changes to commit; tagging existing HEAD ${head}`)
+} else {
+  run('git', ['commit', '-m', tag])
+}
+
 run('git', ['tag', tag])
 run('git', ['push', 'origin', 'main'])
 run('git', ['push', 'origin', tag])
