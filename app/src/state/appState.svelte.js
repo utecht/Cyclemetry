@@ -4,6 +4,11 @@ import { parseLocalStorage } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 
 export function createAppState() {
+  const storedActivityName = (value) => {
+    if (!value || value === 'null' || value === 'undefined') return null
+    return value.split(/[\\/]/).pop() || null
+  }
+
   // ── Persistent ──────────────────────────────────────────────────────────────
   // config is the single source of truth: scene settings + all element positions
   let _persisted = parseLocalStorage('editorConfig')
@@ -18,11 +23,8 @@ export function createAppState() {
   }
   const initialConfig = _persisted
   let config = $state(initialConfig)
-  const _storedGpx = localStorage.getItem('gpxFilename')
   let gpxFilename = $state(
-    _storedGpx && _storedGpx !== 'null' && _storedGpx !== 'undefined'
-      ? _storedGpx
-      : null,
+    storedActivityName(localStorage.getItem('gpxFilename')),
   )
   let activityDuration = $state(
     parseInt(localStorage.getItem('activityDuration') ?? '73'),
