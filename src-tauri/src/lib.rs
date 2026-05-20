@@ -1690,7 +1690,7 @@ pub fn run() {
                 let show_dl = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Show Downloads Folder",
+                    "Show Render Output Folder",
                     true,
                     None::<&str>,
                 )?;
@@ -1923,7 +1923,7 @@ pub fn run() {
                 let show_dl = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Show Output Folder",
+                    "Show Render Output Folder",
                     true,
                     None::<&str>,
                 )?;
