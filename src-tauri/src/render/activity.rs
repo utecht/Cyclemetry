@@ -93,10 +93,8 @@ impl Activity {
                     "position_long" => {
                         lon = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
                     }
-                    "altitude" | "enhanced_altitude" => {
-                        if elevation.is_none() {
-                            elevation = fit_f64(field.value());
-                        }
+                    "altitude" | "enhanced_altitude" if elevation.is_none() => {
+                        elevation = fit_f64(field.value());
                     }
                     "heart_rate" => heartrate = fit_f64(field.value()),
                     "cadence" => cadence = fit_f64(field.value()),
@@ -206,10 +204,10 @@ impl Activity {
                             "Extensions" => in_extensions = false,
                             "Trackpoint" => {
                                 in_trackpoint = false;
-                                if let Some(pt) = current.take() {
-                                    if has_position {
-                                        points.push(pt);
-                                    }
+                                if let Some(pt) = current.take()
+                                    && has_position
+                                {
+                                    points.push(pt);
                                 }
                             }
                             _ => {}
@@ -432,11 +430,7 @@ impl Activity {
                 let prev = &points[i - 1];
                 let dist = haversine_m(prev.lat, prev.lon, pt.lat, pt.lon);
                 let dt = time_delta_seconds(prev.time_str.as_deref(), pt.time_str.as_deref());
-                if dt > 0.0 {
-                    dist / dt
-                } else {
-                    0.0
-                }
+                if dt > 0.0 { dist / dt } else { 0.0 }
             };
             activity.speed.push(spd);
 

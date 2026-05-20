@@ -10,12 +10,12 @@ use rayon::prelude::*;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::render::activity::Activity;
-use crate::render::frame::{render_frame, SceneCache};
+use crate::render::frame::{SceneCache, render_frame};
 use crate::render::template::Template;
 
 pub struct RenderProgress {

@@ -540,11 +540,11 @@ impl Template {
 
         if let Some(layers) = &self.scene.layers {
             for id in layers {
-                if let Some(idx) = self.elements.iter().position(|e| e.id() == id) {
-                    if !seen[idx] {
-                        seen[idx] = true;
-                        out.push(idx);
-                    }
+                if let Some(idx) = self.elements.iter().position(|e| e.id() == id)
+                    && !seen[idx]
+                {
+                    seen[idx] = true;
+                    out.push(idx);
                 }
             }
         }

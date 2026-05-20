@@ -259,38 +259,37 @@ impl ChartCache {
         // 2. Overdraw the traveled (past) segment at past_opacity when split is active.
         if (self.past_opacity.is_some() || self.future_opacity.is_some())
             && frame_idx < self.x_data.len()
+            && let Some(geo) = &self.geo
         {
-            if let Some(geo) = &self.geo {
-                let past_end = frame_idx + 1;
-                let past_opacity = self.past_opacity.unwrap_or(1.0);
-                let past_color = to_skia_color(&self.line_color, Some(past_opacity));
-                let mut pb = PathBuilder::new();
-                for (i, (&x, &y)) in self
-                    .x_data
-                    .iter()
-                    .zip(self.y_data.iter())
-                    .take(past_end)
-                    .enumerate()
-                {
-                    let local_pt = geo.to_pixel(x, y, &self.plot_bounds);
-                    let abs_pt = Point::new(
-                        local_pt.x + self.x_offset as f32,
-                        local_pt.y + self.y_offset as f32,
-                    );
-                    if i == 0 {
-                        pb.move_to(abs_pt);
-                    } else {
-                        pb.line_to(abs_pt);
-                    }
+            let past_end = frame_idx + 1;
+            let past_opacity = self.past_opacity.unwrap_or(1.0);
+            let past_color = to_skia_color(&self.line_color, Some(past_opacity));
+            let mut pb = PathBuilder::new();
+            for (i, (&x, &y)) in self
+                .x_data
+                .iter()
+                .zip(self.y_data.iter())
+                .take(past_end)
+                .enumerate()
+            {
+                let local_pt = geo.to_pixel(x, y, &self.plot_bounds);
+                let abs_pt = Point::new(
+                    local_pt.x + self.x_offset as f32,
+                    local_pt.y + self.y_offset as f32,
+                );
+                if i == 0 {
+                    pb.move_to(abs_pt);
+                } else {
+                    pb.line_to(abs_pt);
                 }
-                let path = pb.snapshot();
-                let mut paint = Paint::default();
-                paint.set_anti_alias(true);
-                paint.set_color(past_color);
-                paint.set_stroke_width(self.line_width);
-                paint.set_style(PaintStyle::Stroke);
-                canvas.draw_path(&path, &paint);
             }
+            let path = pb.snapshot();
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(past_color);
+            paint.set_stroke_width(self.line_width);
+            paint.set_style(PaintStyle::Stroke);
+            canvas.draw_path(&path, &paint);
         }
 
         // 3. Draw position marker (the per-frame part).

@@ -6,7 +6,7 @@ use skia_safe::{
 };
 use std::collections::HashMap;
 
-use crate::render::activity::{Activity, ATTR_DISTANCE};
+use crate::render::activity::{ATTR_DISTANCE, Activity};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
@@ -92,12 +92,13 @@ impl Element {
 
 impl OverlayElement for LabelConfig {
     fn fonts(&self, scene: &SceneConfig) -> Vec<String> {
-        vec![self
-            .font
-            .as_deref()
-            .or(scene.font.as_deref())
-            .unwrap_or("Arial.ttf")
-            .to_string()]
+        vec![
+            self.font
+                .as_deref()
+                .or(scene.font.as_deref())
+                .unwrap_or("Arial.ttf")
+                .to_string(),
+        ]
     }
 
     fn measure(&self, ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
@@ -176,12 +177,13 @@ impl OverlayElement for ValueConfig {
     }
 
     fn fonts(&self, scene: &SceneConfig) -> Vec<String> {
-        vec![self
-            .font
-            .as_deref()
-            .or(scene.font.as_deref())
-            .unwrap_or("Arial.ttf")
-            .to_string()]
+        vec![
+            self.font
+                .as_deref()
+                .or(scene.font.as_deref())
+                .unwrap_or("Arial.ttf")
+                .to_string(),
+        ]
     }
 
     fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds> {
@@ -1074,7 +1076,9 @@ impl SceneCache {
                 if let Some(tf) = load_typeface(&font_name, fonts_dir) {
                     e.insert(tf);
                 } else {
-                    eprintln!("Warning: could not load font '{font_name}'; text elements using it will not render");
+                    eprintln!(
+                        "Warning: could not load font '{font_name}'; text elements using it will not render"
+                    );
                 }
             }
         }
@@ -1244,10 +1248,10 @@ pub fn compute_crop_rect(
         .iter()
         .flat_map(|e| e.as_overlay().fonts(&template.scene))
     {
-        if let std::collections::hash_map::Entry::Vacant(e) = typefaces.entry(font_name.clone()) {
-            if let Some(tf) = load_typeface(&font_name, fonts_dir) {
-                e.insert(tf);
-            }
+        if let std::collections::hash_map::Entry::Vacant(e) = typefaces.entry(font_name.clone())
+            && let Some(tf) = load_typeface(&font_name, fonts_dir)
+        {
+            e.insert(tf);
         }
     }
     let images: HashMap<String, skia_safe::Image> = HashMap::new();

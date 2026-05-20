@@ -642,7 +642,7 @@ struct AssetItem {
 }
 
 fn asset_data_url(path: &Path) -> String {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -1390,7 +1390,7 @@ async fn native_demo(
     .map_err(|e| format!("Task join error: {e}"))??;
 
     let png = rgba_to_png(&rgba, wh);
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     let b64 = general_purpose::STANDARD.encode(&png);
     Ok(serde_json::json!({
         "image": format!("data:image/png;base64,{b64}"),
@@ -1411,10 +1411,10 @@ fn rgba_to_png(rgba: &[u8], (w, h): (u32, u32)) -> Vec<u8> {
         None,
     );
     let data = skia_safe::Data::new_copy(rgba);
-    if let Some(img) = skia_safe::images::raster_from_data(&info, data, (w * 4) as usize) {
-        if let Some(encoded) = img.encode(None, skia_safe::EncodedImageFormat::PNG, None) {
-            return encoded.as_bytes().to_vec();
-        }
+    if let Some(img) = skia_safe::images::raster_from_data(&info, data, (w * 4) as usize)
+        && let Some(encoded) = img.encode(None, skia_safe::EncodedImageFormat::PNG, None)
+    {
+        return encoded.as_bytes().to_vec();
     }
     vec![]
 }
@@ -1637,12 +1637,12 @@ pub fn run() {
                 }
                 let win2 = win.clone();
                 win.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
-                        if let (Ok(s), Ok(sf)) = (win2.inner_size(), win2.scale_factor()) {
-                            let w = (s.width as f64 / sf).round() as u32;
-                            let h = (s.height as f64 / sf).round() as u32;
-                            save_window_size(w, h);
-                        }
+                    if let tauri::WindowEvent::CloseRequested { .. } = event
+                        && let (Ok(s), Ok(sf)) = (win2.inner_size(), win2.scale_factor())
+                    {
+                        let w = (s.width as f64 / sf).round() as u32;
+                        let h = (s.height as f64 / sf).round() as u32;
+                        save_window_size(w, h);
                     }
                 });
             }
