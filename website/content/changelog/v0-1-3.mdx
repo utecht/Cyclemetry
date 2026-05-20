@@ -1,0 +1,51 @@
+---
+title: v0.1.3
+description: Cyclemetry v0.1.3 release notes — Windows and Linux support, new element types, and more.
+---
+
+import { Callout } from 'nextra/components'
+
+# v0.1.3
+
+<div className="blog-meta">Released 20 May 2026</div>
+
+<Callout type="info">
+  Download from [GitHub Releases](https://github.com/walkersutton/Cyclemetry/releases/tag/v0.1.3)
+</Callout>
+
+## What's New
+
+### Windows and Linux Support
+
+Cyclemetry now runs on Windows and Linux in addition to macOS. While still early days for these platforms, they've been tested and are functional — a big step toward a truly cross-platform overlay tool.
+
+### New Element Types
+
+Three new overlay elements are now available:
+
+- **Image assets** — add logos, sponsor graphics, or any PNG/JPG to your overlay
+- **Gauges** — circular or arc-based metric displays with customizable styling
+- **Meters** — horizontal or vertical progress bars for continuous values (speed, power, heart rate)
+
+### Element Groups & Layering
+
+You can now group elements together and configure their layering order. This makes it much easier to compose complex overlays with overlapping elements, and to organize your scene for cleaner editing.
+
+### Custom Fonts
+
+Templates now support custom fonts — upload your own typeface to match your brand or aesthetic. No more limited to system fonts.
+
+## Bug Fixes
+
+- Fixed element layer positioning for drag-and-drop reordering
+- Fixed rotation support for meter and gauge elements
+- Fixed path resolution and log initialization on Windows
+
+## Known Issues
+
+- Windows and Linux support is still maturing — some edge cases may not be fully resolved
+- Hardware-accelerated encoding remains macOS-only; Windows uses software encoding
+
+## Upgrading
+
+Download the latest `.dmg` (macOS), `.msi` (Windows), or flatpak/archive (Linux) from [GitHub Releases](https://github.com/walkersutton/Cyclemetry/releases).
