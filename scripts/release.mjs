@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,6 +27,55 @@ function output(command, args) {
   }).trim()
 }
 
+function changelogSlug(version) {
+  return `v${version.replaceAll('.', '-')}`
+}
+
+function requireIncludes(file, expected, label, missing) {
+  const text = readFileSync(join(repoRoot, file), 'utf8')
+  if (!text.includes(expected)) {
+    missing.push(`${file} is missing ${label}: ${expected}`)
+  }
+}
+
+function checkReleaseChangelog(version) {
+  const slug = changelogSlug(version)
+  const page = `website/content/changelog/${slug}.mdx`
+  const index = 'website/content/changelog/index.mdx'
+  const meta = 'website/content/changelog/_meta.js'
+  const missing = []
+
+  for (const file of [page, index, meta]) {
+    if (!existsSync(join(repoRoot, file))) {
+      missing.push(`Missing ${file}`)
+    }
+  }
+
+  if (missing.length === 0) {
+    requireIncludes(page, `title: v${version}`, 'frontmatter title', missing)
+    requireIncludes(index, `/changelog/${slug}`, 'release table link', missing)
+    requireIncludes(index, `v${version}`, 'release table version', missing)
+    requireIncludes(meta, `'${slug}'`, 'Nextra route key', missing)
+    requireIncludes(meta, `v${version}`, 'Nextra route label', missing)
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      [
+        `Release aborted: add the website changelog entry for v${version}.`,
+        '',
+        ...missing.map((item) => `- ${item}`),
+        '',
+        `Expected changelog page: ${page}`,
+        'Also update the release table in website/content/changelog/index.mdx',
+        'and the Nextra nav label in website/content/changelog/_meta.js.',
+      ].join('\n'),
+    )
+  }
+
+  return { page, index, meta }
+}
+
 const cargoToml = readFileSync(join(repoRoot, 'src-tauri/Cargo.toml'), 'utf8')
 const version = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
 
@@ -35,6 +84,7 @@ if (!version) {
 }
 
 const tag = `v${version}`
+const changelogFiles = checkReleaseChangelog(version)
 
 if (check('git', ['rev-parse', '--verify', '--quiet', tag])) {
   throw new Error(`Tag ${tag} already exists`)
@@ -51,6 +101,9 @@ run('git', [
   'src-tauri/Cargo.lock',
   'package.json',
   'app/package.json',
+  changelogFiles.page,
+  changelogFiles.index,
+  changelogFiles.meta,
   'scripts/sync-version.mjs',
   'scripts/release.mjs',
 ])

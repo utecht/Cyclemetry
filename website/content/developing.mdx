@@ -36,13 +36,14 @@ Drop a `.ttf` or `.otf` file into `resources/fonts/`. The Tauri bundler picks up
 ## Releasing
 
 1. Set the new release version in `src-tauri/Cargo.toml`.
-2. Run the release command from the repo root:
+2. Add the matching changelog page at `website/content/changelog/vX-Y-Z.mdx`, then add it to the release table in `website/content/changelog/index.mdx` and `_meta.js`.
+3. Run the release command from the repo root:
 
 ```bash
 pnpm release
 ```
 
-The release script syncs that version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata files, creates a `vX.Y.Z` git tag, pushes `main` plus the tag, and starts the Release workflow for all platforms with publishing enabled.
+The release script checks that the website changelog entry exists before it tags anything. It syncs the version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata and changelog files, creates a `vX.Y.Z` git tag, pushes `main` plus the tag, and starts the Release workflow for all platforms with publishing enabled.
 
 ### Test a Release Build
 
