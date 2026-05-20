@@ -1,12 +1,11 @@
 .DS_Store
 .vscode
 # Build artifacts
-*node_modules*
-*__pycache__*
-build/
-dist/
+node_modules/
+__pycache__/
 target/
 src-tauri/binaries/
+app/dist/
 
 # FFmpeg binary (downloaded in CI — not committed)
 resources/ffmpeg
@@ -19,7 +18,3 @@ next/
 .ruff_cache
 app/public/preview*.png
 tauri_build.log
-/tmp/cyclemetry.sock
-
-/gitignore
-.gstack/
