@@ -120,6 +120,12 @@ impl Element {
                         p.edge_width = p.edge_width.map(|v| v * f32f);
                     }
                 }
+                if let Some(markers) = c.markers.as_mut() {
+                    for marker in markers {
+                        marker.width = marker.width.map(|v| v * f32f);
+                        marker.height = marker.height.map(|v| v * f32f);
+                    }
+                }
             }
             Element::Meter(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -219,6 +225,7 @@ pub struct PlotConfig {
     pub fill: Option<FillConfig>,
     pub margin: Option<f64>,
     pub points: Option<Vec<PointConfig>>,
+    pub markers: Option<Vec<CourseMarkerConfig>>,
     pub point_label: Option<PointLabelConfig>,
     pub rotation: Option<f32>,
     pub bbox: Option<serde_json::Value>,
@@ -249,6 +256,26 @@ pub struct PointConfig {
     /// Edge stroke width in px. Default 1.
     pub edge_width: Option<f32>,
     pub remove_edge_color: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CourseMarkerConfig {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    /// Marker position in metres from the activity start.
+    pub distance: Option<f64>,
+    /// Visual style: "checkered" (default), "circle", or "rectangle".
+    pub style: Option<String>,
+    /// Primary color for circle/rectangle markers. Default red.
+    pub color: Option<String>,
+    /// Long side of the marker in px. Default 34.
+    pub width: Option<f32>,
+    /// Short side of the marker in px. Default 10.
+    pub height: Option<f32>,
+    /// Additional clockwise rotation in degrees after the default perpendicular-to-course angle.
+    pub rotation: Option<f32>,
+    /// Master opacity (0-1). Default 1.
+    pub opacity: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -33,6 +33,11 @@
     { value: 'right', label: 'Fill rightward' },
     { value: 'left', label: 'Fill leftward' },
   ]
+  const COURSE_MARKER_STYLES = [
+    { value: 'checkered', label: 'Checkered finish' },
+    { value: 'circle', label: 'Colored circle' },
+    { value: 'rectangle', label: 'Colored rectangle' },
+  ]
   const DISTANCE_REFERENCES = [
     { value: 'overlay_start', label: 'Since overlay start' },
     { value: 'activity_start', label: 'Since activity start' },
@@ -67,6 +72,7 @@
   // Default unit token per metric, used when the element has none set yet
   // (matches the Rust-side default so the picker reflects what renders).
   const DEFAULT_UNIT = { distance: 'km', speed: 'kmh', elevation: 'm', temperature: 'c' }
+  const markerId = () => `marker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
   // Resolve the unit token to show in the picker, mapping legacy
   // metric/imperial (or unset) to the matching precise token.
   function displayUnit(metric, unit) {
@@ -128,6 +134,76 @@
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     const current = s.item.points?.[0] ?? {}
     app.updateElement(s.id, { points: [{ ...current, [field]: value }] })
+  }
+
+  function courseMarkers() {
+    return selected()?.item.markers ?? []
+  }
+
+  function selectedCourseMarker() {
+    const markers = courseMarkers()
+    if (markers.length === 0) return null
+    return markers.find((m) => m.id === app.selectedCourseMarkerId) ?? markers[0]
+  }
+
+  function setCourseMarkers(markers) {
+    const s = selected()
+    if (!s) return
+    app.updateElement(s.id, { markers: markers.length ? markers : undefined })
+  }
+
+  async function defaultCourseMarkerDistance(markers) {
+    if (markers.length > 0) return markers[markers.length - 1]?.distance ?? 0
+    try {
+      const raw = app.gpxFilename
+      const gpx = raw && raw !== 'null' && raw !== 'undefined' ? raw : 'demo.gpxinit'
+      const start = app.config?.scene?.start ?? 0
+      const end = app.config?.scene?.end ?? app.timelineDuration
+      const info = await backend.getActivityDistanceInfo(gpx, start, end)
+      return info.overlay_end_m ?? info.total_m ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  async function addCourseMarker() {
+    const markers = courseMarkers()
+    const id = markerId()
+    const distance = await defaultCourseMarkerDistance(markers)
+    setCourseMarkers([
+      ...markers,
+      {
+        id,
+        name: markers.length === 0 ? 'Finish' : `Marker ${markers.length + 1}`,
+        style: 'checkered',
+        color: '#ef4444',
+        distance,
+        width: 34,
+        height: 10,
+        rotation: 0,
+        opacity: 1,
+      },
+    ])
+    app.selectedCourseMarkerId = id
+  }
+
+  function updateCourseMarker(field, raw) {
+    const marker = selectedCourseMarker()
+    if (!marker) return
+    const numFields = ['distance', 'width', 'height', 'rotation', 'opacity']
+    const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
+    setCourseMarkers(courseMarkers().map((m) => (
+      m === marker || (marker.id && m.id === marker.id) ? { ...m, [field]: value } : m
+    )))
+  }
+
+  function removeCourseMarker(id) {
+    const marker = selectedCourseMarker()
+    const next = courseMarkers().filter((m) => (
+      marker ? !(m === marker || (id && m.id === id)) : m.id !== id
+    ))
+    setCourseMarkers(next)
+    app.selectedCourseMarkerId = next[0]?.id ?? null
   }
 
   // Point label (value text next to the chart marker, e.g. "960 M").
@@ -1110,6 +1186,92 @@
           <Input type="number" value={item.fill?.opacity ?? 0} min={0} max={1} step={0.05}
             oninput={(e) => updateNested('fill', 'opacity', e.target.value)} />
         </label>
+      </section>
+      {/if}
+
+      {#if item.value === 'course'}
+      <section class="mb-4 space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Course Markers</p>
+          <button type="button" class="text-xs text-primary hover:underline" onclick={addCourseMarker}>+ marker</button>
+        </div>
+        {#if courseMarkers().length === 0}
+          <p class="text-[10px] text-zinc-600 italic">No markers.</p>
+        {:else}
+          <div class="flex flex-wrap gap-1.5">
+            {#each courseMarkers() as marker, i (marker.id ?? i)}
+              <button
+                type="button"
+                class="rounded-[6px] border px-2 py-1 text-[11px] transition-colors
+                  {(selectedCourseMarker()?.id ?? courseMarkers()[0]?.id) === marker.id
+                    ? 'border-primary bg-primary/10 text-zinc-100'
+                    : 'border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'}"
+                onclick={() => (app.selectedCourseMarkerId = marker.id)}
+              >
+                {marker.name || `Marker ${i + 1}`}
+              </button>
+            {/each}
+          </div>
+          {@const marker = selectedCourseMarker()}
+          {#if marker}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Name</span>
+              <Input value={marker.name ?? ''} oninput={(e) => updateCourseMarker('name', e.target.value)} />
+            </label>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Style</span>
+              <Select
+                value={marker.style ?? 'checkered'}
+                options={COURSE_MARKER_STYLES}
+                onchange={(v) => updateCourseMarker('style', v)}
+              />
+            </label>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Distance from activity start (m)</span>
+              <Input type="number" value={marker.distance ?? 0} min={0} step={10}
+                oninput={(e) => updateCourseMarker('distance', e.target.value)} />
+            </label>
+            {#if (marker.style ?? 'checkered') !== 'checkered'}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Color</span>
+              <div class="flex gap-2 items-center">
+                <input type="color" value={(marker.color ?? '#ef4444').slice(0, 7)}
+                  oninput={(e) => updateCourseMarker('color', e.target.value)}
+                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
+                <Input value={marker.color ?? '#ef4444'}
+                  oninput={(e) => updateCourseMarker('color', e.target.value)}
+                  class="flex-1 font-mono text-xs" />
+              </div>
+            </label>
+            {/if}
+            <div class="grid grid-cols-2 gap-2">
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Width (px)</span>
+                <Input type="number" value={marker.width ?? 34} min={1} step={1}
+                  oninput={(e) => updateCourseMarker('width', e.target.value)} />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Height (px)</span>
+                <Input type="number" value={marker.height ?? 10} min={1} step={1}
+                  oninput={(e) => updateCourseMarker('height', e.target.value)} />
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Rotation trim (°)</span>
+                <Input type="number" value={marker.rotation ?? 0} step={1}
+                  oninput={(e) => updateCourseMarker('rotation', e.target.value)} />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+                <Input type="number" value={marker.opacity ?? 1} min={0} max={1} step={0.05}
+                  oninput={(e) => updateCourseMarker('opacity', e.target.value)} />
+              </label>
+            </div>
+            <button type="button" class="text-xs text-zinc-500 hover:text-red-400"
+              onclick={() => removeCourseMarker(marker.id)}>Remove marker</button>
+          {/if}
+        {/if}
       </section>
       {/if}
 

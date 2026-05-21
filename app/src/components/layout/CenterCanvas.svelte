@@ -227,10 +227,20 @@
     return el && el.type === 'value' ? el : null
   })
 
+  let selectedCourseMarker = $derived.by(() => {
+    const id = app.selectedElementId
+    const config = app.config
+    if (!id || !config?.elements) return null
+    const el = config.elements.find((e) => e.id === id)
+    if (!el || el.type !== 'plot' || el.value !== 'course' || !el.markers?.length) return null
+    return el.markers.find((m) => m.id === app.selectedCourseMarkerId) ?? el.markers[0]
+  })
+
   let showDistanceBar = $derived(
     selectedDistanceEl?.value === 'distance' &&
     selectedDistanceEl?.distance_reference === 'custom'
   )
+  let showCourseMarkerBar = $derived(!!selectedCourseMarker)
 
   let customDistanceM = $derived.by(() => {
     if (!showDistanceBar || !selectedDistanceEl) return null
@@ -240,11 +250,14 @@
     if (u === 'mi') return t * 1609.34
     return t * 1000
   })
+  let courseMarkerDistanceM = $derived(
+    showCourseMarkerBar ? (selectedCourseMarker?.distance ?? 0) : null
+  )
 
   let distanceInfo = $state(null)
 
   $effect(() => {
-    if (!showDistanceBar || !app.config) {
+    if ((!showDistanceBar && !showCourseMarkerBar) || !app.config) {
       distanceInfo = null
       return
     }
@@ -267,6 +280,18 @@
     else if (unit === 'mi') displayVal = Math.round((newM / 1609.34) * 100) / 100
     else displayVal = Math.round((newM / 1000) * 100) / 100
     app.updateElement(id, { distance_target: displayVal })
+  }
+
+  function onCourseMarkerDistanceChange(newM) {
+    const id = app.selectedElementId
+    const el = app.config?.elements?.find((e) => e.id === id)
+    const marker = selectedCourseMarker
+    if (!el || el.type !== 'plot' || !marker) return
+    app.updateElement(id, {
+      markers: (el.markers ?? []).map((m) => (
+        m === marker || (marker.id && m.id === marker.id) ? { ...m, distance: newM } : m
+      )),
+    })
   }
   // Preview canvas matches the chosen output resolution (the backend renders
   // the demo frame retargeted to these dims), so the aspect ratio is honored.
@@ -475,8 +500,12 @@
     bind:previewFps={app.previewFps}
     buffered={bufferedSeconds}
     onseek={seek}
-    distanceInfo={showDistanceBar ? distanceInfo : null}
+    distanceInfo={(showDistanceBar || showCourseMarkerBar) ? distanceInfo : null}
     customDistanceM={showDistanceBar ? customDistanceM : null}
     oncustomdistancechange={onCustomDistanceChange}
+    markerDistanceM={showCourseMarkerBar ? courseMarkerDistanceM : null}
+    markerStyle={selectedCourseMarker?.style ?? 'checkered'}
+    markerColor={selectedCourseMarker?.color ?? '#ef4444'}
+    onmarkerdistancechange={onCourseMarkerDistanceChange}
   />
 </main>

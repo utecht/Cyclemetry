@@ -247,7 +247,12 @@ impl OverlayElement for ValueConfig {
 impl OverlayElement for PlotConfig {
     fn build_chart(&self, activity: &Activity, fonts_dir: &str) -> Option<ChartCache> {
         let (x_data, y_data) = activity.plot_data(&self.value);
-        ChartCache::build(self, x_data, y_data, fonts_dir)
+        let distance_data = if self.value == crate::render::activity::ATTR_COURSE {
+            activity.distance.clone()
+        } else {
+            Vec::new()
+        };
+        ChartCache::build(self, x_data, y_data, distance_data, fonts_dir)
     }
 
     fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
@@ -289,7 +294,15 @@ impl OverlayElement for PlotConfig {
             canvas.save();
             canvas.rotate(rotation, Some(skia_safe::Point::new(cx, cy)));
         }
-        if self.has_position_markers() {
+        let needs_dynamic_chart = self.has_position_markers()
+            || self
+                .markers
+                .as_ref()
+                .map(|markers| !markers.is_empty())
+                .unwrap_or(false)
+            || self.line_past_opacity().is_some()
+            || self.line_future_opacity().is_some();
+        if needs_dynamic_chart {
             chart.draw_on_canvas(canvas, frame_idx);
         } else {
             canvas.draw_image(

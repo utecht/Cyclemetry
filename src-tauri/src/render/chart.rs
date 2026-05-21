@@ -3,10 +3,12 @@
 /// Pre-renders an entire chart to a cached Image once at scene init.
 /// Per-frame cost is then: one image blit + one circle draw.
 /// This replaces matplotlib's plt.savefig() which was 50–200ms per frame.
-use skia_safe::{Canvas, Color, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Typeface};
+use skia_safe::{
+    Canvas, Color, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Rect, Typeface,
+};
 
 use crate::render::color::to_skia_color;
-use crate::render::template::{PlotConfig, PointLabelConfig};
+use crate::render::template::{CourseMarkerConfig, PlotConfig, PointLabelConfig};
 use crate::render::units;
 
 /// Pixel bounds of the data area inside a chart surface (excluding margins).
@@ -80,6 +82,8 @@ pub struct ChartCache {
     pub x_data: Vec<f64>,
     /// Y data (elevation, lat, etc.).
     pub y_data: Vec<f64>,
+    /// Activity distance in metres for each point. Populated for course plots.
+    pub distance_data: Vec<f64>,
     /// Pixel position of the chart within the full frame.
     pub x_offset: i32,
     pub y_offset: i32,
@@ -92,6 +96,8 @@ pub struct ChartCache {
     pub plot_bounds: PlotBounds,
     /// Point configs from the template (colour, size, etc.).
     pub point_configs: Vec<crate::render::template::PointConfig>,
+    /// Static markers placed along a course by activity distance.
+    pub markers: Vec<CourseMarkerConfig>,
     /// Geographic mapping for course plots (None for non-GPS charts).
     pub geo: Option<GeoMapping>,
     /// The plotted attribute (e.g. "elevation") — drives point-label units.
@@ -115,6 +121,7 @@ impl ChartCache {
         config: &PlotConfig,
         x_data: Vec<f64>,
         y_data: Vec<f64>,
+        distance_data: Vec<f64>,
         fonts_dir: &str,
     ) -> Option<Self> {
         if x_data.is_empty() || y_data.is_empty() {
@@ -208,6 +215,7 @@ impl ChartCache {
             background,
             x_data,
             y_data,
+            distance_data: if is_course { distance_data } else { Vec::new() },
             x_offset: config.x,
             y_offset: config.y,
             x_min,
@@ -216,6 +224,11 @@ impl ChartCache {
             y_max: y_max_out,
             plot_bounds,
             point_configs: config.points.clone().unwrap_or_default(),
+            markers: if is_course {
+                config.markers.clone().unwrap_or_default()
+            } else {
+                Vec::new()
+            },
             geo,
             value_attr: config.value.clone(),
             point_label,
@@ -245,6 +258,125 @@ impl ChartCache {
                 0.0
             };
         Point::new(px, py)
+    }
+
+    fn course_marker_point(&self, target_m: f64) -> Option<(Point, f32)> {
+        self.geo.as_ref()?;
+        if self.x_data.is_empty() || self.distance_data.is_empty() {
+            return None;
+        }
+        let last = self
+            .x_data
+            .len()
+            .min(self.y_data.len())
+            .min(self.distance_data.len())
+            .saturating_sub(1);
+        if last == 0 {
+            let pt = self.data_to_pixel(self.x_data[0], self.y_data[0]);
+            return Some((
+                Point::new(pt.x + self.x_offset as f32, pt.y + self.y_offset as f32),
+                0.0,
+            ));
+        }
+
+        let target = target_m.clamp(self.distance_data[0], self.distance_data[last]);
+        let mut idx = 1;
+        while idx <= last && self.distance_data[idx] < target {
+            idx += 1;
+        }
+        let i0 = idx.saturating_sub(1).min(last);
+        let i1 = idx.min(last);
+        let d0 = self.distance_data[i0];
+        let d1 = self.distance_data[i1];
+        let frac = if d1 > d0 {
+            ((target - d0) / (d1 - d0)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let x = self.x_data[i0] + (self.x_data[i1] - self.x_data[i0]) * frac;
+        let y = self.y_data[i0] + (self.y_data[i1] - self.y_data[i0]) * frac;
+        let local_pt = self.data_to_pixel(x, y);
+        let a = self.data_to_pixel(self.x_data[i0], self.y_data[i0]);
+        let b = self.data_to_pixel(self.x_data[i1], self.y_data[i1]);
+        let course_angle = (b.y - a.y).atan2(b.x - a.x).to_degrees();
+        Some((
+            Point::new(
+                local_pt.x + self.x_offset as f32,
+                local_pt.y + self.y_offset as f32,
+            ),
+            course_angle + 90.0,
+        ))
+    }
+
+    fn draw_course_marker(&self, canvas: &Canvas, marker: &CourseMarkerConfig) {
+        let Some(distance_m) = marker.distance else {
+            return;
+        };
+        let Some((pt, perpendicular_angle)) = self.course_marker_point(distance_m) else {
+            return;
+        };
+        let width = marker.width.unwrap_or(34.0).max(1.0);
+        let height = marker.height.unwrap_or(10.0).max(1.0);
+        let angle = perpendicular_angle + marker.rotation.unwrap_or(0.0);
+        let opacity = Some(marker.opacity.unwrap_or(1.0));
+
+        canvas.save();
+        canvas.translate((pt.x, pt.y));
+        canvas.rotate(angle, None);
+
+        let left = -width / 2.0;
+        let top = -height / 2.0;
+        let style = marker.style.as_deref().unwrap_or("checkered");
+
+        if style == "circle" {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(to_skia_color(
+                marker.color.as_deref().unwrap_or("#ef4444"),
+                opacity,
+            ));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_circle((0.0, 0.0), width.min(height) / 2.0, &paint);
+        } else if style == "rectangle" {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(to_skia_color(
+                marker.color.as_deref().unwrap_or("#22c55e"),
+                opacity,
+            ));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rect(Rect::from_xywh(left, top, width, height), &paint);
+        } else {
+            let rect = Rect::from_xywh(left, top, width, height);
+            let cell = height.max(1.0) / 2.0;
+            let cols = (width / cell).ceil() as i32;
+            for row in 0..2 {
+                for col in 0..cols {
+                    let color = if (row + col) % 2 == 0 {
+                        to_skia_color("#000000", opacity)
+                    } else {
+                        to_skia_color("#ffffff", opacity)
+                    };
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(false);
+                    paint.set_color(color);
+                    paint.set_style(PaintStyle::Fill);
+                    let x = left + col as f32 * cell;
+                    let mut square =
+                        Rect::from_xywh(x, top + row as f32 * cell, cell + 0.5, cell + 0.5);
+                    if square.intersect(rect) {
+                        canvas.draw_rect(square, &paint);
+                    }
+                }
+            }
+            let mut border = Paint::default();
+            border.set_anti_alias(true);
+            border.set_color(to_skia_color("#111111", opacity));
+            border.set_style(PaintStyle::Stroke);
+            border.set_stroke_width(1.0);
+            canvas.draw_rect(rect, &border);
+        }
+        canvas.restore();
     }
 
     /// Draw onto a canvas: blit background then draw position marker for frame_idx.
@@ -292,7 +424,12 @@ impl ChartCache {
             canvas.draw_path(&path, &paint);
         }
 
-        // 3. Draw position marker (the per-frame part).
+        // 3. Draw static course markers over the route.
+        for marker in &self.markers {
+            self.draw_course_marker(canvas, marker);
+        }
+
+        // 4. Draw position marker (the per-frame part).
         if frame_idx < self.x_data.len() {
             let x = self.x_data[frame_idx];
             let y = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
@@ -329,7 +466,7 @@ impl ChartCache {
                 }
             }
 
-            // 4. Optional value label next to the marker (e.g. "960 M" /
+            // 5. Optional value label next to the marker (e.g. "960 M" /
             //    "3150 FT"), one line per unit, metric first.
             if let (Some(pl), Some(tf)) = (&self.point_label, &self.label_typeface) {
                 let raw = self.y_data.get(frame_idx).copied().unwrap_or(0.0);

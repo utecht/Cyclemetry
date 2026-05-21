@@ -36,6 +36,19 @@
  */
 
 /**
+ * @typedef {Object} CourseMarkerConfig
+ * @property {string} [id]
+ * @property {string} [name]
+ * @property {number} [distance]
+ * @property {'checkered'|'circle'|'rectangle'} [style]
+ * @property {string} [color]
+ * @property {number} [width]
+ * @property {number} [height]
+ * @property {number} [rotation]
+ * @property {number} [opacity]
+ */
+
+/**
  * @typedef {Object} PointLabelConfig
  * @property {number} [font_size]
  * @property {string} [color]
@@ -135,6 +148,7 @@
  * @property {FillConfig} [fill]
  * @property {number} [margin]
  * @property {PointConfig[]} [points]
+ * @property {CourseMarkerConfig[]} [markers]
  * @property {PointLabelConfig} [point_label]
  * @property {number} [rotation]
  */

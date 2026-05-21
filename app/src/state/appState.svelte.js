@@ -69,6 +69,7 @@ export function createAppState() {
   let selectedElementId = $state(null)
   let selectedElementIds = $state([])
   let selectedGroupId = $state(null)
+  let selectedCourseMarkerId = $state(null)
   let renderProgress = $state({
     current: 0,
     total: 0,
@@ -158,11 +159,14 @@ export function createAppState() {
 
   function selectOnly(id) {
     selectedGroupId = null
+    selectedCourseMarkerId = null
     selectedElementId = id
     selectedElementIds = id ? [id] : []
   }
 
   function setSelectedElements(ids) {
+    selectedGroupId = null
+    selectedCourseMarkerId = null
     selectedElementIds = [...ids]
     selectedElementId = ids.length ? ids[ids.length - 1] : null
   }
@@ -178,6 +182,8 @@ export function createAppState() {
       selectedElementIds = [...selectedElementIds, id]
       selectedElementId = id
     }
+    selectedGroupId = null
+    selectedCourseMarkerId = null
   }
 
   // ── Undo history ──────────────────────────────────────────────────────────
@@ -418,6 +424,7 @@ export function createAppState() {
     const group = (config?.scene?.groups ?? []).find((g) => g.id === groupId)
     if (!group) return
     selectedGroupId = groupId
+    selectedCourseMarkerId = null
     selectedElementIds = [...group.element_ids]
     selectedElementId = group.element_ids[0] ?? null
   }
@@ -871,6 +878,12 @@ export function createAppState() {
     setSelectedElements,
     get selectedGroupId() {
       return selectedGroupId
+    },
+    get selectedCourseMarkerId() {
+      return selectedCourseMarkerId
+    },
+    set selectedCourseMarkerId(v) {
+      selectedCourseMarkerId = v
     },
     selectGroup,
     createGroup,

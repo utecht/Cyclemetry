@@ -13,6 +13,10 @@
     distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }
     customDistanceM = null,  // current custom reference point in metres
     oncustomdistancechange,
+    markerDistanceM = null,  // selected course marker position in metres
+    markerStyle = 'checkered',
+    markerColor = '#ef4444',
+    onmarkerdistancechange,
   } = $props()
 
   function seek(s) {
@@ -31,6 +35,10 @@
     oncustomdistancechange?.(parseFloat(e.target.value))
   }
 
+  function onMarkerScrub(e) {
+    onmarkerdistancechange?.(parseFloat(e.target.value))
+  }
+
   let duration = $derived(end - start)
   let pct = $derived(duration > 0 ? ((playhead - start) / duration) * 100 : 0)
 
@@ -43,6 +51,19 @@
       ? Math.max(0, Math.min(100, (customDistanceM / distTotal) * 100))
       : 0
   )
+  let markerDotPct = $derived(
+    distanceInfo && markerDistanceM !== null
+      ? Math.max(0, Math.min(100, (markerDistanceM / distTotal) * 100))
+      : 0
+  )
+  let markerShapeClass = $derived(
+    markerStyle === 'circle'
+      ? 'marker-range marker-circle'
+      : markerStyle === 'rectangle'
+        ? 'marker-range marker-rectangle'
+        : 'marker-range marker-checkered'
+  )
+  let markerCss = $derived(`--marker-pct: ${markerDotPct}%; --marker-color: ${markerColor || '#ef4444'}`)
 </script>
 
 <div class="flex flex-col gap-2 px-4 py-3 border-t border-zinc-800">
@@ -93,6 +114,31 @@
           style="--dist-pct: {distDotPct}%"
           class="dist-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
           title="Custom distance reference: {customDistanceM >= 1000 ? (customDistanceM / 1000).toFixed(1) + ' km' : Math.round(customDistanceM) + ' m'}"
+        />
+      </div>
+    </div>
+  {/if}
+
+  <!-- Course marker bar — visible when editing a selected map marker -->
+  {#if distanceInfo && markerDistanceM !== null}
+    <div class="relative h-5 flex items-center">
+      <div class="relative w-full h-full flex items-center">
+        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800 overflow-visible">
+          <div
+            class="absolute h-full bg-zinc-600/40 rounded-full"
+            style="left: {distStartPct}%; width: {distEndPct - distStartPct}%"
+          ></div>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={distTotal}
+          step={10}
+          value={markerDistanceM}
+          oninput={onMarkerScrub}
+          style={markerCss}
+          class="{markerShapeClass} absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
+          title="Course marker: {markerDistanceM >= 1000 ? (markerDistanceM / 1000).toFixed(1) + ' km' : Math.round(markerDistanceM) + ' m'}"
         />
       </div>
     </div>
@@ -170,6 +216,42 @@
     margin-top: -4px;
   }
   .dist-range::-webkit-slider-runnable-track {
+    height: 4px;
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  .marker-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid #18181b;
+    background: var(--marker-color, #ef4444);
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    margin-top: -5px;
+  }
+  .marker-checkered::-webkit-slider-thumb {
+    width: 16px;
+    height: 12px;
+    border-radius: 2px;
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #111 25%, transparent 25%),
+      linear-gradient(-45deg, #111 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #111 75%),
+      linear-gradient(-45deg, transparent 75%, #111 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  }
+  .marker-rectangle::-webkit-slider-thumb {
+    width: 16px;
+    height: 12px;
+    border-radius: 2px;
+  }
+  .marker-range::-webkit-slider-runnable-track {
     height: 4px;
     background: transparent;
     border-radius: 9999px;
