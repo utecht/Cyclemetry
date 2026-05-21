@@ -2,6 +2,21 @@
 
 Community templates are browsable and installable directly from within Cyclemetry via **Templates → Browse Community Templates**.
 
+## Showcase
+
+<!-- SHOWCASE_START -->
+
+| Template | Preview |
+| --- | --- |
+| **Aaron** | ![Aaron](aaron/preview.jpg) |
+| **Crit** | ![Crit](crit/preview.jpg) |
+| **Jeff** | ![Jeff](jeff/preview.jpg) |
+| **Norcal** | ![Norcal](norcal/preview.jpg) |
+| **Safa** | ![Safa](safa/preview.jpg) |
+| **Will** | ![Will](will/preview.jpg) |
+
+<!-- SHOWCASE_END -->
+
 ## Folder structure
 
 Each template lives in its own subdirectory named with lowercase snake\_case:

@@ -6,6 +6,13 @@ export PATH="$HOME/.asdf/shims:$HOME/.asdf/bin:$HOME/.nvm/versions/node/$(ls $HO
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+echo "pre-commit: updating templates README showcase..."
+node "$REPO_ROOT/scripts/update-templates-readme.mjs" || fail "Failed to update templates/README.md"
+if git diff --name-only | grep -q "templates/README.md"; then
+  echo "pre-commit: templates/README.md was out of date. Staging updated version..."
+  git add "$REPO_ROOT/templates/README.md"
+fi
+
 fail() {
   echo ""
   echo "pre-commit: $1"
