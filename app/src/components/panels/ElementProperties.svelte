@@ -14,15 +14,14 @@
 
   const app = getContext('app')
 
-  // Single source of truth: app.fonts (bundled ∪ user-installed ∪ system).
+  // Single source of truth: app.fonts (bundled, user-installed, and system).
   // Importing new fonts lives in the Templates menu (Add Custom Font…).
-  const fontLabel = (f) => f.replace(/\.(ttf|otf)$/i, '')
-  const fontGroup = (f) => (/\.(ttf|otf)$/i.test(f) ? 'Font files' : 'System fonts')
+  const fontGroup = (font) => (font.source === 'system' ? 'System fonts' : 'Font files')
 
   function fontOpts(includeSceneDefault) {
     return [
       ...(includeSceneDefault ? [{ value: '', label: 'Scene default' }] : []),
-      ...app.fonts.map((f) => ({ value: f, label: fontLabel(f), group: fontGroup(f) })),
+      ...app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) })),
     ]
   }
   const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time', 'distance']

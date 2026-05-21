@@ -74,6 +74,48 @@ fn system_font_families() -> Vec<String> {
     set.into_iter().collect()
 }
 
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum FontSource {
+    Bundled,
+    Custom,
+    System,
+}
+
+#[derive(serde::Serialize)]
+struct FontItem {
+    value: String,
+    label: String,
+    source: FontSource,
+}
+
+fn font_file_label(name: &str) -> String {
+    Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string()
+}
+
+fn font_file_items(dir: PathBuf, source: FontSource) -> Vec<FontItem> {
+    let mut items = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            if let Some(name) = e.file_name().to_str() {
+                let lower = name.to_lowercase();
+                if lower.ends_with(".ttf") || lower.ends_with(".otf") {
+                    items.push(FontItem {
+                        value: name.to_string(),
+                        label: font_file_label(name),
+                        source,
+                    });
+                }
+            }
+        }
+    }
+    items
+}
+
 fn window_size_file() -> PathBuf {
     app_data_base().join("window-size.json")
 }
@@ -627,30 +669,36 @@ fn backend_default_output_dir() -> String {
 }
 
 /// Single source of truth for available fonts:
-/// bundled font files ∪ user-installed font files ∪ system font families.
+/// bundled font files, user-installed font files, and system font families.
 #[tauri::command]
-fn backend_list_fonts() -> Vec<String> {
-    let mut set = std::collections::BTreeSet::new();
-    let dirs = [PathBuf::from(resolve_fonts_dir()), fonts_user_dir()];
-    for dir in dirs {
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for e in entries.flatten() {
-                if let Some(name) = e.file_name().to_str() {
-                    let lower = name.to_lowercase();
-                    if lower.ends_with(".ttf") || lower.ends_with(".otf") {
-                        set.insert(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-    set.extend(system_font_families());
-    set.into_iter().collect()
+fn backend_list_fonts() -> Vec<FontItem> {
+    let mut items = font_file_items(PathBuf::from(resolve_fonts_dir()), FontSource::Bundled);
+    items.extend(font_file_items(fonts_user_dir(), FontSource::Custom));
+    items.extend(system_font_families().into_iter().map(|family| FontItem {
+        value: family.clone(),
+        label: family,
+        source: FontSource::System,
+    }));
+
+    let mut seen = std::collections::BTreeSet::new();
+    items.retain(|item| seen.insert(item.value.clone()));
+    items.sort_by(|a, b| {
+        let source_rank = |source: FontSource| match source {
+            FontSource::Bundled => 0,
+            FontSource::Custom => 1,
+            FontSource::System => 2,
+        };
+        source_rank(a.source)
+            .cmp(&source_rank(b.source))
+            .then_with(|| a.label.to_lowercase().cmp(&b.label.to_lowercase()))
+            .then_with(|| a.value.cmp(&b.value))
+    });
+    items
 }
 
 /// Copy a user-picked .ttf/.otf into the user fonts dir; returns updated list.
 #[tauri::command]
-fn backend_import_font(path: String) -> Result<Vec<String>, String> {
+fn backend_import_font(path: String) -> Result<Vec<FontItem>, String> {
     let src = Path::new(&path);
     let ext = src
         .extension()

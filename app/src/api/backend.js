@@ -110,12 +110,16 @@ export const openTemplatesFolder = () => invoke('backend_open_templates')
 
 // ─── Fonts ────────────────────────────────────────────────────────────────────
 
-/** @returns {Promise<string[]>} */
+/**
+ * @typedef {{ value: string, label: string, source: 'bundled' | 'custom' | 'system' }} FontItem
+ */
+
+/** @returns {Promise<FontItem[]>} */
 export const listFonts = () => invoke('backend_list_fonts')
 
 /**
  * @param {string} path
- * @returns {Promise<void>}
+ * @returns {Promise<FontItem[]>}
  */
 export const importFont = (path) => invoke('backend_import_font', { path })
 

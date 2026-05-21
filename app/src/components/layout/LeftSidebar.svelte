@@ -6,11 +6,10 @@
 
   const app = getContext('app')
 
-  const fontLabel = (f) => f.replace(/\.(ttf|otf)$/i, '')
-  const fontGroup = (f) => (/\.(ttf|otf)$/i.test(f) ? 'Font files' : 'System fonts')
+  const fontGroup = (font) => (font.source === 'system' ? 'System fonts' : 'Font files')
 
   function fontOpts() {
-    return app.fonts.map((f) => ({ value: f, label: fontLabel(f), group: fontGroup(f) }))
+    return app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) }))
   }
 
   function onSceneFont(v) {
