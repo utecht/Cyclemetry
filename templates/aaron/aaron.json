@@ -50,16 +50,6 @@
     },
     {
       "font_size": 80,
-      "id": "value-0",
-      "opacity": 1,
-      "suffix": " mph",
-      "type": "value",
-      "value": "speed",
-      "x": 3100,
-      "y": 2000
-    },
-    {
-      "font_size": 80,
       "id": "value-1",
       "opacity": 1,
       "suffix": " bpm",
@@ -83,12 +73,13 @@
     },
     {
       "font_size": 80,
-      "id": "value-3",
+      "id": "value-0",
       "opacity": 1,
+      "suffix": " mph",
       "type": "value",
-      "value": "power",
-      "x": 1855,
-      "y": 1858
+      "value": "speed",
+      "x": 3100,
+      "y": 2000
     },
     {
       "arc_color": "#ffffff55",
@@ -111,6 +102,15 @@
       "y": 1940
     },
     {
+      "font_size": 80,
+      "id": "value-3",
+      "opacity": 1,
+      "type": "value",
+      "value": "power",
+      "x": 1855,
+      "y": 1858
+    },
+    {
       "background": "#ffffff",
       "background_opacity": 0,
       "border_width": 20,
@@ -118,7 +118,11 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 0,
-      "gradient": ["#00d000", "#fffb00", "#ff2600"],
+      "gradient": [
+        "#00d000",
+        "#fffb00",
+        "#ff2600"
+      ],
       "height": 80,
       "id": "meter-0",
       "max": 1000,
@@ -182,29 +186,23 @@
     "fps": 30,
     "groups": [
       {
-        "element_ids": ["gauge-0", "value-0"],
+        "element_ids": [
+          "gauge-0",
+          "value-0"
+        ],
         "id": "group-0",
         "name": "speed group"
       },
       {
-        "element_ids": ["value-3", "meter-0"],
+        "element_ids": [
+          "value-3",
+          "meter-0"
+        ],
         "id": "group-1",
         "name": "power group"
       }
     ],
     "height": 2160,
-    "layers": [
-      "plot-0",
-      "plot-1",
-      "value-1",
-      "value-2",
-      "value-0",
-      "gauge-0",
-      "value-3",
-      "meter-0",
-      "image-0",
-      "gauge-1"
-    ],
     "opacity": 0.5,
     "start": 1380,
     "width": 3840

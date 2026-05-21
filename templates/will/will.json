@@ -1,29 +1,6 @@
 {
   "elements": [
     {
-      "height": 400,
-      "id": "plot-0",
-      "line": {
-        "color": "#ffffff",
-        "future_opacity": 0.5,
-        "width": 10
-      },
-      "opacity": 1,
-      "points": [
-        {
-          "color": "#ffffff",
-          "edge_color": "#f7773f",
-          "edge_width": 5,
-          "weight": 1000
-        }
-      ],
-      "type": "plot",
-      "value": "course",
-      "width": 400,
-      "x": 30,
-      "y": 30
-    },
-    {
       "color": "#000000",
       "fill_opacity": 0.5,
       "height": 250,
@@ -42,7 +19,10 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": ["#53d5fd", "#d357fe"],
+      "gradient": [
+        "#53d5fd",
+        "#d357fe"
+      ],
       "height": 54,
       "id": "meter-0",
       "max": 195,
@@ -96,7 +76,10 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": ["#b1dd8c", "#74a7fe"],
+      "gradient": [
+        "#b1dd8c",
+        "#74a7fe"
+      ],
       "height": 54,
       "id": "meter-1",
       "max": 991,
@@ -130,6 +113,29 @@
       "type": "label",
       "x": 225,
       "y": 1775
+    },
+    {
+      "height": 400,
+      "id": "plot-0",
+      "line": {
+        "color": "#ffffff",
+        "future_opacity": 0.5,
+        "width": 10
+      },
+      "opacity": 1,
+      "points": [
+        {
+          "color": "#ffffff",
+          "edge_color": "#f7773f",
+          "edge_width": 5,
+          "weight": 1000
+        }
+      ],
+      "type": "plot",
+      "value": "course",
+      "width": 400,
+      "x": 30,
+      "y": 30
     },
     {
       "arc_color": "#ffffff55",
@@ -189,31 +195,27 @@
         "name": "heartrate fill"
       },
       {
-        "element_ids": ["rect-0", "meter-0", "value-0", "label-0"],
+        "element_ids": [
+          "rect-0",
+          "meter-0",
+          "value-0",
+          "label-0"
+        ],
         "id": "group-0",
         "name": "heartrate group"
       },
       {
-        "element_ids": ["label-1", "rect-1", "value-1", "meter-1"],
+        "element_ids": [
+          "label-1",
+          "rect-1",
+          "value-1",
+          "meter-1"
+        ],
         "id": "group-1",
         "name": "power group"
       }
     ],
     "height": 2160,
-    "layers": [
-      "rect-0",
-      "meter-0",
-      "value-0",
-      "label-0",
-      "rect-1",
-      "meter-1",
-      "value-1",
-      "label-1",
-      "plot-0",
-      "gauge-0",
-      "value-2",
-      "label-2"
-    ],
     "opacity": 0.5,
     "start": 1800,
     "width": 3840

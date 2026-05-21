@@ -1,12 +1,63 @@
 {
   "elements": [
     {
-      "font_size": 70,
-      "id": "label-0",
-      "text": "KMH",
+      "color": "#f4f4f4",
+      "fill": {
+        "opacity": 0.65
+      },
+      "height": 500,
+      "id": "plot-1",
+      "line": {
+        "width": 10
+      },
+      "point_label": {
+        "color": "#ffffffc8",
+        "decimal_rounding": 0,
+        "font": "Furore.otf",
+        "font_size": 50,
+        "units": [
+          "metric",
+          "imperial"
+        ],
+        "x_offset": 30,
+        "y_offset": 30
+      },
+      "points": [
+        {
+          "opacity": 1,
+          "weight": 1200
+        }
+      ],
+      "rotation": 0,
+      "type": "plot",
+      "value": "elevation",
+      "width": 1300,
+      "x": 0,
+      "y": 1660
+    },
+    {
+      "font_size": 192,
+      "id": "value-2",
+      "type": "value",
+      "value": "gradient",
+      "x": 50,
+      "y": 2110
+    },
+    {
+      "font_size": 60,
+      "id": "label-2",
+      "text": "Grad.",
       "type": "label",
-      "x": 100,
-      "y": 990
+      "x": 60,
+      "y": 1910
+    },
+    {
+      "font_size": 255,
+      "id": "value-3",
+      "type": "value",
+      "value": "power",
+      "x": 80,
+      "y": 1550
     },
     {
       "font_size": 70,
@@ -17,12 +68,32 @@
       "y": 1320
     },
     {
-      "font_size": 60,
-      "id": "label-2",
-      "text": "Grad.",
+      "font_size": 255,
+      "id": "value-1",
+      "nahopacity": 0.3,
+      "type": "value",
+      "unit": "metric",
+      "value": "speed",
+      "x": 80,
+      "y": 1220
+    },
+    {
+      "font_size": 70,
+      "id": "label-0",
+      "text": "KMH",
       "type": "label",
-      "x": 60,
-      "y": 1910
+      "x": 100,
+      "y": 990
+    },
+    {
+      "font_size": 255,
+      "id": "value-0",
+      "nahopacity": 0.3,
+      "type": "value",
+      "unit": "imperial",
+      "value": "speed",
+      "x": 80,
+      "y": 890
     },
     {
       "color": "#ffffff",
@@ -52,74 +123,6 @@
       "width": 600,
       "x": 20,
       "y": 20
-    },
-    {
-      "color": "#f4f4f4",
-      "fill": {
-        "opacity": 0.65
-      },
-      "height": 500,
-      "id": "plot-1",
-      "line": {
-        "width": 10
-      },
-      "point_label": {
-        "color": "#ffffffc8",
-        "decimal_rounding": 0,
-        "font": "Furore.otf",
-        "font_size": 50,
-        "units": ["metric", "imperial"],
-        "x_offset": 30,
-        "y_offset": 30
-      },
-      "points": [
-        {
-          "opacity": 1,
-          "weight": 1200
-        }
-      ],
-      "rotation": 0,
-      "type": "plot",
-      "value": "elevation",
-      "width": 1300,
-      "x": 0,
-      "y": 1660
-    },
-    {
-      "font_size": 255,
-      "id": "value-0",
-      "nahopacity": 0.3,
-      "type": "value",
-      "unit": "imperial",
-      "value": "speed",
-      "x": 80,
-      "y": 890
-    },
-    {
-      "font_size": 255,
-      "id": "value-1",
-      "nahopacity": 0.3,
-      "type": "value",
-      "unit": "metric",
-      "value": "speed",
-      "x": 80,
-      "y": 1220
-    },
-    {
-      "font_size": 192,
-      "id": "value-2",
-      "type": "value",
-      "value": "gradient",
-      "x": 50,
-      "y": 2110
-    },
-    {
-      "font_size": 255,
-      "id": "value-3",
-      "type": "value",
-      "value": "power",
-      "x": 80,
-      "y": 1550
     }
   ],
   "scene": {
@@ -131,34 +134,31 @@
     "fps": 30,
     "groups": [
       {
-        "element_ids": ["value-0", "label-3"],
+        "element_ids": [
+          "value-0",
+          "label-3"
+        ],
         "id": "group-0",
         "name": "speed [MPH]"
       },
       {
-        "element_ids": ["value-1", "label-0"],
+        "element_ids": [
+          "value-1",
+          "label-0"
+        ],
         "id": "group-1",
         "name": "speed [KMH]"
       },
       {
-        "element_ids": ["value-3", "label-1"],
+        "element_ids": [
+          "value-3",
+          "label-1"
+        ],
         "id": "group-2",
         "name": "power"
       }
     ],
     "height": 2160,
-    "layers": [
-      "plot-1",
-      "value-2",
-      "label-2",
-      "value-3",
-      "label-1",
-      "value-1",
-      "label-0",
-      "value-0",
-      "label-3",
-      "plot-0"
-    ],
     "opacity": 0.5,
     "start": 900,
     "width": 3840

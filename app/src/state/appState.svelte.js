@@ -21,7 +21,7 @@ export function createAppState() {
   ) {
     _persisted = null
   }
-  const initialConfig = _persisted
+  const initialConfig = migrateConfig(_persisted)
   let config = $state(initialConfig)
   let gpxFilename = $state(
     storedActivityName(localStorage.getItem('gpxFilename')),
@@ -357,36 +357,31 @@ export function createAppState() {
     return (nextConfig?.elements ?? []).map((e) => e.id)
   }
 
+  // Element draw order is elements array order — no separate layers list needed.
   function normalizedElementLayerIds(nextConfig = config) {
-    const ids = allElementIds(nextConfig)
-    const existing = (nextConfig?.scene?.layers ?? []).filter((id) =>
-      ids.includes(id),
-    )
-    const missing = ids.filter((id) => !existing.includes(id))
-    return [...existing, ...missing]
+    return allElementIds(nextConfig)
   }
 
-  function withNormalizedLayers(nextConfig) {
-    if (!nextConfig?.scene) return nextConfig
-    return {
-      ...nextConfig,
-      scene: {
-        ...nextConfig.scene,
-        layers: normalizedElementLayerIds(nextConfig),
-      },
-    }
+  // Migrate a raw config that still has the legacy scene.layers field: reorder
+  // elements to match, then strip the field so it's never written back out.
+  function migrateConfig(raw) {
+    if (!raw?.scene?.layers || !Array.isArray(raw.scene.layers)) return raw
+    const layers = raw.scene.layers
+    const elements = raw.elements ?? []
+    const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
+    const ordered = layers.map((id) => byId[id]).filter(Boolean)
+    const rest = elements.filter((e) => !layers.includes(e.id))
+    const sceneWithout = Object.fromEntries(
+      Object.entries(raw.scene).filter(([k]) => k !== 'layers'),
+    )
+    return { ...raw, scene: sceneWithout, elements: [...ordered, ...rest] }
   }
 
   function addElement(type, defaults) {
     if (!config) return null
     const id = newElementId(type, config.elements ?? [])
     const el = { type, id, ...defaults }
-    const next = { ...config, elements: [...(config.elements ?? []), el] }
-    const layers = normalizedElementLayerIds(next)
-    commitConfig({
-      ...next,
-      scene: { ...next.scene, layers: [...layers.filter((x) => x !== id), id] },
-    })
+    commitConfig({ ...config, elements: [...(config.elements ?? []), el] })
     return id
   }
 
@@ -397,8 +392,7 @@ export function createAppState() {
       ...g,
       element_ids: g.element_ids.filter((eid) => eid !== id),
     }))
-    const next = withNormalizedLayers({ ...config, elements })
-    commitConfig({ ...next, scene: { ...next.scene, groups } })
+    commitConfig({ ...config, elements, scene: { ...config.scene, groups } })
     if (selectedElementId === id) selectOnly(null)
   }
 
@@ -411,8 +405,7 @@ export function createAppState() {
       ...g,
       element_ids: g.element_ids.filter((eid) => !ids.includes(eid)),
     }))
-    const next = withNormalizedLayers({ ...config, elements })
-    commitConfig({ ...next, scene: { ...next.scene, groups } })
+    commitConfig({ ...config, elements, scene: { ...config.scene, groups } })
 
     if (selectedElementIds.some((id) => ids.includes(id))) {
       selectOnly(null)
@@ -420,24 +413,24 @@ export function createAppState() {
   }
 
   function moveElementLayer(id, delta) {
-    if (!config?.scene) return
-    const layers = normalizedElementLayerIds()
-    const from = layers.indexOf(id)
+    if (!config?.elements) return
+    const elements = [...config.elements]
+    const from = elements.findIndex((e) => e.id === id)
     if (from < 0) return
-    const to = Math.max(0, Math.min(layers.length - 1, from + delta))
+    const to = Math.max(0, Math.min(elements.length - 1, from + delta))
     if (to === from) return
-    const next = [...layers]
-    const [moved] = next.splice(from, 1)
-    next.splice(to, 0, moved)
-    commitConfig({ ...config, scene: { ...config.scene, layers: next } })
+    const [moved] = elements.splice(from, 1)
+    elements.splice(to, 0, moved)
+    commitConfig({ ...config, elements })
   }
 
   function setElementLayerOrder(ids) {
-    if (!config?.scene) return
-    const validIds = normalizedElementLayerIds()
-    if (ids.length !== validIds.length) return
-    if (!ids.every((id) => validIds.includes(id))) return
-    commitConfig({ ...config, scene: { ...config.scene, layers: [...ids] } })
+    if (!config?.elements) return
+    const elements = config.elements
+    if (ids.length !== elements.length) return
+    if (!ids.every((id) => elements.some((e) => e.id === id))) return
+    const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
+    commitConfig({ ...config, elements: ids.map((id) => byId[id]) })
   }
 
   // ── Group management ──────────────────────────────────────────────────────
@@ -499,20 +492,22 @@ export function createAppState() {
   }
 
   function removeFromGroupAndReorder(elementId, newLayerOrder) {
-    if (!config?.scene) return
-    const groups = (config.scene.groups ?? []).map((g) => ({
+    if (!config?.elements) return
+    const groups = (config.scene?.groups ?? []).map((g) => ({
       ...g,
       element_ids: g.element_ids.filter((id) => id !== elementId),
     }))
-    const validIds = normalizedElementLayerIds()
+    const elements = config.elements
     if (
-      newLayerOrder.length !== validIds.length ||
-      !newLayerOrder.every((id) => validIds.includes(id))
+      newLayerOrder.length !== elements.length ||
+      !newLayerOrder.every((id) => elements.some((e) => e.id === id))
     )
       return
+    const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
     commitConfig({
       ...config,
-      scene: { ...config.scene, groups, layers: newLayerOrder },
+      elements: newLayerOrder.map((id) => byId[id]),
+      scene: { ...config.scene, groups },
     })
   }
 
@@ -606,7 +601,6 @@ export function createAppState() {
         opacity: 1,
         font_size: 64,
         overlay_filename: name.replace(/\.json$/, ''),
-        layers: [],
       },
       elements: [],
     }
@@ -771,7 +765,7 @@ export function createAppState() {
 
   async function loadTemplate(filename) {
     const data = await backend.getTemplate(filename)
-    config = data
+    config = migrateConfig(data)
     loadedTemplateFilename = filename
     selectOnly(null)
     resetHistory()
@@ -783,7 +777,7 @@ export function createAppState() {
       return config
     },
     set config(v) {
-      config = v
+      config = migrateConfig(v)
       resetHistory()
     },
     get gpxFilename() {
