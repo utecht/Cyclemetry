@@ -43,6 +43,37 @@ fn fonts_user_dir() -> PathBuf {
     dir
 }
 
+fn system_font_families() -> Vec<String> {
+    let mgr = skia_safe::FontMgr::default();
+    let mut set = std::collections::BTreeSet::new();
+    for name in mgr.family_names() {
+        let name = name.trim();
+        if !name.is_empty() && !name.starts_with('.') {
+            set.insert(name.to_string());
+        }
+    }
+
+    for family in [
+        "Arial",
+        "Helvetica",
+        "Times New Roman",
+        "Courier New",
+        "DejaVu Sans",
+        "Liberation Sans",
+        "Noto Sans",
+        "sans-serif",
+    ] {
+        if mgr
+            .match_family_style(family, skia_safe::FontStyle::normal())
+            .is_some()
+        {
+            set.insert(family.to_string());
+        }
+    }
+
+    set.into_iter().collect()
+}
+
 fn window_size_file() -> PathBuf {
     app_data_base().join("window-size.json")
 }
@@ -595,7 +626,8 @@ fn backend_default_output_dir() -> String {
     default_output_dir().to_string_lossy().to_string()
 }
 
-/// Single source of truth for available fonts: bundled fonts ∪ user-installed.
+/// Single source of truth for available fonts:
+/// bundled font files ∪ user-installed font files ∪ system font families.
 #[tauri::command]
 fn backend_list_fonts() -> Vec<String> {
     let mut set = std::collections::BTreeSet::new();
@@ -612,6 +644,7 @@ fn backend_list_fonts() -> Vec<String> {
             }
         }
     }
+    set.extend(system_font_families());
     set.into_iter().collect()
 }
 
