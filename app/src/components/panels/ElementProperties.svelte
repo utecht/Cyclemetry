@@ -279,8 +279,9 @@
     const updates = { file: name }
     try {
       const size = await backend.imageSize(name)
-      updates.width = size.width
-      updates.height = size.height
+      const width = s.item.width ?? size.width
+      updates.width = Math.round(width)
+      updates.height = Math.round(width * (size.height / size.width))
       updates.natural_width = size.width
       updates.natural_height = size.height
     } catch { /* fallback: keep existing dimensions */ }
