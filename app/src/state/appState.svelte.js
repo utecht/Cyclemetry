@@ -374,6 +374,23 @@ export function createAppState() {
     if (selectedElementId === id) selectOnly(null)
   }
 
+  function removeElements(ids) {
+    if (!config?.elements || ids.length === 0) return
+    const elements = config.elements.filter((e) => !ids.includes(e.id))
+    if (elements.length === config.elements.length) return
+
+    const groups = (config.scene?.groups ?? []).map((g) => ({
+      ...g,
+      element_ids: g.element_ids.filter((eid) => !ids.includes(eid)),
+    }))
+    const next = withNormalizedLayers({ ...config, elements })
+    commitConfig({ ...next, scene: { ...next.scene, groups } })
+
+    if (selectedElementIds.some((id) => ids.includes(id))) {
+      selectOnly(null)
+    }
+  }
+
   function moveElementLayer(id, delta) {
     if (!config?.scene) return
     const layers = normalizedElementLayerIds()
@@ -502,8 +519,12 @@ export function createAppState() {
   }
 
   function deleteSelectedElement() {
-    const s = parseSelectedElement()
-    if (s) removeElement(s.id)
+    const ids = selectedElementIds.length
+      ? selectedElementIds
+      : selectedElementId
+        ? [selectedElementId]
+        : []
+    removeElements(ids)
   }
 
   function copyElement() {
