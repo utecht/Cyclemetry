@@ -70,7 +70,7 @@ Final videos land in `~/Movies/Cyclemetry/`.
 
 ## Notes
 
-- macOS only (aarch64 + x86_64 via universal dmg)
+- macOS (aarch64 + x86_64 via universal dmg), Windows, and Linux
 - FFmpeg binary is in `resources/ffmpeg` (gitignored; fetched in CI via Homebrew) — not a system dependency
 - Render progress is polled via `native_progress` Tauri command
 
