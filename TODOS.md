@@ -38,6 +38,10 @@
   - Display options: text (e.g. "34×28"), chainring/cassette icon, or shift-event markers on the course plot
   - **Affected layers:** FIT/GPX parser (Rust), metric enum/data pipeline, element types (`value` with `value: "gear"` should just work once in stream), template schema docs
 
+- [ ] **Collapse `points:[{...}]` to `point:{...}`.** Every template uses a single-element `points` array on plot elements. Unless multi-point becomes a planned feature, this is nesting noise. Rename the field to `point` and make it an object, not an array. Needs: Rust schema change (`PlotConfig.points: Vec<PointConfig>` → `point: PointConfig`), `migrateConfig` to handle old `points[0]` on load, bundled template updates, and `stripDefaults` / `toEditorFormat` awareness.
+
+- [ ] **Drop `natural_width`/`natural_height` from image elements.** These are captured at insert time and persisted, but are derivable from the image file at load time. Remove from the schema and resolve dimensions lazily in the Rust renderer via `imagesize` or equivalent. Currently present in aaron (1 image) and jeff (4 images).
+
 - [ ] **Element properties audit.**
   1. **Basic vs. advanced categorization** — some properties are in the wrong bucket. Go through each element type and verify every property is correctly classified as basic (visible by default) or advanced (hidden behind toggle).
   2. **Per-element property sets** — some elements expose properties that don't apply to them. Remove anything that shouldn't be there.
