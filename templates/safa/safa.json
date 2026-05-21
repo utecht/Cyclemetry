@@ -24,11 +24,9 @@
       },
       "points": [
         {
-          "opacity": 1,
           "weight": 1200
         }
       ],
-      "rotation": 0,
       "type": "plot",
       "value": "elevation",
       "width": 1300,
@@ -117,7 +115,6 @@
           "weight": 1000
         }
       ],
-      "rotation": 0,
       "type": "plot",
       "value": "course",
       "width": 600,
@@ -131,7 +128,6 @@
     "end": 1200,
     "font": "Evogria.otf",
     "font_size": 30,
-    "fps": 30,
     "groups": [
       {
         "element_ids": [

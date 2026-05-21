@@ -1,0 +1,59 @@
+{
+  "scene": {
+    "width": 3840,
+    "height": 2160,
+    "start": 0,
+    "color": "#ffffff",
+    "opacity": 1
+  },
+  "elements": [
+    {
+      "type": "gauge",
+      "id": "gauge-speed",
+      "value": "speed",
+      "x": 1570,
+      "y": 730,
+      "width": 700,
+      "height": 700,
+      "min": 0,
+      "max": 35,
+      "unit": "mph",
+      "gradient": [
+        "#cc2e1a",
+        "#e86520",
+        "#c8a800"
+      ],
+      "progress_color": "#e86520",
+      "arc_color": "#ffffff20",
+      "arc_width": 36,
+      "cap_color": "#ffffff",
+      "cap_radius": 18,
+      "needle_width": 0,
+      "background_color": "#1c1c1c",
+      "background_opacity": 0.45,
+      "background_margin": 30
+    },
+    {
+      "type": "value",
+      "id": "value-speed",
+      "value": "speed",
+      "x": 1920,
+      "y": 1120,
+      "font_size": 160,
+      "color": "#ffffff",
+      "unit": "mph",
+      "text_align": "center",
+      "decimal_rounding": 0
+    },
+    {
+      "type": "label",
+      "id": "label-mph",
+      "text": "mph",
+      "x": 1920,
+      "y": 1215,
+      "font_size": 55,
+      "color": "#c8a800",
+      "text_align": "center"
+    }
+  ]
+}

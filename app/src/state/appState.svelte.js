@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import * as backend from '../api/backend.js'
 import { parseLocalStorage } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
+import { stripDefaults } from '../lib/stripDefaults.js'
 
 export function createAppState() {
   const storedActivityName = (value) => {
@@ -627,7 +628,7 @@ export function createAppState() {
       filename = toFilename(name)
       if (!filename) return
     }
-    await backend.saveTemplate(filename, config)
+    await backend.saveTemplate(filename, stripDefaults(config))
     loadedTemplateFilename = filename
     markPristine()
     if (currentPreviewImage) {
@@ -646,7 +647,7 @@ export function createAppState() {
     if (!name) return
     const filename = toFilename(name)
     if (!filename) return
-    await backend.saveTemplate(filename, config)
+    await backend.saveTemplate(filename, stripDefaults(config))
     loadedTemplateFilename = filename
     markPristine()
     if (currentPreviewImage) {
@@ -661,7 +662,7 @@ export function createAppState() {
     const filename = toFilename(name)
     if (!filename) return
     const base = blankTemplate(filename)
-    await backend.saveTemplate(filename, base)
+    await backend.saveTemplate(filename, stripDefaults(base))
     config = base
     loadedTemplateFilename = filename
     selectOnly(null)
@@ -687,7 +688,7 @@ export function createAppState() {
       const message = e?.message ?? String(e)
       if (!message.includes('Template not found')) throw e
       if (!config) throw e
-      await backend.saveTemplate(filename, config)
+      await backend.saveTemplate(filename, stripDefaults(config))
       markPristine()
     }
     loadedTemplateFilename = filename

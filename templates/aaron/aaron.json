@@ -11,11 +11,9 @@
       "margin": 0.1,
       "points": [
         {
-          "opacity": 1,
           "weight": 2000
         }
       ],
-      "rotation": 0,
       "type": "plot",
       "value": "course",
       "width": 600,
@@ -32,13 +30,11 @@
         "color": "#ffffff",
         "width": 5
       },
-      "opacity": 1,
       "points": [
         {
           "color": "#eed105",
           "edge_color": "#eed105",
           "edge_width": 0,
-          "remove_edge_color": false,
           "weight": 800
         }
       ],
@@ -51,7 +47,6 @@
     {
       "font_size": 80,
       "id": "value-1",
-      "opacity": 1,
       "suffix": " bpm",
       "type": "value",
       "value": "heartrate",
@@ -62,7 +57,6 @@
       "distance_reference": "overlay_end",
       "font_size": 80,
       "id": "value-2",
-      "opacity": 1,
       "suffix": " m",
       "text_align": "right",
       "type": "value",
@@ -74,7 +68,6 @@
     {
       "font_size": 80,
       "id": "value-0",
-      "opacity": 1,
       "suffix": " mph",
       "type": "value",
       "value": "speed",
@@ -91,10 +84,7 @@
       "min": 0,
       "needle_color": "#d6d6d6",
       "needle_width": 6,
-      "opacity": 1,
       "progress_color": "#ffffff",
-      "start_angle": 135,
-      "sweep_angle": 270,
       "type": "gauge",
       "value": "speed",
       "width": 80,
@@ -104,7 +94,6 @@
     {
       "font_size": 80,
       "id": "value-3",
-      "opacity": 1,
       "type": "value",
       "value": "power",
       "x": 1855,
@@ -117,7 +106,6 @@
       "color": "#ffffff",
       "direction": "right",
       "fill_opacity": 1,
-      "gap": 0,
       "gradient": [
         "#00d000",
         "#fffb00",
@@ -127,16 +115,12 @@
       "id": "meter-0",
       "max": 1000,
       "min": 0,
-      "opacity": 1,
-      "radius": 0,
       "scale_font_size": 60,
-      "scale_labels": [],
       "scale_offset": 20,
       "scale_suffix": " W",
       "scale_tick_length": 30,
       "scale_tick_width": 6,
       "scale_ticks": 9,
-      "segments": 0,
       "type": "meter",
       "value": "power",
       "width": 1700,
@@ -149,7 +133,6 @@
       "id": "image-0",
       "natural_height": 1500,
       "natural_width": 1500,
-      "opacity": 1,
       "pulse_metric": "heartrate",
       "type": "image",
       "width": 80,
@@ -166,10 +149,7 @@
       "min": 0,
       "needle_color": "#ef4444",
       "needle_width": 6,
-      "opacity": 1,
       "progress_color": "#ffffff",
-      "start_angle": 135,
-      "sweep_angle": 270,
       "type": "gauge",
       "value": "speed",
       "width": 360,
@@ -183,7 +163,6 @@
     "end": 2520,
     "font": "Arial.ttf",
     "font_size": 30,
-    "fps": 30,
     "groups": [
       {
         "element_ids": [
