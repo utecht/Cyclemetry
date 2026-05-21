@@ -192,10 +192,16 @@ export function createAppState() {
   const HISTORY_LIMIT = 50
   let history = $state([])
   let redoStack = $state([])
+  let editBatch = null
 
   // Apply an edit, recording the pre-edit config so it can be undone.
   // A fresh edit invalidates the redo stack.
   function commitConfig(next) {
+    if (editBatch) {
+      if (!editBatch.before && config) editBatch.before = JSON.stringify(config)
+      config = next
+      return
+    }
     if (config) {
       history = [...history.slice(-(HISTORY_LIMIT - 1)), JSON.stringify(config)]
     }
@@ -206,9 +212,24 @@ export function createAppState() {
   function resetHistory() {
     history = []
     redoStack = []
+    editBatch = null
+  }
+
+  function beginEditBatch() {
+    if (!editBatch) editBatch = { before: null }
+  }
+
+  function endEditBatch() {
+    if (!editBatch) return
+    const before = editBatch.before
+    editBatch = null
+    if (!before || !config || before === JSON.stringify(config)) return
+    history = [...history.slice(-(HISTORY_LIMIT - 1)), before]
+    redoStack = []
   }
 
   function undo() {
+    endEditBatch()
     if (history.length === 0) return
     const prev = history[history.length - 1]
     history = history.slice(0, -1)
@@ -221,6 +242,7 @@ export function createAppState() {
   }
 
   function redo() {
+    endEditBatch()
     if (redoStack.length === 0) return
     const next = redoStack[redoStack.length - 1]
     redoStack = redoStack.slice(0, -1)
@@ -893,11 +915,13 @@ export function createAppState() {
     removeFromGroupAndReorder,
     addElementToGroup,
     get canUndo() {
-      return history.length > 0
+      return history.length > 0 || !!editBatch?.before
     },
     get canRedo() {
       return redoStack.length > 0
     },
+    beginEditBatch,
+    endEditBatch,
     undo,
     redo,
     get elementLayerOrder() {
