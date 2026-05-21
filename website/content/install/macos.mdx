@@ -57,6 +57,31 @@ Open `Cyclemetry.app` from your Applications folder or Spotlight (`⌘ Space`).
 
 </Steps>
 
+## Build From Source
+
+If you prefer to build Cyclemetry yourself, you can build it from source:
+
+### Prerequisites
+
+You will need the following tools installed on your Mac:
+
+- **Xcode Command Line Tools** (run `xcode-select --install` in Terminal)
+- [Node.js](https://nodejs.org/) (v20+)
+- [pnpm](https://pnpm.io/)
+- [Rust](https://www.rust-lang.org/) via `rustup`
+- [FFmpeg](https://ffmpeg.org/) (e.g., via Homebrew: `brew install ffmpeg`)
+
+### Build
+
+```sh
+git clone https://github.com/walkersutton/cyclemetry.git
+cd cyclemetry
+pnpm install
+pnpm build
+```
+
+The built `.dmg` and `.app` bundle will appear in `src-tauri/target/release/bundle/`.
+
 ## Updates
 
 To check for updates manually, open Cyclemetry and choose **Cyclemetry → Check for Updates** from the menu bar.
