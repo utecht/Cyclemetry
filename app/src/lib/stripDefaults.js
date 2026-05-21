@@ -57,6 +57,7 @@ function stripSceneDefaults(scene) {
   if (!scene) return scene
   const out = { ...scene }
   if (out.fps === 30) delete out.fps
+  if (out.vars && Object.keys(out.vars).length === 0) delete out.vars
   return out
 }
 

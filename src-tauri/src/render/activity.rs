@@ -1019,6 +1019,7 @@ mod tests {
             opacity: None,
             layers: None,
             groups: Vec::new(),
+            vars: std::collections::HashMap::new(),
         }
     }
 

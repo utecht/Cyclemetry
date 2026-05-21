@@ -1,15 +1,21 @@
 <script>
   import { getContext } from 'svelte'
+  import { Plus, X } from 'lucide-svelte'
   import TemplateSection from '../panels/TemplateSection.svelte'
   import ElementList from '../panels/ElementList.svelte'
   import Select from '../ui/Select.svelte'
 
   const app = getContext('app')
 
-  const fontGroup = (font) => (font.source === 'system' ? 'System fonts' : 'Font files')
+  const fontGroup = (font) =>
+    font.source === 'system' ? 'System fonts' : 'Font files'
 
   function fontOpts() {
-    return app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) }))
+    return app.fonts.map((font) => ({
+      value: font.value,
+      label: font.label,
+      group: fontGroup(font),
+    }))
   }
 
   function onSceneFont(v) {
@@ -18,11 +24,11 @@
 
   // Resolution presets — common formats for cycling/action cam footage sharing
   const RES_PRESETS = [
-    { label: '4K',       w: 3840, h: 2160 },
-    { label: '1080p',    w: 1920, h: 1080 },
-    { label: '720p',     w: 1280, h: 720  },
+    { label: '4K', w: 3840, h: 2160 },
+    { label: '1080p', w: 1920, h: 1080 },
+    { label: '720p', w: 1280, h: 720 },
     { label: 'Portrait', w: 1080, h: 1920 },
-    { label: 'Square',   w: 1080, h: 1080 },
+    { label: 'Square', w: 1080, h: 1080 },
   ]
 
   // h:mm:ss when >= 1 hour, m:ss otherwise
@@ -32,7 +38,10 @@
     const h = Math.floor(whole / 3600)
     const m = Math.floor((whole % 3600) / 60)
     const sec = whole % 60
-    const ss = frac > 0 ? (sec + frac).toFixed(3).padStart(6, '0') : String(sec).padStart(2, '0')
+    const ss =
+      frac > 0
+        ? (sec + frac).toFixed(3).padStart(6, '0')
+        : String(sec).padStart(2, '0')
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`
     return `${m}:${ss}`
   }
@@ -57,18 +66,25 @@
     if (!s) return null
     const start = s.start ?? 0
     const end = s.end ?? app.timelineDuration
-    if (start >= end) return `Start must be before end (${secToTimecode(start)} ≥ ${secToTimecode(end)})`
+    if (start >= end)
+      return `Start must be before end (${secToTimecode(start)} ≥ ${secToTimecode(end)})`
     return null
   })
 </script>
 
-<aside class="w-[272px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden">
+<aside
+  class="w-[272px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden"
+>
   <TemplateSection />
 
   <!-- Scene settings -->
   {#if app.config?.scene}
     <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
-      <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Scene</p>
+      <p
+        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      >
+        Scene
+      </p>
 
       <!-- Resolution -->
       <div class="space-y-1.5">
@@ -78,7 +94,10 @@
             type="number"
             value={app.outputWidth}
             min={1}
-            oninput={(e) => { const v = parseInt(e.target.value); if (v > 0) app.outputWidth = v }}
+            oninput={(e) => {
+              const v = parseInt(e.target.value)
+              if (v > 0) app.outputWidth = v
+            }}
             class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
           />
           <span class="text-zinc-600 text-xs shrink-0">×</span>
@@ -86,20 +105,28 @@
             type="number"
             value={app.outputHeight}
             min={1}
-            oninput={(e) => { const v = parseInt(e.target.value); if (v > 0) app.outputHeight = v }}
+            oninput={(e) => {
+              const v = parseInt(e.target.value)
+              if (v > 0) app.outputHeight = v
+            }}
             class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
           />
         </div>
         <div class="flex flex-wrap gap-1">
           {#each RES_PRESETS as p (p.label)}
-            {@const active = app.outputWidth === p.w && app.outputHeight === p.h}
+            {@const active =
+              app.outputWidth === p.w && app.outputHeight === p.h}
             <button
-              onclick={() => { app.outputWidth = p.w; app.outputHeight = p.h }}
+              onclick={() => {
+                app.outputWidth = p.w
+                app.outputHeight = p.h
+              }}
               class="rounded px-1.5 py-0.5 text-[10px] border transition-colors duration-[150ms]
                 {active
-                  ? 'border-zinc-500 text-zinc-300 bg-zinc-800'
-                  : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
-            >{p.label}</button>
+                ? 'border-zinc-500 text-zinc-300 bg-zinc-800'
+                : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
+              >{p.label}</button
+            >
           {/each}
         </div>
       </div>
@@ -122,7 +149,10 @@
           min="1"
           max="240"
           value={app.config.scene.fps ?? 30}
-          oninput={(e) => { const v = parseInt(e.target.value); if (v > 0) app.updateScene({ fps: v }) }}
+          oninput={(e) => {
+            const v = parseInt(e.target.value)
+            if (v > 0) app.updateScene({ fps: v })
+          }}
           class="h-7 w-24 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
         />
       </label>
@@ -135,7 +165,8 @@
             onclick={() => app.updateScene({ end: app.timelineDuration })}
             title="Set end to activity duration"
             class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
-          >{secToTimecode(app.timelineDuration)} total</button>
+            >{secToTimecode(app.timelineDuration)} total</button
+          >
         </div>
         <div class="flex gap-2 items-center">
           <input
@@ -144,7 +175,10 @@
             placeholder="0:00"
             onchange={(e) => {
               const v = timecodeToSec(e.target.value)
-              if (!isNaN(v)) app.updateScene({ start: Math.min(Math.max(0, v), app.timelineDuration) })
+              if (!isNaN(v))
+                app.updateScene({
+                  start: Math.min(Math.max(0, v), app.timelineDuration),
+                })
               else e.target.value = secToTimecode(app.config.scene.start ?? 0)
             }}
             class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
@@ -162,8 +196,14 @@
                 return
               }
               const v = timecodeToSec(e.target.value)
-              if (!isNaN(v)) app.updateScene({ end: Math.min(Math.max(0, v), app.timelineDuration) })
-              else e.target.value = secToTimecode(app.config.scene.end ?? app.timelineDuration)
+              if (!isNaN(v))
+                app.updateScene({
+                  end: Math.min(Math.max(0, v), app.timelineDuration),
+                })
+              else
+                e.target.value = secToTimecode(
+                  app.config.scene.end ?? app.timelineDuration,
+                )
             }}
             class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
               {timelineError ? 'border-red-500' : 'border-zinc-700'}"
@@ -171,6 +211,82 @@
         </div>
         {#if timelineError}
           <p class="text-[11px] text-red-500">{timelineError}</p>
+        {/if}
+      </div>
+
+      <!-- Color variables -->
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] text-zinc-500">Color variables</span>
+          <button
+            onclick={() => {
+              const vars = { ...(app.config.scene.vars ?? {}) }
+              let n = 1
+              while (vars[`color${n}`] !== undefined) n++
+              vars[`color${n}`] = '#ffffff'
+              app.updateScene({ vars })
+            }}
+            title="Add color variable"
+            class="h-5 w-5 rounded flex items-center justify-center text-zinc-500
+                   hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+        {#each Object.entries(app.config.scene.vars ?? {}) as [name, value] (name)}
+          <div class="flex items-center gap-1.5">
+            <input
+              type="color"
+              {value}
+              oninput={(e) => {
+                const vars = { ...(app.config.scene.vars ?? {}) }
+                vars[name] = e.target.value
+                app.updateScene({ vars })
+              }}
+              class="h-7 w-7 shrink-0 rounded-[4px] border border-zinc-700 bg-transparent cursor-pointer p-0.5"
+              title={value}
+            />
+            <input
+              type="text"
+              value={name}
+              onchange={(e) => {
+                const newName = e.target.value.trim().replace(/\s+/g, '_')
+                if (!newName || newName === name) {
+                  e.target.value = name
+                  return
+                }
+                const entries = Object.entries(app.config.scene.vars ?? {})
+                const vars = Object.fromEntries(
+                  entries.map(([k, v]) => [k === name ? newName : k, v]),
+                )
+                app.updateScene({ vars })
+              }}
+              class="min-w-0 flex-1 h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
+                     text-zinc-300 font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              title="Variable name — reference as ${name} in any color field"
+            />
+            <button
+              onclick={() => {
+                const vars = Object.fromEntries(
+                  Object.entries(app.config.scene.vars ?? {}).filter(
+                    ([k]) => k !== name,
+                  ),
+                )
+                app.updateScene({ vars })
+              }}
+              title="Remove variable"
+              class="h-5 w-5 shrink-0 rounded flex items-center justify-center text-zinc-600
+                     hover:text-zinc-300 hover:bg-zinc-700 transition-colors"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        {/each}
+        {#if Object.keys(app.config.scene.vars ?? {}).length === 0}
+          <p class="text-[10px] text-zinc-600">
+            No variables. Add one above and reference it as $name in any color
+            field.
+          </p>
         {/if}
       </div>
     </section>

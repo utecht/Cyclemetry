@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +42,10 @@ pub struct SceneConfig {
     /// Render pipeline ignores this field entirely.
     #[serde(default)]
     pub groups: Vec<GroupConfig>,
+    /// Named color variables. Elements reference them as `"$varname"` in any
+    /// color field; a pre-pass resolves them before rendering.
+    #[serde(default)]
+    pub vars: HashMap<String, String>,
 }
 
 /// A named collection of element IDs used for list organisation and bulk
@@ -525,6 +531,24 @@ impl Template {
             }
         }
 
+        // Resolve scene-level color variables ($varname → hex) throughout the
+        // element tree before any field is deserialized.
+        let vars: HashMap<String, String> = raw["scene"]["vars"]
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_owned())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !vars.is_empty()
+            && let Some(items) = raw.get_mut("elements").and_then(|v| v.as_array_mut())
+        {
+            for item in items.iter_mut() {
+                resolve_vars(item, &vars);
+            }
+        }
+
         // Inherit scene-level defaults (font, color, opacity, …) into each
         // element that doesn't set them explicitly. Generic — copies any
         // absent scene key into the element object; element configs ignore
@@ -580,6 +604,30 @@ impl Template {
             }
         }
         out
+    }
+}
+
+/// Recursively replace `"$varname"` strings with their resolved color values.
+fn resolve_vars(value: &mut serde_json::Value, vars: &HashMap<String, String>) {
+    match value {
+        serde_json::Value::String(s) => {
+            if let Some(name) = s.strip_prefix('$')
+                && let Some(resolved) = vars.get(name)
+            {
+                *s = resolved.clone();
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                resolve_vars(v, vars);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                resolve_vars(v, vars);
+            }
+        }
+        _ => {}
     }
 }
 

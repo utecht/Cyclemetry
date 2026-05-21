@@ -981,6 +981,7 @@ async fn backend_activity_distance_info(
         opacity: None,
         layers: None,
         groups: Vec::new(),
+        vars: std::collections::HashMap::new(),
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
     Ok(serde_json::json!({
@@ -1024,6 +1025,7 @@ async fn backend_activity_metric_range(
         opacity: None,
         layers: None,
         groups: Vec::new(),
+        vars: std::collections::HashMap::new(),
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
 
