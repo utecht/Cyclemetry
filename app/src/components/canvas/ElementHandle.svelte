@@ -230,6 +230,9 @@
       <!-- Resize hit area (resizable elements only) -->
       {#if resizable}
         <rect
+          role="button"
+          tabindex="0"
+          aria-label={`Resize ${corner}`}
           x={hx - 12}
           y={hy - 12}
           width={24}

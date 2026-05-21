@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
 
   let { oncreate, oncancel } = $props()
 
@@ -8,6 +8,7 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown)
+    tick().then(() => inputEl?.focus())
     return () => window.removeEventListener('keydown', onKeydown)
   })
 
@@ -43,7 +44,6 @@
         bind:value={name}
         type="text"
         placeholder="my_overlay"
-        autofocus
         class="w-full rounded-[6px] border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
       />
     </form>
