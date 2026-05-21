@@ -28,34 +28,36 @@
 
   // h:mm:ss when >= 1 hour, m:ss otherwise
   function secToTimecode(s) {
-    s = Math.floor(s)
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    const ss = String(s % 60).padStart(2, '0')
+    const whole = Math.floor(s)
+    const frac = s - whole
+    const h = Math.floor(whole / 3600)
+    const m = Math.floor((whole % 3600) / 60)
+    const sec = whole % 60
+    const ss = frac > 0 ? (sec + frac).toFixed(3).padStart(6, '0') : String(sec).padStart(2, '0')
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`
     return `${m}:${ss}`
   }
 
-  // Accepts h:mm:ss, m:ss, or plain seconds
+  // Accepts h:mm:ss, m:ss, or plain seconds. Plain seconds may be fractional.
   function timecodeToSec(str) {
     str = str.trim()
-    if (/^\d+:\d{1,2}:\d{1,2}$/.test(str)) {
+    if (/^\d+:\d{1,2}:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [h, m, s] = str.split(':').map(Number)
       return h * 3600 + m * 60 + s
     }
-    if (/^\d+:\d{1,2}$/.test(str)) {
+    if (/^\d+:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [m, s] = str.split(':').map(Number)
       return m * 60 + s
     }
     const n = Number(str)
-    return !isNaN(n) && n >= 0 ? Math.floor(n) : NaN
+    return !isNaN(n) && n >= 0 ? n : NaN
   }
 
   let timelineError = $derived.by(() => {
     const s = app.config?.scene
     if (!s) return null
     const start = s.start ?? 0
-    const end = s.end ?? app.activityDuration
+    const end = s.end ?? app.timelineDuration
     if (start >= end) return `Start must be before end (${secToTimecode(start)} ≥ ${secToTimecode(end)})`
     return null
   })
@@ -131,10 +133,10 @@
         <div class="flex items-baseline justify-between">
           <span class="text-[11px] text-zinc-500">Timeline</span>
           <button
-            onclick={() => app.updateScene({ end: app.activityDuration })}
+            onclick={() => app.updateScene({ end: app.timelineDuration })}
             title="Set end to activity duration"
             class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
-          >{secToTimecode(app.activityDuration)} total</button>
+          >{secToTimecode(app.timelineDuration)} total</button>
         </div>
         <div class="flex gap-2 items-center">
           <input
@@ -143,7 +145,7 @@
             placeholder="0:00"
             onchange={(e) => {
               const v = timecodeToSec(e.target.value)
-              if (!isNaN(v)) app.updateScene({ start: Math.min(Math.max(0, v), app.activityDuration) })
+              if (!isNaN(v)) app.updateScene({ start: Math.min(Math.max(0, v), app.timelineDuration) })
               else e.target.value = secToTimecode(app.config.scene.start ?? 0)
             }}
             class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
@@ -152,17 +154,17 @@
           <span class="text-zinc-600 text-xs shrink-0">→</span>
           <input
             type="text"
-            value={secToTimecode(app.config.scene.end ?? app.activityDuration)}
-            placeholder={secToTimecode(app.activityDuration)}
+            value={secToTimecode(app.config.scene.end ?? app.timelineDuration)}
+            placeholder={secToTimecode(app.timelineDuration)}
             onchange={(e) => {
               if (e.target.value.trim().toLowerCase() === 'end') {
-                app.updateScene({ end: app.activityDuration })
-                e.target.value = secToTimecode(app.activityDuration)
+                app.updateScene({ end: app.timelineDuration })
+                e.target.value = secToTimecode(app.timelineDuration)
                 return
               }
               const v = timecodeToSec(e.target.value)
-              if (!isNaN(v)) app.updateScene({ end: Math.min(Math.max(0, v), app.activityDuration) })
-              else e.target.value = secToTimecode(app.config.scene.end ?? app.activityDuration)
+              if (!isNaN(v)) app.updateScene({ end: Math.min(Math.max(0, v), app.timelineDuration) })
+              else e.target.value = secToTimecode(app.config.scene.end ?? app.timelineDuration)
             }}
             class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
               {timelineError ? 'border-red-500' : 'border-zinc-700'}"

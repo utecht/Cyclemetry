@@ -20,6 +20,9 @@ pub const GRADIENT_SCALE: f64 = 1.747;
 
 #[derive(Debug, Clone, Default)]
 pub struct Activity {
+    /// Seconds since the first recorded timestamp for each raw sample.
+    /// Empty when the source file has no complete, monotonic timestamp axis.
+    pub elapsed_seconds: Vec<f64>,
     pub course: Vec<(f64, f64)>,
     pub distance: Vec<f64>,
     pub elevation: Vec<f64>,
@@ -252,6 +255,7 @@ impl Activity {
             a.course
                 .push((37.0 + t * 1.0e-4, -122.0 + (t / 20.0).sin() * 1.0e-3));
             a.distance.push(cum_dist);
+            a.elapsed_seconds.push(t);
         }
         a.total_activity_distance = cum_dist;
         a.valid_attributes = [
@@ -264,6 +268,7 @@ impl Activity {
             ATTR_CADENCE,
             ATTR_POWER,
             ATTR_TEMPERATURE,
+            ATTR_TIME,
         ]
         .iter()
         .map(|s| s.to_string())
@@ -411,6 +416,21 @@ impl Activity {
         activity.valid_attributes = valid.into_iter().collect();
         activity.valid_attributes.sort(); // deterministic order
 
+        let parsed_ms: Vec<Option<i64>> = points
+            .iter()
+            .map(|p| parse_timestamp_millis(p.time_str.as_deref()))
+            .collect();
+        if parsed_ms.iter().all(Option::is_some) {
+            let base = parsed_ms[0].unwrap();
+            let elapsed: Vec<f64> = parsed_ms
+                .iter()
+                .map(|ms| (ms.unwrap() - base) as f64 / 1000.0)
+                .collect();
+            if elapsed.windows(2).all(|w| w[1] >= w[0]) {
+                activity.elapsed_seconds = elapsed;
+            }
+        }
+
         // Build raw data arrays
         let mut raw_gradient: Vec<f64> = Vec::with_capacity(n);
         let mut cum_dist = 0.0f64;
@@ -533,38 +553,159 @@ impl Activity {
         }
     }
 
-    pub fn trim(&mut self, start: usize, end: usize) -> Result<(), String> {
-        let len = self.speed.len();
-        if start >= len {
-            return Err(format!("start ({start}) >= data length ({len})"));
-        }
-        if end > len || end <= start {
-            return Err(format!(
-                "end ({end}) out of range (must be > {start} and <= {len})"
-            ));
-        }
-        // Each field is clamped to its own length: if valid_attributes detection
-        // missed an attribute (or a field was never interpolated), we don't panic —
-        // get_scalar() uses .get() which returns 0.0 for out-of-range indices anyway.
-        fn tv<T: Clone>(v: &mut Vec<T>, s: usize, e: usize) {
-            let e = e.min(v.len());
-            let s = s.min(e);
-            *v = v[s..e].to_vec();
-        }
-        tv(&mut self.course, start, end);
-        tv(&mut self.distance, start, end);
-        tv(&mut self.elevation, start, end);
-        tv(&mut self.gradient, start, end);
-        tv(&mut self.heartrate, start, end);
-        tv(&mut self.speed, start, end);
-        tv(&mut self.cadence, start, end);
-        tv(&mut self.power, start, end);
-        tv(&mut self.temperature, start, end);
-        Ok(())
-    }
-
     pub fn data_len(&self) -> usize {
         self.speed.len()
+    }
+
+    pub fn elapsed_duration(&self) -> Option<f64> {
+        self.elapsed_seconds.last().copied()
+    }
+
+    pub fn has_wall_clock_time_axis(&self) -> bool {
+        self.elapsed_seconds.len() == self.data_len()
+            && self.elapsed_seconds.len() >= 2
+            && self
+                .elapsed_seconds
+                .windows(2)
+                .all(|w| w[0].is_finite() && w[1].is_finite() && w[1] >= w[0])
+    }
+
+    pub fn sample_for_scene(
+        self,
+        scene: &crate::render::template::SceneConfig,
+        synthetic: bool,
+    ) -> Result<Self, String> {
+        let fps = scene.fps.max(1);
+        let start = scene.start.unwrap_or(0.0).max(0.0);
+        self.resample_wall_clock(start, scene.end, fps, synthetic)
+    }
+
+    pub fn resample_wall_clock(
+        &self,
+        start: f64,
+        end: Option<f64>,
+        fps: u32,
+        synthetic: bool,
+    ) -> Result<Self, String> {
+        if !self.has_wall_clock_time_axis() {
+            if synthetic {
+                let mut cloned = self.clone();
+                cloned.interpolate(fps);
+                return Ok(cloned);
+            }
+            return Err("Wall-clock timeline requires activity timestamps".to_string());
+        }
+
+        let fps = fps.max(1);
+        let duration = self.elapsed_duration().unwrap_or(0.0);
+        let start = start.clamp(0.0, duration);
+        let end = end.unwrap_or(duration).clamp(start, duration);
+        let frames = ((end - start) * fps as f64).ceil().max(1.0) as usize;
+        let gap_threshold = self.wall_clock_gap_threshold();
+
+        let mut out = Activity {
+            total_activity_distance: self.total_activity_distance,
+            valid_attributes: self.valid_attributes.clone(),
+            ..Activity::default()
+        };
+
+        for frame in 0..frames {
+            let t = (start + frame as f64 / fps as f64).min(duration);
+            out.elapsed_seconds.push(t - start);
+            let sample = self.wall_clock_sample(t, gap_threshold);
+            out.course.push(sample.course);
+            out.distance.push(sample.distance);
+            out.elevation.push(sample.elevation);
+            out.gradient.push(sample.gradient);
+            out.heartrate.push(sample.heartrate);
+            out.speed.push(sample.speed);
+            out.cadence.push(sample.cadence);
+            out.power.push(sample.power);
+            out.temperature.push(sample.temperature);
+        }
+
+        Ok(out)
+    }
+
+    fn wall_clock_gap_threshold(&self) -> f64 {
+        let mut intervals: Vec<f64> = self
+            .elapsed_seconds
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .filter(|dt| dt.is_finite() && *dt > 0.0)
+            .collect();
+        if intervals.is_empty() {
+            return 2.0;
+        }
+        intervals.sort_by(|a, b| a.total_cmp(b));
+        let median = intervals[(intervals.len() - 1) / 2];
+        (median * 2.0).max(2.0)
+    }
+
+    fn wall_clock_sample(&self, t: f64, gap_threshold: f64) -> ActivitySample {
+        let len = self.data_len();
+        if len == 0 {
+            return ActivitySample::default();
+        }
+        let idx = self.elapsed_seconds.partition_point(|&x| x < t);
+        if idx < len && (self.elapsed_seconds[idx] - t).abs() < 1e-9 {
+            return self.sample_at_index(idx);
+        }
+        if idx == 0 {
+            return self.sample_at_index(0);
+        }
+        if idx >= len {
+            return self.sample_at_index(len - 1);
+        }
+
+        let prev = idx - 1;
+        let next = idx;
+        let t0 = self.elapsed_seconds[prev];
+        let t1 = self.elapsed_seconds[next];
+        let dt = t1 - t0;
+        if dt <= 0.0 || dt > gap_threshold {
+            return self.sample_at_index(prev);
+        }
+        let frac = ((t - t0) / dt).clamp(0.0, 1.0);
+        self.sample_between(prev, next, frac)
+    }
+
+    fn sample_at_index(&self, index: usize) -> ActivitySample {
+        ActivitySample {
+            course: self.course.get(index).copied().unwrap_or_default(),
+            distance: self.distance.get(index).copied().unwrap_or_default(),
+            elevation: self.elevation.get(index).copied().unwrap_or_default(),
+            gradient: self.gradient.get(index).copied().unwrap_or_default(),
+            heartrate: self.heartrate.get(index).copied().unwrap_or_default(),
+            speed: self.speed.get(index).copied().unwrap_or_default(),
+            cadence: self.cadence.get(index).copied().unwrap_or_default(),
+            power: self.power.get(index).copied().unwrap_or_default(),
+            temperature: self.temperature.get(index).copied().unwrap_or_default(),
+        }
+    }
+
+    fn sample_between(&self, prev: usize, next: usize, frac: f64) -> ActivitySample {
+        let lerp = |data: &[f64]| {
+            let a = data.get(prev).copied().unwrap_or_default();
+            let b = data.get(next).copied().unwrap_or(a);
+            a + frac * (b - a)
+        };
+        let course_a = self.course.get(prev).copied().unwrap_or_default();
+        let course_b = self.course.get(next).copied().unwrap_or(course_a);
+        ActivitySample {
+            course: (
+                course_a.0 + frac * (course_b.0 - course_a.0),
+                course_a.1 + frac * (course_b.1 - course_a.1),
+            ),
+            distance: lerp(&self.distance),
+            elevation: lerp(&self.elevation),
+            gradient: lerp(&self.gradient),
+            heartrate: lerp(&self.heartrate),
+            speed: lerp(&self.speed),
+            cadence: lerp(&self.cadence),
+            power: lerp(&self.power),
+            temperature: lerp(&self.temperature),
+        }
     }
 
     pub fn get_scalar(&self, attribute: &str, index: usize) -> f64 {
@@ -627,6 +768,19 @@ impl Activity {
             _ => (vec![], vec![]),
         }
     }
+}
+
+#[derive(Default)]
+struct ActivitySample {
+    course: (f64, f64),
+    distance: f64,
+    elevation: f64,
+    gradient: f64,
+    heartrate: f64,
+    speed: f64,
+    cadence: f64,
+    power: f64,
+    temperature: f64,
 }
 
 // ─── Raw track point from XML ──────────────────────────────────────────────
@@ -805,16 +959,22 @@ pub fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 fn time_delta_seconds(t1: Option<&str>, t2: Option<&str>) -> f64 {
     match (t1, t2) {
         (Some(a), Some(b)) => {
-            use chrono::DateTime;
-            let dt1 = DateTime::parse_from_rfc3339(a).ok();
-            let dt2 = DateTime::parse_from_rfc3339(b).ok();
-            match (dt1, dt2) {
-                (Some(d1), Some(d2)) => (d2 - d1).num_milliseconds() as f64 / 1000.0,
+            let t1 = parse_timestamp_millis(Some(a));
+            let t2 = parse_timestamp_millis(Some(b));
+            match (t1, t2) {
+                (Some(a), Some(b)) => (b - a) as f64 / 1000.0,
                 _ => 0.0,
             }
         }
         _ => 0.0,
     }
+}
+
+fn parse_timestamp_millis(t: Option<&str>) -> Option<i64> {
+    use chrono::DateTime;
+    DateTime::parse_from_rfc3339(t?)
+        .ok()
+        .map(|dt| dt.timestamp_millis())
 }
 
 // ─── FIT helpers ──────────────────────────────────────────────────────────
@@ -836,6 +996,81 @@ fn fit_f64(value: &fitparser::Value) -> Option<f64> {
         SInt64(v) => Some(*v as f64),
         UInt64(v) => Some(*v as f64),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::template::SceneConfig;
+
+    fn wall_clock_scene(start: f64, end: f64, fps: u32) -> SceneConfig {
+        SceneConfig {
+            width: 1920,
+            height: 1080,
+            fps,
+            font_size: None,
+            font: None,
+            overlay_filename: None,
+            start: Some(start),
+            end: Some(end),
+            decimal_rounding: None,
+            color: None,
+            opacity: None,
+            layers: None,
+            groups: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parses_gpx_timestamps_as_elapsed_seconds() {
+        let gpx = r#"
+        <gpx>
+          <trk><trkseg>
+            <trkpt lat="1" lon="2"><time>2026-01-01T00:00:00Z</time></trkpt>
+            <trkpt lat="1" lon="2.001"><time>2026-01-01T00:00:02Z</time></trkpt>
+            <trkpt lat="1" lon="2.002"><time>2026-01-01T00:00:05Z</time></trkpt>
+          </trkseg></trk>
+        </gpx>
+        "#;
+        let activity = Activity::parse_gpx(gpx).unwrap();
+        assert_eq!(activity.elapsed_seconds, vec![0.0, 2.0, 5.0]);
+        assert!(activity.has_wall_clock_time_axis());
+    }
+
+    #[test]
+    fn wall_clock_resampling_interpolates_normal_intervals() {
+        let mut activity = Activity::default();
+        activity.elapsed_seconds = vec![0.0, 2.0];
+        activity.speed = vec![10.0, 20.0];
+        activity.distance = vec![0.0, 20.0];
+        activity.course = vec![(0.0, 0.0), (0.0, 2.0)];
+        activity.valid_attributes = vec![ATTR_SPEED.to_string(), ATTR_DISTANCE.to_string()];
+
+        let sampled = activity
+            .sample_for_scene(&wall_clock_scene(0.0, 2.0, 2), false)
+            .unwrap();
+
+        assert_eq!(sampled.data_len(), 4);
+        assert_eq!(sampled.speed, vec![10.0, 12.5, 15.0, 17.5]);
+        assert_eq!(sampled.distance, vec![0.0, 5.0, 10.0, 15.0]);
+    }
+
+    #[test]
+    fn wall_clock_resampling_freezes_inside_pause_gap() {
+        let mut activity = Activity::default();
+        activity.elapsed_seconds = vec![0.0, 1.0, 30.0];
+        activity.speed = vec![10.0, 12.0, 40.0];
+        activity.distance = vec![0.0, 12.0, 100.0];
+        activity.course = vec![(0.0, 0.0), (0.0, 1.0), (0.0, 30.0)];
+        activity.valid_attributes = vec![ATTR_SPEED.to_string(), ATTR_DISTANCE.to_string()];
+
+        let sampled = activity
+            .sample_for_scene(&wall_clock_scene(1.0, 4.0, 1), false)
+            .unwrap();
+
+        assert_eq!(sampled.speed, vec![12.0, 12.0, 12.0]);
+        assert_eq!(sampled.distance, vec![12.0, 12.0, 12.0]);
     }
 }
 

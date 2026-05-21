@@ -326,8 +326,14 @@
       const metric = s.item.value ?? 'speed'
       const unit = s.item.unit ?? undefined
       const start = app.config.scene.start ?? 0
-      const end = app.config.scene.end ?? app.activityDuration
-      const range = await backend.getActivityMetricRange(app.gpxFilename, metric, unit, start, end)
+      const end = app.config.scene.end ?? app.timelineDuration
+      const range = await backend.getActivityMetricRange(
+        app.gpxFilename,
+        metric,
+        unit,
+        start,
+        end,
+      )
       app.updateElement(s.id, { min: range.min, max: range.max })
     } catch (err) {
       app.errorMessage = `Could not set meter range: ${err?.message ?? err}`
@@ -344,8 +350,14 @@
       const metric = s.item.value ?? 'speed'
       const unit = s.item.unit ?? undefined
       const start = app.config.scene.start ?? 0
-      const end = app.config.scene.end ?? app.activityDuration
-      const range = await backend.getActivityMetricRange(app.gpxFilename, metric, unit, start, end)
+      const end = app.config.scene.end ?? app.timelineDuration
+      const range = await backend.getActivityMetricRange(
+        app.gpxFilename,
+        metric,
+        unit,
+        start,
+        end,
+      )
       app.updateElement(s.id, { min: range.min, max: range.max })
     } catch (err) {
       app.errorMessage = `Could not set gauge range: ${err?.message ?? err}`

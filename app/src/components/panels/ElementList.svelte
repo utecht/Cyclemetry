@@ -99,9 +99,15 @@
     if (preset.type !== 'meter' || !app.gpxFilename || !app.config?.scene) return defaults
     const metric = defaults.value ?? 'speed'
     const start = app.config.scene.start ?? 0
-    const end = app.config.scene.end ?? app.activityDuration
+    const end = app.config.scene.end ?? app.timelineDuration
     try {
-      const range = await backend.getActivityMetricRange(app.gpxFilename, metric, defaults.unit, start, end)
+      const range = await backend.getActivityMetricRange(
+        app.gpxFilename,
+        metric,
+        defaults.unit,
+        start,
+        end,
+      )
       return { ...defaults, min: range.min, max: range.max }
     } catch (err) {
       console.debug('Could not initialize meter range from activity:', err)

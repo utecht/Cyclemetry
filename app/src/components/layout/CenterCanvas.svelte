@@ -61,7 +61,7 @@
     if (!config) return console.debug('[tpl-diag] fetchFrame bail: no config')
     const fps = app.previewFps ?? 1
     const start = config.scene?.start ?? 0
-    const end = config.scene?.end ?? app.activityDuration
+    const end = config.scene?.end ?? app.timelineDuration
     const maxFrameIdx = Math.round((end - start) * fps)
     if (frameIdx < 0 || frameIdx > maxFrameIdx)
       return console.debug('[tpl-diag] fetchFrame bail: frameIdx out of range', { frameIdx, maxFrameIdx, start, end })
@@ -153,7 +153,7 @@
       clearBuffer()
       if (!_config) return
       const start = _config.scene?.start ?? 0
-      const end = _config.scene?.end ?? app.activityDuration
+      const end = _config.scene?.end ?? app.timelineDuration
       // Don't attempt to fetch when the timeline range is invalid — the sidebar
       // already shows a validation error; no point spinning here too.
       if (end <= start) {
@@ -215,7 +215,7 @@
   }
 
   let sceneStart = $derived(app.config?.scene?.start ?? 0)
-  let sceneEnd = $derived(app.config?.scene?.end ?? app.activityDuration)
+  let sceneEnd = $derived(app.config?.scene?.end ?? app.timelineDuration)
 
   // ── Distance reference slider ─────────────────────────────────────────────────
   // Show an amber dot on a second bar when a distance element with reference='custom' is selected.

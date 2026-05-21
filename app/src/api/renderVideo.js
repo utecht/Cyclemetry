@@ -9,7 +9,7 @@ export default async function renderVideo(state) {
   if (!config?.scene) throw new Error('No valid config available')
   if (!gpxFilename) throw new Error('No GPX file selected')
   const start = config.scene.start ?? 0
-  const end = config.scene.end ?? state.activityDuration
+  const end = config.scene.end ?? state.timelineDuration
   if (start >= end)
     throw new Error(
       `Timeline start (${start}s) must be less than end (${end}s) — fix the timeline range before rendering`,

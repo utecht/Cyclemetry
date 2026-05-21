@@ -26,9 +26,9 @@ export function createAppState() {
   let gpxFilename = $state(
     storedActivityName(localStorage.getItem('gpxFilename')),
   )
-  let activityDuration = $state(
-    parseInt(localStorage.getItem('activityDuration') ?? '73'),
-  )
+  const initialActivityDuration =
+    parseFloat(localStorage.getItem('activityDuration') ?? '73') || 73
+  let activityDuration = $state(initialActivityDuration)
   let selectedSecond = $state(
     parseInt(localStorage.getItem('selectedSecond') ?? '0'),
   )
@@ -768,6 +768,9 @@ export function createAppState() {
     },
     set activityDuration(v) {
       activityDuration = v
+    },
+    get timelineDuration() {
+      return activityDuration
     },
     get selectedSecond() {
       return selectedSecond

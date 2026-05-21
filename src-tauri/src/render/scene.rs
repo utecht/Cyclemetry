@@ -60,7 +60,7 @@ pub fn render_video(
 
     // --- Load and prepare activity data ---
     log::info!("render_video: loading activity");
-    let mut activity = Activity::from_file(gpx_path)?;
+    let activity = Activity::from_file(gpx_path)?;
     if progress.cancelled.load(Ordering::Relaxed) {
         return Err("Render cancelled".to_string());
     }
@@ -68,27 +68,15 @@ pub fn render_video(
         "render_video: activity loaded ({} samples)",
         activity.data_len()
     );
-    activity.interpolate(template.scene.fps);
+    let activity = activity.sample_for_scene(&template.scene, false)?;
     if progress.cancelled.load(Ordering::Relaxed) {
         return Err("Render cancelled".to_string());
     }
     log::info!(
-        "render_video: activity interpolated to {}fps ({} frames)",
+        "render_video: activity prepared at {}fps ({} frames)",
         template.scene.fps,
         activity.data_len()
     );
-
-    // scene.start/end are in seconds; convert to frame indices before trimming.
-    let fps = template.scene.fps as usize;
-    let start_frame = template.scene.start.unwrap_or(0) * fps;
-    if let Some(end_secs) = template.scene.end {
-        let end_frame = (end_secs * fps).min(activity.data_len());
-        if end_frame > start_frame {
-            activity.trim(start_frame, end_frame)?;
-        }
-    } else if start_frame > 0 {
-        activity.trim(start_frame, activity.data_len())?;
-    }
 
     let total_frames = activity.data_len();
     progress

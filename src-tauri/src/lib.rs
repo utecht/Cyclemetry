@@ -885,14 +885,14 @@ fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String
 /// Parse GPX at `path` and return `{ filename, duration_seconds, has_data }`.
 fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
     let duration = match render::activity::Activity::from_file(path) {
-        Ok(activity) => activity.data_len(),
-        Err(_) => 0,
+        Ok(activity) => activity.elapsed_duration().unwrap_or(0.0),
+        Err(_) => 0.0,
     };
     Ok(serde_json::json!({
         "data": "file loaded",
         "filename": filename,
         "duration_seconds": duration,
-        "has_data": duration > 0,
+        "has_data": duration > 0.0,
     })
     .to_string())
 }
@@ -911,17 +911,30 @@ async fn backend_activity_distance_info(
         Ok((p, _)) => p,
         Err(_) => "<synthetic>".to_string(),
     };
-    let mut activity = if gpx_path == "<synthetic>" {
+    let synthetic = gpx_path == "<synthetic>";
+    let activity = if synthetic {
         let duration = (scene_end.ceil() as usize).max(60);
         render::activity::Activity::synthetic(duration)
     } else {
         render::activity::Activity::from_file(&gpx_path)?
     };
     let total_m = activity.total_activity_distance;
-    let len = activity.speed.len();
-    let start = (scene_start as usize).min(len.saturating_sub(1));
-    let end = (scene_end as usize).clamp(start + 1, len);
-    activity.trim(start, end).ok();
+    let scene = render::template::SceneConfig {
+        width: 1,
+        height: 1,
+        fps: 1,
+        font_size: None,
+        font: None,
+        overlay_filename: None,
+        start: Some(scene_start),
+        end: Some(scene_end),
+        decimal_rounding: None,
+        color: None,
+        opacity: None,
+        layers: None,
+        groups: Vec::new(),
+    };
+    let activity = activity.sample_for_scene(&scene, synthetic)?;
     Ok(serde_json::json!({
         "total_m": total_m,
         "overlay_start_m": activity.distance.first().copied().unwrap_or(0.0),
@@ -942,19 +955,29 @@ async fn backend_activity_metric_range(
         Ok((p, _)) => p,
         Err(_) => "<synthetic>".to_string(),
     };
-    let mut activity = if gpx_path == "<synthetic>" {
+    let synthetic = gpx_path == "<synthetic>";
+    let activity = if synthetic {
         let duration = (scene_end.ceil() as usize).max(60);
         render::activity::Activity::synthetic(duration)
     } else {
         render::activity::Activity::from_file(&gpx_path)?
     };
-    let len = activity.speed.len();
-    if len == 0 {
-        return Err("No activity data".to_string());
-    }
-    let start = (scene_start as usize).min(len.saturating_sub(1));
-    let end = (scene_end as usize).clamp(start + 1, len);
-    activity.trim(start, end).ok();
+    let scene = render::template::SceneConfig {
+        width: 1,
+        height: 1,
+        fps: 1,
+        font_size: None,
+        font: None,
+        overlay_filename: None,
+        start: Some(scene_start),
+        end: Some(scene_end),
+        decimal_rounding: None,
+        color: None,
+        opacity: None,
+        layers: None,
+        groups: Vec::new(),
+    };
+    let activity = activity.sample_for_scene(&scene, synthetic)?;
 
     let (conversion, _) = render::units::resolve(&metric, unit.as_deref());
     let mut min = f64::INFINITY;
@@ -1308,10 +1331,9 @@ async fn native_cancel(state: tauri::State<'_, SharedRenderState>) -> Result<Str
 
 /// Preview a single frame.
 ///
-/// Hot-path optimisation: raw 1 Hz GPX data (no interpolation) gives 30× fewer
-/// path vertices for chart backgrounds, and the parsed Activity + SceneCache are
-/// cached in `SharedDemoCache` so subsequent frames cost only a single
-/// `render_frame` call (~5–20 ms) instead of a full rebuild (~500 ms–2 s).
+/// Hot-path optimisation: the prepared Activity + SceneCache are cached in
+/// `SharedDemoCache` so subsequent frames cost only a single `render_frame`
+/// call (~5–20 ms) instead of a full rebuild (~500 ms–2 s).
 #[tauri::command]
 async fn native_demo(
     config: serde_json::Value,
@@ -1360,40 +1382,35 @@ async fn native_demo(
             let template = render::template::Template::from_value_scaled(config, target)
                 .map_err(|e| format!("Template parse error: {e}"))?;
 
-            let mut activity = if gpx_path == "<synthetic>" {
+            let synthetic = gpx_path == "<synthetic>";
+            let activity = if synthetic {
                 render::activity::Activity::synthetic(60)
             } else {
                 render::activity::Activity::from_file(&gpx_path)
                     .map_err(|e| format!("GPX parse error: {e}"))?
             };
-
-            // Trim first (1 Hz indices == seconds), then interpolate so chart
-            // paths are built at the requested preview resolution.
-            let start = template.scene.start.unwrap_or(0);
-            let end = template
-                .scene
-                .end
-                .unwrap_or(activity.data_len())
-                .min(activity.data_len());
-            if end > start {
-                activity
-                    .trim(start, end)
-                    .map_err(|e| format!("Trim error: {e}"))?;
-            }
-            if preview_fps > 1 {
-                activity.interpolate(preview_fps);
-            }
+            let mut preview_scene = template.scene.clone();
+            preview_scene.fps = preview_fps;
+            let mut preview_template = template.clone();
+            preview_template.scene = preview_scene;
+            let activity = activity
+                .sample_for_scene(&preview_template.scene, synthetic)
+                .map_err(|e| format!("Activity timeline error: {e}"))?;
 
             let assets_dirs_owned = assets_search_dirs_vec();
             let assets_dirs: Vec<&str> = assets_dirs_owned.iter().map(String::as_str).collect();
-            let scene_cache =
-                render::frame::SceneCache::build(&activity, &template, &fonts_dir, &assets_dirs)
-                    .map_err(|e| format!("SceneCache build failed: {e}"))?;
+            let scene_cache = render::frame::SceneCache::build(
+                &activity,
+                &preview_template,
+                &fonts_dir,
+                &assets_dirs,
+            )
+            .map_err(|e| format!("SceneCache build failed: {e}"))?;
 
             *guard = Some(DemoCache {
                 gpx_key: gpx_path,
                 config_hash,
-                template,
+                template: preview_template,
                 activity,
                 scene_cache,
             });
@@ -1486,24 +1503,16 @@ async fn native_benchmark(
     let frames = frames.clamp(1, 300) as usize;
 
     tokio::task::spawn_blocking(move || {
-        let mut activity = if gpx_path == "<synthetic>" {
+        let synthetic = gpx_path == "<synthetic>";
+        let activity = if synthetic {
             render::activity::Activity::synthetic(60)
         } else {
             render::activity::Activity::from_file(&gpx_path)
                 .map_err(|e| format!("GPX parse: {e}"))?
         };
-        activity.interpolate(template.scene.fps);
-        let start = template.scene.start.unwrap_or(0);
-        let end = template
-            .scene
-            .end
-            .unwrap_or(activity.data_len())
-            .min(activity.data_len());
-        if end > start {
-            activity
-                .trim(start, end)
-                .map_err(|e| format!("Trim: {e}"))?;
-        }
+        let activity = activity
+            .sample_for_scene(&template.scene, synthetic)
+            .map_err(|e| format!("Activity timeline: {e}"))?;
         if activity.data_len() == 0 {
             return Err("No activity data".to_string());
         }

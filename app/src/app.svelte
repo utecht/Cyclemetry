@@ -129,7 +129,7 @@
             const def = await backend.getTemplate('default.json')
             app.config = def
             app.loadedTemplateFilename = 'default.json'
-            app.updateScene({ start: 0, end: app.activityDuration })
+            app.updateScene({ start: 0, end: app.timelineDuration })
           } catch { /* use existing config */ }
         }
       } else {
@@ -156,7 +156,7 @@
           const def = await backend.getTemplate('default.json')
           app.config = def
           app.loadedTemplateFilename = 'default.json'
-          app.updateScene({ start: 0, end: app.activityDuration })
+          app.updateScene({ start: 0, end: app.timelineDuration })
         } catch { /* use existing config */ }
       }
     } catch (err) {
@@ -190,7 +190,7 @@
     if (app.renderingVideo || !app.config?.scene) return null
     const fps = app.config.scene.fps ?? 30
     const start = app.config.scene.start ?? 0
-    const end = app.config.scene.end ?? app.activityDuration
+    const end = app.config.scene.end ?? app.timelineDuration
     if (start >= end) return null
     const renderFps = app.lastRenderFps
     if (!renderFps || renderFps <= 0) return null

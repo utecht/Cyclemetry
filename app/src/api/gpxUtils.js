@@ -30,13 +30,17 @@ export default async function loadGpx(fileOrPath, state) {
   // not request Downloads/Desktop/Documents access again on the next launch.
   state.gpxFilename = result.filename ?? displayName
 
-  if (result.duration_seconds > 0) {
-    state.activityDuration = result.duration_seconds
+  const duration = result.duration_seconds
+  if (duration > 0) {
+    state.activityDuration = duration
     state.selectedSecond = 0
     if (state.config?.scene) {
-      state.updateScene({ start: 0, end: result.duration_seconds })
+      state.updateScene({ start: 0, end: duration })
     }
   }
 
-  return { filename: displayName, duration: result.duration_seconds }
+  return {
+    filename: displayName,
+    duration,
+  }
 }
