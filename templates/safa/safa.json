@@ -128,35 +128,37 @@
     "end": 1200,
     "font": "Evogria.otf",
     "font_size": 30,
-    "groups": [
-      {
-        "element_ids": [
-          "value-0",
-          "label-3"
-        ],
-        "id": "group-0",
-        "name": "speed [MPH]"
-      },
-      {
-        "element_ids": [
-          "value-1",
-          "label-0"
-        ],
-        "id": "group-1",
-        "name": "speed [KMH]"
-      },
-      {
-        "element_ids": [
-          "value-3",
-          "label-1"
-        ],
-        "id": "group-2",
-        "name": "power"
-      }
-    ],
     "height": 2160,
     "opacity": 0.5,
     "start": 900,
-    "width": 3840
+    "width": 3840,
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [
+            "value-0",
+            "label-3"
+          ],
+          "id": "group-0",
+          "name": "speed [MPH]"
+        },
+        {
+          "element_ids": [
+            "value-1",
+            "label-0"
+          ],
+          "id": "group-1",
+          "name": "speed [KMH]"
+        },
+        {
+          "element_ids": [
+            "value-3",
+            "label-1"
+          ],
+          "id": "group-2",
+          "name": "power"
+        }
+      ]
+    }
   }
 }

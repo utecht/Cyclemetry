@@ -5,7 +5,6 @@
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-1",
-      "locked": true,
       "radius": 30,
       "type": "rect",
       "width": 300,
@@ -25,7 +24,6 @@
       "font_size": 150,
       "id": "value-4",
       "italic": true,
-      "locked": true,
       "type": "value",
       "unit": "metric",
       "value": "speed",
@@ -37,7 +35,6 @@
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-2",
-      "locked": true,
       "radius": 30,
       "type": "rect",
       "width": 300,
@@ -48,7 +45,6 @@
       "font_size": 150,
       "id": "value-2",
       "italic": true,
-      "locked": true,
       "type": "value",
       "unit": "mph",
       "value": "speed",
@@ -69,7 +65,6 @@
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-0",
-      "locked": true,
       "radius": 30,
       "type": "rect",
       "width": 350,
@@ -80,7 +75,6 @@
       "font_size": 150,
       "id": "value-5",
       "italic": true,
-      "locked": true,
       "type": "value",
       "value": "cadence",
       "x": 3480,
@@ -100,7 +94,6 @@
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-3",
-      "locked": true,
       "radius": 30,
       "type": "rect",
       "width": 400,
@@ -124,7 +117,6 @@
       "fill_opacity": 0.2,
       "height": 140,
       "id": "rect-4",
-      "locked": true,
       "radius": 20,
       "type": "rect",
       "width": 1620,
@@ -153,7 +145,6 @@
       ],
       "height": 100,
       "id": "meter-0",
-      "locked": true,
       "max": 192,
       "min": 150,
       "type": "meter",
@@ -176,7 +167,6 @@
       "fill_opacity": 0.2,
       "height": 140,
       "id": "rect-5",
-      "locked": true,
       "radius": 20,
       "type": "rect",
       "width": 1620,
@@ -214,7 +204,6 @@
       ],
       "height": 100,
       "id": "meter-1",
-      "locked": true,
       "max": 991,
       "min": 0,
       "type": "meter",
@@ -302,69 +291,84 @@
     "end": 2100,
     "font": "BebasNeue-Regular.ttf",
     "font_size": 30,
-    "groups": [
-      {
-        "element_ids": [
-          "rect-1",
-          "label-3",
-          "value-4"
-        ],
-        "id": "group-0",
-        "name": "speed [KPH]"
-      },
-      {
-        "element_ids": [
-          "rect-0",
-          "value-5",
-          "label-2"
-        ],
-        "id": "group-1",
-        "name": "cadence [RPM]"
-      },
-      {
-        "element_ids": [
-          "label-4",
-          "value-2",
-          "rect-2"
-        ],
-        "id": "group-2",
-        "name": "speed [MPH]"
-      },
-      {
-        "element_ids": [
-          "rect-3",
-          "value-6"
-        ],
-        "id": "group-3",
-        "name": "distance to finish"
-      },
-      {
-        "element_ids": [
-          "rect-4",
-          "label-1",
-          "meter-0",
-          "value-1",
-          "image-1",
-          "image-3"
-        ],
-        "id": "group-4",
-        "name": "heartrate fill"
-      },
-      {
-        "element_ids": [
-          "meter-1",
-          "value-3",
-          "label-0",
-          "rect-5",
-          "image-0"
-        ],
-        "id": "group-5",
-        "name": "power fill"
-      }
-    ],
     "height": 2160,
     "opacity": 0.5,
     "start": 1200,
-    "width": 3840
+    "width": 3840,
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [
+            "rect-1",
+            "label-3",
+            "value-4"
+          ],
+          "id": "group-0",
+          "name": "speed [KPH]"
+        },
+        {
+          "element_ids": [
+            "rect-0",
+            "value-5",
+            "label-2"
+          ],
+          "id": "group-1",
+          "name": "cadence [RPM]"
+        },
+        {
+          "element_ids": [
+            "label-4",
+            "value-2",
+            "rect-2"
+          ],
+          "id": "group-2",
+          "name": "speed [MPH]"
+        },
+        {
+          "element_ids": [
+            "rect-3",
+            "value-6"
+          ],
+          "id": "group-3",
+          "name": "distance to finish"
+        },
+        {
+          "element_ids": [
+            "rect-4",
+            "label-1",
+            "meter-0",
+            "value-1",
+            "image-1",
+            "image-3"
+          ],
+          "id": "group-4",
+          "name": "heartrate fill"
+        },
+        {
+          "element_ids": [
+            "meter-1",
+            "value-3",
+            "label-0",
+            "rect-5",
+            "image-0"
+          ],
+          "id": "group-5",
+          "name": "power fill"
+        }
+      ],
+      "locked": [
+        "rect-1",
+        "value-4",
+        "rect-2",
+        "value-2",
+        "rect-0",
+        "value-5",
+        "rect-3",
+        "rect-4",
+        "meter-0",
+        "rect-5",
+        "meter-1"
+      ]
+    }
   }
 }

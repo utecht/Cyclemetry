@@ -163,27 +163,29 @@
     "end": 2520,
     "font": "Arial.ttf",
     "font_size": 30,
-    "groups": [
-      {
-        "element_ids": [
-          "gauge-0",
-          "value-0"
-        ],
-        "id": "group-0",
-        "name": "speed group"
-      },
-      {
-        "element_ids": [
-          "value-3",
-          "meter-0"
-        ],
-        "id": "group-1",
-        "name": "power group"
-      }
-    ],
     "height": 2160,
     "opacity": 0.5,
     "start": 1380,
-    "width": 3840
+    "width": 3840,
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [
+            "gauge-0",
+            "value-0"
+          ],
+          "id": "group-0",
+          "name": "speed group"
+        },
+        {
+          "element_ids": [
+            "value-3",
+            "meter-0"
+          ],
+          "id": "group-1",
+          "name": "power group"
+        }
+      ]
+    }
   }
 }

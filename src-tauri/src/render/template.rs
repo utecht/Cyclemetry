@@ -228,7 +228,6 @@ pub struct PlotConfig {
     pub markers: Option<Vec<CourseMarkerConfig>>,
     pub point_label: Option<PointLabelConfig>,
     pub rotation: Option<f32>,
-    pub bbox: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

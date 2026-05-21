@@ -163,36 +163,38 @@
     "end": 2100,
     "font": "rajdhani-bold.ttf",
     "font_size": 30,
-    "groups": [
-      {
-        "element_ids": [],
-        "id": "group-4",
-        "name": "heartrate fill"
-      },
-      {
-        "element_ids": [
-          "rect-0",
-          "meter-0",
-          "value-0",
-          "label-0"
-        ],
-        "id": "group-0",
-        "name": "heartrate group"
-      },
-      {
-        "element_ids": [
-          "label-1",
-          "rect-1",
-          "value-1",
-          "meter-1"
-        ],
-        "id": "group-1",
-        "name": "power group"
-      }
-    ],
     "height": 2160,
     "opacity": 0.5,
     "start": 1800,
-    "width": 3840
+    "width": 3840,
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [],
+          "id": "group-4",
+          "name": "heartrate fill"
+        },
+        {
+          "element_ids": [
+            "rect-0",
+            "meter-0",
+            "value-0",
+            "label-0"
+          ],
+          "id": "group-0",
+          "name": "heartrate group"
+        },
+        {
+          "element_ids": [
+            "label-1",
+            "rect-1",
+            "value-1",
+            "meter-1"
+          ],
+          "id": "group-1",
+          "name": "power group"
+        }
+      ]
+    }
   }
 }

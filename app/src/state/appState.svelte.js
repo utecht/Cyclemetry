@@ -363,19 +363,82 @@ export function createAppState() {
     return allElementIds(nextConfig)
   }
 
-  // Migrate a raw config that still has the legacy scene.layers field: reorder
-  // elements to match, then strip the field so it's never written back out.
+  // Normalize a raw config (from disk or localStorage) to the canonical in-memory
+  // format. Handles every legacy disk format so the rest of the app never has to.
   function migrateConfig(raw) {
-    if (!raw?.scene?.layers || !Array.isArray(raw.scene.layers)) return raw
-    const layers = raw.scene.layers
-    const elements = raw.elements ?? []
-    const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
-    const ordered = layers.map((id) => byId[id]).filter(Boolean)
-    const rest = elements.filter((e) => !layers.includes(e.id))
-    const sceneWithout = Object.fromEntries(
-      Object.entries(raw.scene).filter(([k]) => k !== 'layers'),
+    if (!raw) return raw
+    let config = raw
+
+    // 1. Legacy scene.layers → elements array order
+    if (config.scene?.layers && Array.isArray(config.scene.layers)) {
+      const layers = config.scene.layers
+      const byId = Object.fromEntries(
+        (config.elements ?? []).map((e) => [e.id, e]),
+      )
+      const ordered = layers.map((id) => byId[id]).filter(Boolean)
+      const rest = (config.elements ?? []).filter((e) => !layers.includes(e.id))
+      const sceneWithout = Object.fromEntries(
+        Object.entries(config.scene).filter(([k]) => k !== 'layers'),
+      )
+      config = {
+        ...config,
+        scene: sceneWithout,
+        elements: [...ordered, ...rest],
+      }
+    }
+
+    // 2. Editor state: normalize into in-memory format.
+    //    New format: scene.editor.{ groups, locked }
+    //    Legacy format: scene.groups + element.locked
+    const editorState = config.scene?.editor ?? {}
+    const groups = editorState.groups ?? config.scene?.groups ?? []
+    const lockedIdsList = editorState.locked ?? []
+
+    const elements = (config.elements ?? []).map((e) => {
+      // Remove bbox (dead field — never used in rendering or editor)
+      const withoutBbox = Object.fromEntries(
+        Object.entries(e).filter(([k]) => k !== 'bbox'),
+      )
+      const isLocked = e.locked === true || lockedIdsList.includes(e.id)
+      const withoutLocked = Object.fromEntries(
+        Object.entries(withoutBbox).filter(([k]) => k !== 'locked'),
+      )
+      return isLocked ? { ...withoutLocked, locked: true } : withoutLocked
+    })
+
+    const sceneBase = Object.fromEntries(
+      Object.entries(config.scene ?? {}).filter(
+        ([k]) => k !== 'editor' && k !== 'groups',
+      ),
     )
-    return { ...raw, scene: sceneWithout, elements: [...ordered, ...rest] }
+    return { ...config, scene: { ...sceneBase, groups }, elements }
+  }
+
+  // Prepare a config for writing to disk: move editor-only state (locked IDs,
+  // groups) into scene.editor and strip it from elements / scene root.
+  function toEditorFormat(config) {
+    if (!config) return config
+    const lockedIds = (config.elements ?? [])
+      .filter((e) => e.locked === true)
+      .map((e) => e.id)
+    const groups = config.scene?.groups ?? []
+
+    const editor = {}
+    if (groups.length > 0) editor.groups = groups
+    if (lockedIds.length > 0) editor.locked = lockedIds
+
+    const elements = (config.elements ?? []).map((e) =>
+      Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'locked')),
+    )
+    const sceneBase = Object.fromEntries(
+      Object.entries(config.scene ?? {}).filter(([k]) => k !== 'groups'),
+    )
+    const scene =
+      Object.keys(editor).length > 0
+        ? { ...sceneBase, editor }
+        : { ...sceneBase }
+
+    return { ...config, scene, elements }
   }
 
   function addElement(type, defaults) {
@@ -628,7 +691,7 @@ export function createAppState() {
       filename = toFilename(name)
       if (!filename) return
     }
-    await backend.saveTemplate(filename, stripDefaults(config))
+    await backend.saveTemplate(filename, stripDefaults(toEditorFormat(config)))
     loadedTemplateFilename = filename
     markPristine()
     if (currentPreviewImage) {
@@ -647,7 +710,7 @@ export function createAppState() {
     if (!name) return
     const filename = toFilename(name)
     if (!filename) return
-    await backend.saveTemplate(filename, stripDefaults(config))
+    await backend.saveTemplate(filename, stripDefaults(toEditorFormat(config)))
     loadedTemplateFilename = filename
     markPristine()
     if (currentPreviewImage) {
@@ -662,7 +725,7 @@ export function createAppState() {
     const filename = toFilename(name)
     if (!filename) return
     const base = blankTemplate(filename)
-    await backend.saveTemplate(filename, stripDefaults(base))
+    await backend.saveTemplate(filename, stripDefaults(toEditorFormat(base)))
     config = base
     loadedTemplateFilename = filename
     selectOnly(null)
@@ -688,7 +751,10 @@ export function createAppState() {
       const message = e?.message ?? String(e)
       if (!message.includes('Template not found')) throw e
       if (!config) throw e
-      await backend.saveTemplate(filename, stripDefaults(config))
+      await backend.saveTemplate(
+        filename,
+        stripDefaults(toEditorFormat(config)),
+      )
       markPristine()
     }
     loadedTemplateFilename = filename
