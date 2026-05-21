@@ -216,6 +216,8 @@ kbd {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   transition:
     background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -278,9 +280,24 @@ kbd {
 
 .showcase-card-info {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px 14px;
+}
+
+.showcase-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.showcase-button-sm {
+  font-size: 0.8rem;
+  min-height: 2rem;
+  padding: 0.4rem 0.7rem;
 }
 
 .showcase-card-title {

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, copyFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -29,10 +29,22 @@ for (const item of items) {
   const jsonPath = join(itemPath, `${item}.json`)
 
   if (existsSync(previewPath) && existsSync(jsonPath)) {
+    const displayName = getDisplayName(item)
+
+    // Copy preview.jpg to website/public/templates/<item>/preview.jpg for the website showcase
+    const publicDestDir = join(repoRoot, 'website/public/templates', item)
+    if (!existsSync(publicDestDir)) {
+      mkdirSync(publicDestDir, { recursive: true })
+    }
+    copyFileSync(previewPath, join(publicDestDir, 'preview.jpg'))
+
     templates.push({
       name: item,
-      displayName: getDisplayName(item),
-      previewUrl: `${item}/preview.jpg`
+      displayName: displayName,
+      readmePreviewUrl: `${item}/preview.jpg`,
+      webPreviewUrl: `/templates/${item}/preview.jpg`,
+      githubUrl: `https://github.com/walkersutton/cyclemetry/tree/main/templates/${item}`,
+      jsonUrl: `https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/${item}/${item}.json`
     })
   }
 }
@@ -40,10 +52,10 @@ for (const item of items) {
 // Sort templates alphabetically by display name
 templates.sort((a, b) => a.displayName.localeCompare(b.displayName))
 
-// Generate the Showcase Markdown table
+// Generate the Showcase Markdown table for the templates root README
 let showcaseContent = '\n\n| Template | Preview |\n| --- | --- |\n'
 for (const template of templates) {
-  showcaseContent += `| **${template.displayName}** | ![${template.displayName}](${template.previewUrl}) |\n`
+  showcaseContent += `| **${template.displayName}** | ![${template.displayName}](${template.readmePreviewUrl}) |\n`
 }
 showcaseContent += '\n'
 
@@ -67,3 +79,18 @@ const newReadmeContent = before + showcaseContent + after
 
 writeFileSync(readmePath, newReadmeContent)
 console.log(`Successfully updated templates/README.md with ${templates.length} templates.`)
+
+// Write the templates list JSON for the website
+const websiteTemplates = templates.map(t => ({
+  name: t.name,
+  displayName: t.displayName,
+  previewUrl: t.webPreviewUrl,
+  githubUrl: t.githubUrl,
+  jsonUrl: t.jsonUrl
+}))
+
+writeFileSync(
+  join(repoRoot, 'website/content/templates.json'),
+  JSON.stringify(websiteTemplates, null, 2) + '\n'
+)
+console.log(`Successfully updated website/content/templates.json with ${websiteTemplates.length} templates.`)

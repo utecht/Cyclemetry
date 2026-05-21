@@ -1,0 +1,44 @@
+[
+  {
+    "name": "aaron",
+    "displayName": "Aaron",
+    "previewUrl": "/templates/aaron/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/aaron",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/aaron/aaron.json"
+  },
+  {
+    "name": "crit",
+    "displayName": "Crit",
+    "previewUrl": "/templates/crit/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/crit",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/crit/crit.json"
+  },
+  {
+    "name": "jeff",
+    "displayName": "Jeff",
+    "previewUrl": "/templates/jeff/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/jeff",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/jeff/jeff.json"
+  },
+  {
+    "name": "norcal",
+    "displayName": "Norcal",
+    "previewUrl": "/templates/norcal/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/norcal",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/norcal/norcal.json"
+  },
+  {
+    "name": "safa",
+    "displayName": "Safa",
+    "previewUrl": "/templates/safa/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/safa",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/safa/safa.json"
+  },
+  {
+    "name": "will",
+    "displayName": "Will",
+    "previewUrl": "/templates/will/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/will",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/will/will.json"
+  }
+]

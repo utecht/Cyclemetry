@@ -8,6 +8,9 @@ export default {
   showcase: {
     title: 'Showcase',
   },
+  templates: {
+    title: 'Templates',
+  },
   install: {
     title: 'Install',
   },
