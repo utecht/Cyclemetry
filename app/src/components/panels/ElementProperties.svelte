@@ -855,6 +855,14 @@
             <Input value={item.scale_suffix ?? ''} placeholder="e.g. mph"
               oninput={(e) => update('scale_suffix', e.target.value || undefined)} />
           </label>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Font</span>
+            <Select
+              value={item.scale_font ?? ''}
+              options={fontOpts(true)}
+              onchange={(v) => update('scale_font', v || undefined)}
+            />
+          </label>
           <div class="grid grid-cols-2 gap-2">
             <label class="space-y-1">
               <span class="text-xs text-zinc-500">Font size (px)</span>

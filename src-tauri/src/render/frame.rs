@@ -307,6 +307,14 @@ impl OverlayElement for PlotConfig {
 // ─── Meter ─────────────────────────────────────────────────────────────────
 
 impl MeterConfig {
+    fn scale_font_name<'a>(&'a self, scene: &'a SceneConfig) -> &'a str {
+        self.scale_font
+            .as_deref()
+            .filter(|font| !font.is_empty())
+            .or(scene.font.as_deref())
+            .unwrap_or("Arial.ttf")
+    }
+
     /// Current fill fraction in [0, 1] for this frame.
     fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
         if !activity.valid_attributes.contains(&self.value) {
@@ -515,7 +523,7 @@ impl MeterConfig {
                 labels.clone()
             };
 
-            let font_name = self.scale_font.as_deref().unwrap_or("Arial.ttf");
+            let font_name = self.scale_font_name(ctx.scene);
             let font_size = self.scale_font_size.unwrap_or(20.0);
             let font = ctx
                 .typefaces
@@ -618,6 +626,14 @@ impl MeterConfig {
 }
 
 impl OverlayElement for MeterConfig {
+    fn fonts(&self, scene: &SceneConfig) -> Vec<String> {
+        if self.scale_labels.is_none() {
+            return Vec::new();
+        }
+
+        vec![self.scale_font_name(scene).to_string()]
+    }
+
     fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
         Some(ElementBounds {
             id: self.id.clone(),

@@ -315,7 +315,7 @@ pub struct MeterConfig {
     pub scale_color: Option<String>,
     /// Font size for scale labels in px. Default 20.
     pub scale_font_size: Option<f32>,
-    /// Typeface for scale labels. Falls back to system sans-serif.
+    /// Typeface for scale labels. Falls back to the scene font.
     pub scale_font: Option<String>,
     /// Gap between the bar edge and the label text in px. Default 8.
     pub scale_offset: Option<f32>,
