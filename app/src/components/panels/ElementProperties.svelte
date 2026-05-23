@@ -24,9 +24,9 @@
       ...app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) })),
     ]
   }
-  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'time', 'distance']
-  const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'course', 'distance']
-  const METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature']
+  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+  const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
+  const METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
   const METER_DIRECTIONS = [
     { value: 'up', label: 'Fill upward' },
     { value: 'down', label: 'Fill downward' },

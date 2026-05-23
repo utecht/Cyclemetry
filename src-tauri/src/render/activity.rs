@@ -5,9 +5,12 @@ pub const ATTR_CADENCE: &str = "cadence";
 pub const ATTR_COURSE: &str = "course";
 pub const ATTR_DISTANCE: &str = "distance";
 pub const ATTR_ELEVATION: &str = "elevation";
+pub const ATTR_FRONT_GEAR: &str = "front_gear";
+pub const ATTR_GEAR: &str = "gear";
 pub const ATTR_GRADIENT: &str = "gradient";
 pub const ATTR_HEARTRATE: &str = "heartrate";
 pub const ATTR_POWER: &str = "power";
+pub const ATTR_REAR_GEAR: &str = "rear_gear";
 pub const ATTR_SPEED: &str = "speed";
 pub const ATTR_TIME: &str = "time";
 pub const ATTR_TEMPERATURE: &str = "temperature";
@@ -32,6 +35,9 @@ pub struct Activity {
     pub cadence: Vec<f64>,
     pub power: Vec<f64>,
     pub temperature: Vec<f64>,
+    pub front_gear: Vec<f64>,
+    pub rear_gear: Vec<f64>,
+    pub gear: Vec<f64>,
     pub valid_attributes: Vec<String>,
     /// Total cumulative distance (metres) of the full activity before any trim.
     pub total_activity_distance: f64,
@@ -73,56 +79,135 @@ impl Activity {
             .map_err(|e| format!("Failed to parse FIT file: {e}"))?;
 
         let mut points: Vec<TrackPoint> = Vec::new();
+        let mut cur_front_gear: Option<f64> = None;
+        let mut cur_rear_gear: Option<f64> = None;
 
         for record in records {
-            if record.kind() != MesgNum::Record {
-                continue;
-            }
-            let mut lat: Option<f64> = None;
-            let mut lon: Option<f64> = None;
-            let mut elevation: Option<f64> = None;
-            let mut heartrate: Option<f64> = None;
-            let mut cadence: Option<f64> = None;
-            let mut power: Option<f64> = None;
-            let mut temperature: Option<f64> = None;
-            let mut time_str: Option<String> = None;
-
-            for field in record.fields() {
-                match field.name() {
-                    "position_lat" => {
-                        // FIT stores lat/lon as semicircles (SInt32); convert to degrees.
-                        lat = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
-                    }
-                    "position_long" => {
-                        lon = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
-                    }
-                    "altitude" | "enhanced_altitude" if elevation.is_none() => {
-                        elevation = fit_f64(field.value());
-                    }
-                    "heart_rate" => heartrate = fit_f64(field.value()),
-                    "cadence" => cadence = fit_f64(field.value()),
-                    "power" => power = fit_f64(field.value()),
-                    "temperature" => temperature = fit_f64(field.value()),
-                    "timestamp" => {
-                        if let fitparser::Value::Timestamp(dt) = field.value() {
-                            time_str = Some(dt.to_rfc3339());
+            match record.kind() {
+                MesgNum::Event => {
+                    let mut front_teeth: Option<f64> = None;
+                    let mut rear_teeth: Option<f64> = None;
+                    let mut front_num: Option<f64> = None;
+                    let mut rear_num: Option<f64> = None;
+                    for field in record.fields() {
+                        match field.name() {
+                            "front_gear" => {
+                                front_teeth = fit_f64(field.value());
+                            }
+                            "rear_gear" => {
+                                rear_teeth = fit_f64(field.value());
+                            }
+                            "front_gear_num" => {
+                                front_num = fit_f64(field.value());
+                            }
+                            "rear_gear_num" => {
+                                rear_num = fit_f64(field.value());
+                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
+                    if front_teeth.is_some() || front_num.is_some() {
+                        cur_front_gear = front_teeth.or(front_num);
+                    }
+                    if rear_teeth.is_some() || rear_num.is_some() {
+                        cur_rear_gear = rear_teeth.or(rear_num);
+                    }
                 }
-            }
+                MesgNum::BikeProfile => {
+                    for field in record.fields() {
+                        match field.name() {
+                            "front_gear" | "front_gear_num" => {
+                                cur_front_gear = cur_front_gear.or_else(|| fit_f64(field.value()));
+                            }
+                            "rear_gear" | "rear_gear_num" => {
+                                cur_rear_gear = cur_rear_gear.or_else(|| fit_f64(field.value()));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                MesgNum::Record => {
+                    let mut lat: Option<f64> = None;
+                    let mut lon: Option<f64> = None;
+                    let mut elevation: Option<f64> = None;
+                    let mut heartrate: Option<f64> = None;
+                    let mut cadence: Option<f64> = None;
+                    let mut power: Option<f64> = None;
+                    let mut temperature: Option<f64> = None;
+                    let mut time_str: Option<String> = None;
+                    let mut front_gear = cur_front_gear;
+                    let mut rear_gear = cur_rear_gear;
+                    let mut front_teeth: Option<f64> = None;
+                    let mut rear_teeth: Option<f64> = None;
+                    let mut front_num: Option<f64> = None;
+                    let mut rear_num: Option<f64> = None;
 
-            if let (Some(lat), Some(lon)) = (lat, lon) {
-                points.push(TrackPoint {
-                    lat,
-                    lon,
-                    elevation,
-                    time_str,
-                    heartrate,
-                    cadence,
-                    power,
-                    temperature,
-                });
+                    for field in record.fields() {
+                        match field.name() {
+                            "position_lat" => {
+                                // FIT stores lat/lon as semicircles (SInt32); convert to degrees.
+                                lat = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
+                            }
+                            "position_long" => {
+                                lon = fit_f64(field.value()).map(|v| v * SEMICIRCLES_TO_DEG);
+                            }
+                            "altitude" | "enhanced_altitude" if elevation.is_none() => {
+                                elevation = fit_f64(field.value());
+                            }
+                            "heart_rate" => heartrate = fit_f64(field.value()),
+                            "cadence" => cadence = fit_f64(field.value()),
+                            "power" => power = fit_f64(field.value()),
+                            "temperature" => temperature = fit_f64(field.value()),
+                            "front_gear" => {
+                                front_teeth = fit_f64(field.value());
+                            }
+                            "rear_gear" => {
+                                rear_teeth = fit_f64(field.value());
+                            }
+                            "front_gear_num" => {
+                                front_num = fit_f64(field.value());
+                            }
+                            "rear_gear_num" => {
+                                rear_num = fit_f64(field.value());
+                            }
+                            "timestamp" => {
+                                if let fitparser::Value::Timestamp(dt) = field.value() {
+                                    time_str = Some(dt.to_rfc3339());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if front_teeth.is_some() || front_num.is_some() {
+                        front_gear = front_teeth.or(front_num);
+                    }
+                    if rear_teeth.is_some() || rear_num.is_some() {
+                        rear_gear = rear_teeth.or(rear_num);
+                    }
+
+                    if front_gear.is_some() {
+                        cur_front_gear = front_gear;
+                    }
+                    if rear_gear.is_some() {
+                        cur_rear_gear = rear_gear;
+                    }
+
+                    if let (Some(lat), Some(lon)) = (lat, lon) {
+                        points.push(TrackPoint {
+                            lat,
+                            lon,
+                            elevation,
+                            time_str,
+                            heartrate,
+                            cadence,
+                            power,
+                            temperature,
+                            front_gear,
+                            rear_gear,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -202,6 +287,12 @@ impl Activity {
                             "Watts" | "PowerInWatts" if in_extensions => {
                                 pt.power = current_text.parse().ok();
                             }
+                            "front_gear" | "frontGear" | "front_gear_num" if in_extensions => {
+                                pt.front_gear = current_text.parse().ok();
+                            }
+                            "rear_gear" | "rearGear" | "rear_gear_num" if in_extensions => {
+                                pt.rear_gear = current_text.parse().ok();
+                            }
                             "Position" => in_position = false,
                             "HeartRateBpm" => in_heartrate = false,
                             "Extensions" => in_extensions = false,
@@ -252,6 +343,9 @@ impl Activity {
             a.elevation.push(100.0 + 20.0 * (t / 15.0).sin());
             a.gradient.push(3.0 * (t / 15.0).cos());
             a.temperature.push(21.0);
+            a.front_gear.push(2.0);
+            a.rear_gear.push(5.0 + ((t / 12.0).sin() + 1.0) * 4.0);
+            a.gear.push(encode_gear(2.0, *a.rear_gear.last().unwrap()));
             a.course
                 .push((37.0 + t * 1.0e-4, -122.0 + (t / 20.0).sin() * 1.0e-3));
             a.distance.push(cum_dist);
@@ -268,6 +362,9 @@ impl Activity {
             ATTR_CADENCE,
             ATTR_POWER,
             ATTR_TEMPERATURE,
+            ATTR_FRONT_GEAR,
+            ATTR_REAR_GEAR,
+            ATTR_GEAR,
             ATTR_TIME,
         ]
         .iter()
@@ -343,6 +440,12 @@ impl Activity {
                             "atemp" if in_tpx => {
                                 pt.temperature = current_text.parse().ok();
                             }
+                            "front_gear" | "frontGear" | "front_gear_num" if in_extensions => {
+                                pt.front_gear = current_text.parse().ok();
+                            }
+                            "rear_gear" | "rearGear" | "rear_gear_num" if in_extensions => {
+                                pt.rear_gear = current_text.parse().ok();
+                            }
                             // Power appears both as bare <power> or <PowerInWatts> in extensions
                             "power" | "PowerInWatts" | "watts" => {
                                 pt.power = current_text.parse().ok();
@@ -408,6 +511,18 @@ impl Activity {
         if points.iter().any(|p| p.temperature.is_some()) {
             valid.insert(ATTR_TEMPERATURE.into());
         }
+        if points.iter().any(|p| p.front_gear.is_some()) {
+            valid.insert(ATTR_FRONT_GEAR.into());
+        }
+        if points.iter().any(|p| p.rear_gear.is_some()) {
+            valid.insert(ATTR_REAR_GEAR.into());
+        }
+        if points
+            .iter()
+            .any(|p| p.front_gear.is_some() && p.rear_gear.is_some())
+        {
+            valid.insert(ATTR_GEAR.into());
+        }
 
         if valid.contains(ATTR_COURSE) && valid.contains(ATTR_ELEVATION) {
             valid.insert(ATTR_GRADIENT.into());
@@ -442,6 +557,14 @@ impl Activity {
             activity.cadence.push(pt.cadence.unwrap_or(0.0));
             activity.power.push(pt.power.unwrap_or(0.0));
             activity.temperature.push(pt.temperature.unwrap_or(0.0));
+            activity.front_gear.push(pt.front_gear.unwrap_or(0.0));
+            activity.rear_gear.push(pt.rear_gear.unwrap_or(0.0));
+            activity.gear.push(
+                pt.front_gear
+                    .zip(pt.rear_gear)
+                    .map(|(front, rear)| encode_gear(front, rear))
+                    .unwrap_or(0.0),
+            );
 
             // Speed: distance/time between consecutive points
             let spd = if i == 0 {
@@ -548,6 +671,15 @@ impl Activity {
                 ATTR_TEMPERATURE => {
                     self.temperature = linear_interp(&self.temperature, fps);
                 }
+                ATTR_FRONT_GEAR => {
+                    self.front_gear = step_interp(&self.front_gear, fps);
+                }
+                ATTR_REAR_GEAR => {
+                    self.rear_gear = step_interp(&self.rear_gear, fps);
+                }
+                ATTR_GEAR => {
+                    self.gear = step_interp(&self.gear, fps);
+                }
                 _ => {}
             }
         }
@@ -622,6 +754,9 @@ impl Activity {
             out.cadence.push(sample.cadence);
             out.power.push(sample.power);
             out.temperature.push(sample.temperature);
+            out.front_gear.push(sample.front_gear);
+            out.rear_gear.push(sample.rear_gear);
+            out.gear.push(sample.gear);
         }
 
         Ok(out)
@@ -681,6 +816,9 @@ impl Activity {
             cadence: self.cadence.get(index).copied().unwrap_or_default(),
             power: self.power.get(index).copied().unwrap_or_default(),
             temperature: self.temperature.get(index).copied().unwrap_or_default(),
+            front_gear: self.front_gear.get(index).copied().unwrap_or_default(),
+            rear_gear: self.rear_gear.get(index).copied().unwrap_or_default(),
+            gear: self.gear.get(index).copied().unwrap_or_default(),
         }
     }
 
@@ -705,6 +843,9 @@ impl Activity {
             cadence: lerp(&self.cadence),
             power: lerp(&self.power),
             temperature: lerp(&self.temperature),
+            front_gear: self.front_gear.get(prev).copied().unwrap_or_default(),
+            rear_gear: self.rear_gear.get(prev).copied().unwrap_or_default(),
+            gear: self.gear.get(prev).copied().unwrap_or_default(),
         }
     }
 
@@ -719,6 +860,9 @@ impl Activity {
             ATTR_CADENCE => safe(&self.cadence),
             ATTR_POWER => safe(&self.power),
             ATTR_TEMPERATURE => safe(&self.temperature),
+            ATTR_FRONT_GEAR => safe(&self.front_gear),
+            ATTR_REAR_GEAR => safe(&self.rear_gear),
+            ATTR_GEAR => safe(&self.gear),
             _ => 0.0,
         }
     }
@@ -760,6 +904,9 @@ impl Activity {
             ATTR_POWER => scalar(&self.power),
             ATTR_TEMPERATURE => scalar(&self.temperature),
             ATTR_GRADIENT => scalar(&self.gradient),
+            ATTR_FRONT_GEAR => scalar(&self.front_gear),
+            ATTR_REAR_GEAR => scalar(&self.rear_gear),
+            ATTR_GEAR => scalar(&self.gear),
             ATTR_COURSE => {
                 let x: Vec<f64> = self.course.iter().map(|c| c.1).collect(); // lon
                 let y: Vec<f64> = self.course.iter().map(|c| c.0).collect(); // lat
@@ -781,6 +928,9 @@ struct ActivitySample {
     cadence: f64,
     power: f64,
     temperature: f64,
+    front_gear: f64,
+    rear_gear: f64,
+    gear: f64,
 }
 
 // ─── Raw track point from XML ──────────────────────────────────────────────
@@ -795,6 +945,8 @@ struct TrackPoint {
     cadence: Option<f64>,
     power: Option<f64>,
     temperature: Option<f64>,
+    front_gear: Option<f64>,
+    rear_gear: Option<f64>,
 }
 
 // ─── Smoothing algorithms ──────────────────────────────────────────────────
@@ -944,6 +1096,23 @@ pub fn linear_interp(data: &[f64], fps: usize) -> Vec<f64> {
     result
 }
 
+/// Expand discrete state data by holding each source sample until the next one.
+fn step_interp(data: &[f64], fps: usize) -> Vec<f64> {
+    let n = data.len();
+    if n == 0 {
+        return vec![];
+    }
+    let total = (n - 1) * fps + 1;
+    let mut result = Vec::with_capacity(total);
+    for value in data.iter().take(n - 1) {
+        for _ in 0..fps {
+            result.push(*value);
+        }
+    }
+    result.push(data[n - 1]);
+    result
+}
+
 // ─── Geometry helpers ──────────────────────────────────────────────────────
 
 pub fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -975,6 +1144,24 @@ fn parse_timestamp_millis(t: Option<&str>) -> Option<i64> {
     DateTime::parse_from_rfc3339(t?)
         .ok()
         .map(|dt| dt.timestamp_millis())
+}
+
+pub fn encode_gear(front: f64, rear: f64) -> f64 {
+    front.round() * 100.0 + rear.round()
+}
+
+pub fn decode_gear(gear: f64) -> Option<(i64, i64)> {
+    if !gear.is_finite() || gear <= 0.0 {
+        return None;
+    }
+    let encoded = gear.round() as i64;
+    let front = encoded / 100;
+    let rear = encoded % 100;
+    if front > 0 && rear > 0 {
+        Some((front, rear))
+    } else {
+        None
+    }
 }
 
 // ─── FIT helpers ──────────────────────────────────────────────────────────
@@ -1037,6 +1224,66 @@ mod tests {
         let activity = Activity::parse_gpx(gpx).unwrap();
         assert_eq!(activity.elapsed_seconds, vec![0.0, 2.0, 5.0]);
         assert!(activity.has_wall_clock_time_axis());
+    }
+
+    #[test]
+    fn parses_gpx_di2_gear_extensions() {
+        let gpx = r#"
+        <gpx>
+          <trk><trkseg>
+            <trkpt lat="1" lon="2">
+              <time>2026-01-01T00:00:00Z</time>
+              <extensions><front_gear>2</front_gear><rear_gear>11</rear_gear></extensions>
+            </trkpt>
+            <trkpt lat="1" lon="2.001">
+              <time>2026-01-01T00:00:01Z</time>
+              <extensions><front_gear>2</front_gear><rear_gear>12</rear_gear></extensions>
+            </trkpt>
+          </trkseg></trk>
+        </gpx>
+        "#;
+        let activity = Activity::parse_gpx(gpx).unwrap();
+        assert!(activity.valid_attributes.contains(&ATTR_GEAR.to_string()));
+        assert!(
+            activity
+                .valid_attributes
+                .contains(&ATTR_FRONT_GEAR.to_string())
+        );
+        assert!(
+            activity
+                .valid_attributes
+                .contains(&ATTR_REAR_GEAR.to_string())
+        );
+        assert_eq!(activity.front_gear, vec![2.0, 2.0]);
+        assert_eq!(activity.rear_gear, vec![11.0, 12.0]);
+        assert_eq!(activity.gear, vec![211.0, 212.0]);
+        assert_eq!(decode_gear(activity.gear[1]), Some((2, 12)));
+    }
+
+    #[test]
+    fn gear_resampling_holds_previous_state() {
+        let mut activity = Activity::default();
+        activity.elapsed_seconds = vec![0.0, 2.0];
+        activity.speed = vec![10.0, 20.0];
+        activity.distance = vec![0.0, 20.0];
+        activity.course = vec![(0.0, 0.0), (0.0, 2.0)];
+        activity.front_gear = vec![2.0, 2.0];
+        activity.rear_gear = vec![11.0, 12.0];
+        activity.gear = vec![211.0, 212.0];
+        activity.valid_attributes = vec![
+            ATTR_SPEED.to_string(),
+            ATTR_DISTANCE.to_string(),
+            ATTR_GEAR.to_string(),
+            ATTR_FRONT_GEAR.to_string(),
+            ATTR_REAR_GEAR.to_string(),
+        ];
+
+        let sampled = activity
+            .sample_for_scene(&wall_clock_scene(0.0, 2.0, 2), false)
+            .unwrap();
+
+        assert_eq!(sampled.gear, vec![211.0, 211.0, 211.0, 211.0]);
+        assert_eq!(sampled.rear_gear, vec![11.0, 11.0, 11.0, 11.0]);
     }
 
     #[test]

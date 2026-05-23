@@ -31,13 +31,6 @@
     - Fallback: undefined var → transparent/default color, or render error?
     - Scope: scene-level only, no element-level overrides — keep it simple
 
-- [ ] **Shimano Di2 gear metric.** Parse Di2 electronic shifting data from Garmin FIT files and expose it as a `gear` metric for value elements and shift-event visualization.
-  - **Start here (open question):** Does the current Rust FIT parser pull through Garmin developer fields, or silently drop them? Di2 data lives in developer fields (`front_gear`, `rear_gear`, `gear_change_data`) — if dropped today, that's the first fix.
-  - Di2 also recorded in native FIT fields on some devices; some GPX exporters include it as extensions
-  - Metric name candidates: `gear`, `front_gear`/`rear_gear`, `gear_ratio`
-  - Display options: text (e.g. "34×28"), chainring/cassette icon, or shift-event markers on the course plot
-  - **Affected layers:** FIT/GPX parser (Rust), metric enum/data pipeline, element types (`value` with `value: "gear"` should just work once in stream), template schema docs
-
 - [ ] **Collapse `points:[{...}]` to `point:{...}`.** Every template uses a single-element `points` array on plot elements. Unless multi-point becomes a planned feature, this is nesting noise. Rename the field to `point` and make it an object, not an array. Needs: Rust schema change (`PlotConfig.points: Vec<PointConfig>` → `point: PointConfig`), `migrateConfig` to handle old `points[0]` on load, bundled template updates, and `stripDefaults` / `toEditorFormat` awareness.
 
 - [ ] **Drop `natural_width`/`natural_height` from image elements.** These are captured at insert time and persisted, but are derivable from the image file at load time. Remove from the schema and resolve dimensions lazily in the Rust renderer via `imagesize` or equivalent. Currently present in aaron (1 image) and jeff (4 images).

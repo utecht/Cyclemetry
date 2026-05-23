@@ -6,7 +6,7 @@ use skia_safe::{
 };
 use std::collections::HashMap;
 
-use crate::render::activity::{ATTR_DISTANCE, Activity};
+use crate::render::activity::{ATTR_DISTANCE, ATTR_GEAR, Activity, decode_gear};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
@@ -1427,6 +1427,16 @@ fn align_x(base_x: f32, text_width: f32, align: Option<&str>) -> f32 {
 // ─── Value formatting ──────────────────────────────────────────────────────
 
 fn format_value(raw: f64, cfg: &ValueConfig) -> String {
+    if cfg.value == ATTR_GEAR {
+        let text = decode_gear(raw)
+            .map(|(front, rear)| format!("{front}x{rear}"))
+            .unwrap_or_else(|| "0x0".to_string());
+        return match &cfg.suffix {
+            Some(s) => format!("{text}{s}"),
+            None => text,
+        };
+    }
+
     // Convert from the GPX-native unit. Value elements do not auto-append a
     // unit suffix; the optional manual `suffix` field is applied below.
     let (conv, _) = units::resolve(&cfg.value, cfg.unit.as_deref());
