@@ -2,6 +2,10 @@
   {
     "name": "aaron",
     "displayName": "Aaron",
+    "inspiration": {
+      "label": "YouTube",
+      "url": "https://www.youtube.com/watch?v=S8R3_HIBeGs"
+    },
     "previewUrl": "/templates/aaron/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/aaron",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/aaron/aaron.json"
@@ -9,6 +13,7 @@
   {
     "name": "crit",
     "displayName": "Crit",
+    "inspiration": null,
     "previewUrl": "/templates/crit/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/crit",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/crit/crit.json"
@@ -16,6 +21,7 @@
   {
     "name": "jeff",
     "displayName": "Jeff",
+    "inspiration": null,
     "previewUrl": "/templates/jeff/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/jeff",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/jeff/jeff.json"
@@ -23,6 +29,7 @@
   {
     "name": "norcal",
     "displayName": "Norcal",
+    "inspiration": null,
     "previewUrl": "/templates/norcal/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/norcal",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/norcal/norcal.json"
@@ -30,6 +37,7 @@
   {
     "name": "safa",
     "displayName": "Safa",
+    "inspiration": null,
     "previewUrl": "/templates/safa/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/safa",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/safa/safa.json"
@@ -37,6 +45,7 @@
   {
     "name": "will",
     "displayName": "Will",
+    "inspiration": null,
     "previewUrl": "/templates/will/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/will",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/will/will.json"

@@ -1,5 +1,13 @@
 import templates from '../content/templates.json'
 
+function inspiration(template) {
+  if (!template.inspiration) return null
+  if (typeof template.inspiration === 'string') {
+    return { label: 'Inspiration', url: template.inspiration }
+  }
+  return template.inspiration.url ? template.inspiration : null
+}
+
 export function Templates() {
   return (
     <div className="showcase-page showcase-page-wide">
@@ -12,30 +20,38 @@ export function Templates() {
       </div>
 
       <div className="showcase-grid">
-        {templates.map((template) => (
-          <div key={template.name} className="showcase-card">
-            <div className="showcase-card-video">
-              <a href={template.githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${template.displayName} template`}>
-                <img
-                  src={template.previewUrl}
-                  alt={`${template.displayName} template preview`}
-                  loading="lazy"
-                />
-              </a>
-            </div>
-            <div className="showcase-card-info">
-              <div className="showcase-card-title">{template.displayName}</div>
-              <div className="showcase-card-actions">
-                <a className="showcase-button showcase-button-sm showcase-button-primary" href={template.githubUrl} target="_blank" rel="noopener noreferrer">
-                  View Folder
-                </a>
-                <a className="showcase-button showcase-button-sm" href={template.jsonUrl} target="_blank" rel="noopener noreferrer">
-                  JSON Schema
+        {templates.map((template) => {
+          const credit = inspiration(template)
+          return (
+            <div key={template.name} className="showcase-card">
+              <div className="showcase-card-video">
+                <a href={template.githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${template.displayName} template`}>
+                  <img
+                    src={template.previewUrl}
+                    alt={`${template.displayName} template preview`}
+                    loading="lazy"
+                  />
                 </a>
               </div>
+              <div className="showcase-card-info">
+                <div className="showcase-card-title">{template.displayName}</div>
+                <div className="showcase-card-actions">
+                  <a className="showcase-button showcase-button-sm showcase-button-primary" href={template.githubUrl} target="_blank" rel="noopener noreferrer">
+                    View Folder
+                  </a>
+                  <a className="showcase-button showcase-button-sm" href={template.jsonUrl} target="_blank" rel="noopener noreferrer">
+                    JSON Schema
+                  </a>
+                  {credit ? (
+                    <a className="showcase-button showcase-button-sm" href={credit.url} target="_blank" rel="noopener noreferrer">
+                      {credit.label ?? 'Inspiration'}
+                    </a>
+                  ) : null}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="showcase-submit-panel">
