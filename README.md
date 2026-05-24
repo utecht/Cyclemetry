@@ -1,44 +1,40 @@
-<div align="center" style="text-align: center;">
-  <img src="/app/public/logo192.png" style="width: 64px; border-radius: 12px;">
+<div align="center">
+  <img src="app/public/logo192.png" width="68" alt="Cyclemetry">
   <h1>Cyclemetry</h1>
-  <p>
-    <b>Create stunning telemetry video overlays from GPX data.</b>
-  </p>
+  <p>Desktop app for building telemetry video overlays from GPX data.</p>
+
+  [![License: MIT](https://img.shields.io/badge/license-MIT-crimson?style=flat-square)](LICENSE)
+  [![macOS](https://img.shields.io/badge/macOS-supported-333?style=flat-square&logo=apple&logoColor=white)](https://cyclemetry.walkersutton.com/install)
+  [![Windows](https://img.shields.io/badge/Windows-supported-333?style=flat-square&logo=windows&logoColor=0078D4)](https://cyclemetry.walkersutton.com/install)
+  [![Linux](https://img.shields.io/badge/Linux-supported-333?style=flat-square&logo=linux&logoColor=white)](https://cyclemetry.walkersutton.com/install)
 </div>
 
-![The_Tremola_by Safa_Brian](https://github.com/walkersutton/cyclemetry/assets/25811783/71aa4902-dd29-453f-b4a5-a87ddabd2437)
-
-## ✨ Features
-
-- **Route Tracking**: Real-time position on the map.
-- **Elevation Profiles**: Dynamic grade and altitude visualization.
-- **Rich Metrics**: Speed, Power, Heart Rate, Cadence, Gradient, and Temperature.
-- **Customizable Overlays**: Flexible designer to match your video style.
-
-## Videos Made With Cyclemetry
-
-See what cyclists around the world are creating with Cyclemetry.
-
-→ [Full showcase](https://cyclemetry.walkersutton.com/showcase)
+<br>
 
 ![demo](https://github.com/user-attachments/assets/7e578b89-070b-4709-b016-075fcc364b13)
 
-## 🚀 Installation
+<br>
 
-Cyclemetry is available for macOS, Windows, and Linux.
+Import a GPX file, design your overlay, and export a finished video. Speed, power, heart rate, elevation, cadence, gradient, and live map position — rendered directly into the frame.
 
-Follow the platform-specific install guide at **[cyclemetry.walkersutton.com/install](https://cyclemetry.walkersutton.com/install)**.
+No subscription. No cloud. Runs entirely on your machine.
 
-Supported platforms:
+## Install
 
-- **macOS** (Apple Silicon & Intel) via `.dmg`
-- **Windows** via `.exe`
-- **Linux** via `.deb` and `.AppImage`
+Download for macOS (Apple Silicon & Intel), Windows, or Linux at **[cyclemetry.walkersutton.com/install](https://cyclemetry.walkersutton.com/install)**.
 
-## 🛠️ Development
+## Showcase
 
-See the **[development guide](https://cyclemetry.walkersutton.com/developing)** for local setup, bundled fonts, release steps, and debugging notes.
+See what people are creating: **[cyclemetry.walkersutton.com/showcase](https://cyclemetry.walkersutton.com/showcase)**
 
-## 🤝 Contributing
+![The_Tremola_by Safa_Brian](https://github.com/walkersutton/cyclemetry/assets/25811783/71aa4902-dd29-453f-b4a5-a87ddabd2437)
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## Development
+
+Local setup, resource bundling, and release steps: **[cyclemetry.walkersutton.com/developing](https://cyclemetry.walkersutton.com/developing)**
+
+Built with Tauri 2 + Rust (rendering pipeline) and Svelte 5 (editor UI).
+
+## Contributing
+
+Pull requests are welcome. For larger changes, open an issue first to discuss direction.
