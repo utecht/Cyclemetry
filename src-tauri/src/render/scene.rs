@@ -7,6 +7,7 @@
 ///     bounded channel; consumer (main thread) drains to FFmpeg stdin concurrently so render
 ///     and encode overlap instead of running back-to-back.
 use rayon::prelude::*;
+use std::collections::HashSet;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -131,8 +132,13 @@ pub fn render_video(
 
     // --- Spawn FFmpeg ---
     let ffmpeg_bin = resolve_ffmpeg();
-    log::info!("render_video: spawning FFmpeg from {ffmpeg_bin}");
-    let mut cmd = Command::new(&ffmpeg_bin);
+    let encoder = select_ffmpeg_encoder(&ffmpeg_bin)?;
+    log::info!(
+        "render_video: spawning FFmpeg from {ffmpeg_bin} with {} ({})",
+        encoder.codec,
+        encoder.mode
+    );
+    let mut cmd = ffmpeg_command(&ffmpeg_bin);
     cmd.args([
         "-loglevel",
         "warning",
@@ -149,7 +155,7 @@ pub fn render_video(
         "-i",
         "-",
         "-c:v",
-        ffmpeg_codec(),
+        &encoder.codec,
         "-profile:v",
         "4444",
         "-y",
@@ -158,10 +164,6 @@ pub fn render_video(
     .stdin(Stdio::piped())
     .stdout(Stdio::null())
     .stderr(Stdio::piped());
-    // Suppress the console window Windows opens for console-subsystem
-    // executables when spawned from a GUI process (CREATE_NO_WINDOW).
-    #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
     let mut ffmpeg = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg ({ffmpeg_bin}): {e}"))?;
@@ -588,15 +590,188 @@ fn resolve_ffmpeg() -> String {
     "ffmpeg".to_string()
 }
 
-/// Select a ProRes encoder appropriate for the current platform.
-/// - macOS: prores_videotoolbox — hardware-accelerated via Apple VideoToolbox
-/// - Windows/Linux: prores_ks — CPU software ProRes, widely available in ffmpeg builds
-fn ffmpeg_codec() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "prores_videotoolbox"
-    } else {
-        "prores_ks"
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FfmpegEncoder {
+    codec: String,
+    mode: &'static str,
+}
+
+fn ffmpeg_command(ffmpeg_bin: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new(ffmpeg_bin);
+        // Suppress the console window Windows opens for console-subsystem
+        // executables when spawned from a GUI process (CREATE_NO_WINDOW).
+        cmd.creation_flags(0x08000000);
+        cmd
     }
+    #[cfg(not(windows))]
+    {
+        Command::new(ffmpeg_bin)
+    }
+}
+
+/// Select the best alpha-preserving ProRes encoder this FFmpeg can actually run.
+///
+/// Cyclemetry exports transparent overlays as ProRes 4444. Windows/Linux GPU
+/// encoders generally accelerate H.264/HEVC/AV1, not ProRes 4444 with alpha, so
+/// `prores_ks` remains the portable fallback unless FFmpeg gains another working
+/// ProRes hardware encoder on those platforms.
+fn select_ffmpeg_encoder(ffmpeg_bin: &str) -> Result<FfmpegEncoder, String> {
+    if let Ok(codec) = std::env::var("CYCLEMETRY_FFMPEG_CODEC") {
+        let codec = codec.trim();
+        if !codec.is_empty() {
+            log::warn!("render_video: using encoder override CYCLEMETRY_FFMPEG_CODEC={codec}");
+            preflight_ffmpeg_encoder(ffmpeg_bin, codec)
+                .map_err(|e| format!("FFmpeg encoder override '{codec}' failed preflight: {e}"))?;
+            return Ok(FfmpegEncoder {
+                codec: codec.to_string(),
+                mode: "override",
+            });
+        }
+    }
+
+    let encoders = match available_ffmpeg_encoders(ffmpeg_bin) {
+        Ok(encoders) => Some(encoders),
+        Err(e) => {
+            log::warn!("render_video: unable to list FFmpeg encoders: {e}");
+            None
+        }
+    };
+
+    let should_try_videotoolbox = encoders
+        .as_ref()
+        .map(|e| e.contains("prores_videotoolbox"))
+        .unwrap_or_else(|| cfg!(target_os = "macos"));
+    if should_try_videotoolbox {
+        match preflight_ffmpeg_encoder(ffmpeg_bin, "prores_videotoolbox") {
+            Ok(()) => {
+                return Ok(FfmpegEncoder {
+                    codec: "prores_videotoolbox".to_string(),
+                    mode: "hardware",
+                });
+            }
+            Err(e) => {
+                log::warn!(
+                    "render_video: prores_videotoolbox is present but failed preflight; \
+                     falling back to prores_ks: {e}"
+                );
+            }
+        }
+    } else if cfg!(target_os = "macos") {
+        log::warn!("render_video: prores_videotoolbox is not available in this FFmpeg build");
+    }
+
+    if encoder_is_listed(encoders.as_ref(), "prores_ks") {
+        preflight_ffmpeg_encoder(ffmpeg_bin, "prores_ks")
+            .map_err(|e| format!("FFmpeg prores_ks preflight failed: {e}"))?;
+        return Ok(FfmpegEncoder {
+            codec: "prores_ks".to_string(),
+            mode: "software",
+        });
+    }
+
+    Err("FFmpeg does not provide a working ProRes 4444 encoder. Install an FFmpeg build with prores_ks support.".to_string())
+}
+
+fn available_ffmpeg_encoders(ffmpeg_bin: &str) -> Result<HashSet<String>, String> {
+    let output = ffmpeg_command(ffmpeg_bin)
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map_err(|e| format!("failed to run '{ffmpeg_bin} -encoders': {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("'{ffmpeg_bin} -encoders' exited with {}", output.status)
+        } else {
+            format!(
+                "'{ffmpeg_bin} -encoders' exited with {}: {stderr}",
+                output.status
+            )
+        });
+    }
+
+    Ok(parse_ffmpeg_encoder_names(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn parse_ffmpeg_encoder_names(output: &str) -> HashSet<String> {
+    output
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .map(str::to_string)
+        .collect()
+}
+
+fn encoder_is_listed(encoders: Option<&HashSet<String>>, codec: &str) -> bool {
+    encoders.map(|e| e.contains(codec)).unwrap_or(true)
+}
+
+fn preflight_ffmpeg_encoder(ffmpeg_bin: &str, codec: &str) -> Result<(), String> {
+    use std::io::Write as _;
+
+    let mut cmd = ffmpeg_command(ffmpeg_bin);
+    cmd.args([
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "bgra",
+        "-s",
+        "640x360",
+        "-r",
+        "1",
+        "-i",
+        "-",
+        "-frames:v",
+        "1",
+        "-c:v",
+        codec,
+        "-profile:v",
+        "4444",
+        "-f",
+        "null",
+        "-",
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start FFmpeg preflight: {e}"))?;
+
+    let write_error = if let Some(mut stdin) = child.stdin.take() {
+        let frame = vec![0u8; 640 * 360 * 4];
+        stdin.write_all(&frame).err().map(|e| e.to_string())
+    } else {
+        Some("FFmpeg preflight stdin was not available".to_string())
+    };
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to wait for FFmpeg preflight: {e}"))?;
+
+    if output.status.success() && write_error.is_none() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if let Some(e) = write_error {
+        if stderr.is_empty() {
+            format!("failed to write FFmpeg preflight frame: {e}")
+        } else {
+            format!("failed to write FFmpeg preflight frame: {e}; stderr: {stderr}")
+        }
+    } else if stderr.is_empty() {
+        format!("preflight exited with {}", output.status)
+    } else {
+        format!("preflight exited with {}: {stderr}", output.status)
+    })
 }
 
 fn ensure_executable(path: &std::path::Path) {
@@ -610,5 +785,24 @@ fn ensure_executable(path: &std::path::Path) {
                 let _ = std::fs::set_permissions(path, perms);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_ffmpeg_encoder_names() {
+        let encoders = parse_ffmpeg_encoder_names(
+            "Encoders:\n\
+             V....D h264_videotoolbox    VideoToolbox H.264 Encoder\n\
+             VFS... prores_ks            Apple ProRes (iCodec Pro)\n\
+             V....D prores_videotoolbox  VideoToolbox ProRes Encoder\n",
+        );
+
+        assert!(encoders.contains("h264_videotoolbox"));
+        assert!(encoders.contains("prores_ks"));
+        assert!(encoders.contains("prores_videotoolbox"));
     }
 }
