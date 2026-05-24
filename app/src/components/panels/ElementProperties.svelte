@@ -8,6 +8,7 @@
   import Input from '../ui/Input.svelte'
   import Select from '../ui/Select.svelte'
   import Switch from '../ui/Switch.svelte'
+  import ColorInput from '../ui/ColorInput.svelte'
   import AssetPicker from '../overlays/AssetPicker.svelte'
   import * as backend from '../../api/backend.js'
   import { elementTypeName } from '../../lib/elementTypes.js'
@@ -89,6 +90,9 @@
     return item ? { id, item, type: item.type } : null
   })
 
+  // Scene color variables — passed to every ColorInput so vars can be selected
+  const sceneVars = $derived(app.config?.scene?.vars ?? {})
+
   function update(field, raw) {
     const s = selected()
     if (!s) return
@@ -126,14 +130,14 @@
     app.updateElement(s.id, { [obj]: { ...current, [field]: value } })
   }
 
-  // Update points[0] — the tracking marker. Creates it if absent.
+  // Update point — the single tracking marker. Creates it if absent.
   function updatePoint(field, raw) {
     const s = selected()
     if (!s) return
     const numFields = ['weight', 'opacity', 'edge_width']
     const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
-    const current = s.item.points?.[0] ?? {}
-    app.updateElement(s.id, { points: [{ ...current, [field]: value }] })
+    const current = s.item.point ?? {}
+    app.updateElement(s.id, { point: { ...current, [field]: value } })
   }
 
   function courseMarkers() {
@@ -302,7 +306,7 @@
     return (
       it.color ??
       it.line?.color ??
-      it.points?.[0]?.color ??
+      it.point?.color ??
       '#ffffff'
     )
   }
@@ -319,7 +323,7 @@
         line: { ...(it.line ?? {}), color: raw },
         fill: { ...(it.fill ?? {}), color: raw },
       }
-      if (it.points?.[0]) patch.points = [{ ...it.points[0], color: raw }]
+      if (it.point) patch.point = { ...it.point, color: raw }
       if (it.point_label) patch.point_label = { ...it.point_label, color: raw }
       app.updateElement(s.id, patch)
     } else {
@@ -585,12 +589,11 @@
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.color ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.color ?? '#ffffff'} oninput={(e) => update('color', e.target.value)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.color ?? '#ffffff'}
+            vars={sceneVars}
+            onchange={(v) => update('color', v)}
+          />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
@@ -603,14 +606,12 @@
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.border_color ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('border_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.border_color ?? ''} placeholder="none"
-              oninput={(e) => update('border_color', e.target.value || undefined)}
-              class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.border_color ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('border_color', v || undefined)}
+          />
         </label>
         {#if item.border_color}
         <div class="grid grid-cols-2 gap-2">
@@ -785,11 +786,13 @@
           {/if}
           {#each meterGradient() as stop, i (i)}
             <div class="flex gap-2 items-center">
-              <input type="color" value={(stop ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => updateGradientStop(i, e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={stop ?? ''} oninput={(e) => updateGradientStop(i, e.target.value)} class="flex-1 font-mono text-xs" />
-              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1"
+              <ColorInput
+                value={stop ?? '#ffffff'}
+                vars={sceneVars}
+                onchange={(v) => updateGradientStop(i, v)}
+                class="flex-1 min-w-0"
+              />
+              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
                 onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
             </div>
           {/each}
@@ -808,30 +811,22 @@
       {#if !(item.segments >= 1)}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
+        <div class="space-y-2">
+          <label class="space-y-1 block">
             <span class="text-xs text-zinc-500">Low value</span>
-            <div class="flex gap-1 items-center">
-              <input type="color"
-                value={(meterGradient()[0] ?? item.color ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={meterGradient()[0] ?? item.color ?? '#ffffff'}
-                oninput={(e) => updateContinuousGradientStop(0, e.target.value)}
-                class="flex-1 font-mono text-xs min-w-0" />
-            </div>
+            <ColorInput
+              value={meterGradient()[0] ?? item.color ?? '#ffffff'}
+              vars={sceneVars}
+              onchange={(v) => updateContinuousGradientStop(0, v)}
+            />
           </label>
-          <label class="space-y-1">
+          <label class="space-y-1 block">
             <span class="text-xs text-zinc-500">High value</span>
-            <div class="flex gap-1 items-center">
-              <input type="color"
-                value={(meterGradient()[1] ?? item.color ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={meterGradient()[1] ?? item.color ?? '#ffffff'}
-                oninput={(e) => updateContinuousGradientStop(1, e.target.value)}
-                class="flex-1 font-mono text-xs min-w-0" />
-            </div>
+            <ColorInput
+              value={meterGradient()[1] ?? item.color ?? '#ffffff'}
+              vars={sceneVars}
+              onchange={(v) => updateContinuousGradientStop(1, v)}
+            />
           </label>
         </div>
         <label class="space-y-1 block">
@@ -847,14 +842,12 @@
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Background</p>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.background ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('background', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.background ?? ''} placeholder="none"
-              oninput={(e) => update('background', e.target.value || undefined)}
-              class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.background ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('background', v || undefined)}
+          />
         </label>
         {#if item.background}
         <label class="space-y-1 block">
@@ -869,14 +862,12 @@
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.border_color ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('border_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.border_color ?? ''} placeholder="none"
-              oninput={(e) => update('border_color', e.target.value || undefined)}
-              class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.border_color ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('border_color', v || undefined)}
+          />
         </label>
         {#if item.border_color}
         <div class="grid grid-cols-2 gap-2">
@@ -929,14 +920,12 @@
           </div>
           <label class="space-y-1 block">
             <span class="text-xs text-zinc-500">Label color</span>
-            <div class="flex gap-2 items-center">
-              <input type="color" value={(item.scale_color ?? item.color ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => update('scale_color', e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={item.scale_color ?? ''} placeholder="fill color"
-                oninput={(e) => update('scale_color', e.target.value || undefined)}
-                class="flex-1 font-mono text-xs" />
-            </div>
+            <ColorInput
+              value={item.scale_color ?? ''}
+              vars={sceneVars}
+              placeholder="fill color"
+              onchange={(v) => update('scale_color', v || undefined)}
+            />
           </label>
           <label class="space-y-1 block">
             <span class="text-xs text-zinc-500">Suffix</span>
@@ -1044,12 +1033,12 @@
         </div>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Track color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.arc_color ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('arc_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.arc_color ?? ''} placeholder="none" oninput={(e) => update('arc_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.arc_color ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('arc_color', v || undefined)}
+          />
         </label>
         <div class="space-y-1">
           <div class="flex items-center justify-between">
@@ -1062,42 +1051,44 @@
           {/if}
           {#each meterGradient() as stop, i (i)}
             <div class="flex gap-2 items-center">
-              <input type="color" value={(stop ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => updateGradientStop(i, e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={stop ?? ''} oninput={(e) => updateGradientStop(i, e.target.value)} class="flex-1 font-mono text-xs" />
-              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1"
+              <ColorInput
+                value={stop ?? '#ffffff'}
+                vars={sceneVars}
+                onchange={(v) => updateGradientStop(i, v)}
+                class="flex-1 min-w-0"
+              />
+              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
                 onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
             </div>
           {/each}
         </div>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Progress color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.progress_color ?? '#ffffff').slice(0, 7)}
-              oninput={(e) => update('progress_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.progress_color ?? ''} placeholder="none" oninput={(e) => update('progress_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.progress_color ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('progress_color', v || undefined)}
+          />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Needle color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.needle_color ?? '#ef4444').slice(0, 7)}
-              oninput={(e) => update('needle_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.needle_color ?? ''} placeholder="base color" oninput={(e) => update('needle_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.needle_color ?? ''}
+            vars={sceneVars}
+            placeholder="base color"
+            onchange={(v) => update('needle_color', v || undefined)}
+          />
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1 block col-span-2">
             <span class="text-xs text-zinc-500">Cap dot color</span>
-            <div class="flex gap-2 items-center">
-              <input type="color" value={(item.cap_color ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => update('cap_color', e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={item.cap_color ?? ''} placeholder="none" oninput={(e) => update('cap_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
-            </div>
+            <ColorInput
+              value={item.cap_color ?? ''}
+              vars={sceneVars}
+              placeholder="none"
+              onchange={(v) => update('cap_color', v || undefined)}
+            />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Cap radius (px)</span>
@@ -1113,12 +1104,12 @@
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Background color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={(item.background_color ?? '#000000').slice(0, 7)}
-              oninput={(e) => update('background_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={item.background_color ?? ''} placeholder="none" oninput={(e) => update('background_color', e.target.value || undefined)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={item.background_color ?? ''}
+            vars={sceneVars}
+            placeholder="none"
+            onchange={(v) => update('background_color', v || undefined)}
+          />
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
@@ -1143,12 +1134,11 @@
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={colorRow('line', 'color')}
-              oninput={(e) => updateNested('line', 'color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={colorRow('line', 'color')} oninput={(e) => updateNested('line', 'color', e.target.value)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={colorRow('line', 'color')}
+            vars={sceneVars}
+            onchange={(v) => updateNested('line', 'color', v)}
+          />
         </label>
         {/if}
         <label class="space-y-1 block">
@@ -1175,12 +1165,11 @@
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={colorRow('fill', 'color')}
-              oninput={(e) => updateNested('fill', 'color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={colorRow('fill', 'color')} oninput={(e) => updateNested('fill', 'color', e.target.value)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={colorRow('fill', 'color')}
+            vars={sceneVars}
+            onchange={(v) => updateNested('fill', 'color', v)}
+          />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
@@ -1235,14 +1224,11 @@
             {#if (marker.style ?? 'checkered') !== 'checkered'}
             <label class="space-y-1 block">
               <span class="text-xs text-zinc-500">Color</span>
-              <div class="flex gap-2 items-center">
-                <input type="color" value={(marker.color ?? '#ef4444').slice(0, 7)}
-                  oninput={(e) => updateCourseMarker('color', e.target.value)}
-                  class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-                <Input value={marker.color ?? '#ef4444'}
-                  oninput={(e) => updateCourseMarker('color', e.target.value)}
-                  class="flex-1 font-mono text-xs" />
-              </div>
+              <ColorInput
+                value={marker.color ?? '#ef4444'}
+                vars={sceneVars}
+                onchange={(v) => updateCourseMarker('color', v)}
+              />
             </label>
             {/if}
             <div class="grid grid-cols-2 gap-2">
@@ -1276,19 +1262,18 @@
       </section>
       {/if}
 
-      <!-- Tracking point — points[0] -->
-      {@const pt = item.points?.[0] ?? {}}
+      <!-- Tracking point -->
+      {@const pt = item.point ?? {}}
       <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Tracking Point</p>
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={pt.color ?? '#ffffff'}
-              oninput={(e) => updatePoint('color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={pt.color ?? '#ffffff'} oninput={(e) => updatePoint('color', e.target.value)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={pt.color ?? '#ffffff'}
+            vars={sceneVars}
+            onchange={(v) => updatePoint('color', v)}
+          />
         </label>
         {/if}
         <label class="space-y-1 block">
@@ -1299,12 +1284,11 @@
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Edge Color</span>
-          <div class="flex gap-2 items-center">
-            <input type="color" value={pt.edge_color ?? '#000000'}
-              oninput={(e) => updatePoint('edge_color', e.target.value)}
-              class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-            <Input value={pt.edge_color ?? '#000000'} oninput={(e) => updatePoint('edge_color', e.target.value)} class="flex-1 font-mono text-xs" />
-          </div>
+          <ColorInput
+            value={pt.edge_color ?? '#000000'}
+            vars={sceneVars}
+            onchange={(v) => updatePoint('edge_color', v)}
+          />
         </label>
         {#if !(pt.remove_edge_color ?? false)}
         <label class="space-y-1 block">
@@ -1367,12 +1351,11 @@
           </label>
           <label class="space-y-1 block">
             <span class="text-xs text-zinc-500">Color</span>
-            <div class="flex gap-2 items-center">
-              <input type="color" value={(pl.color ?? '#ffffff').slice(0, 7)}
-                oninput={(e) => updatePL('color', e.target.value)}
-                class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5" />
-              <Input value={pl.color ?? '#ffffffc8'} oninput={(e) => updatePL('color', e.target.value)} class="flex-1 font-mono text-xs" />
-            </div>
+            <ColorInput
+              value={pl.color ?? '#ffffffc8'}
+              vars={sceneVars}
+              onchange={(v) => updatePL('color', v)}
+            />
           </label>
           <div class="flex gap-2">
             <label class="space-y-1 block flex-1">
@@ -1438,28 +1421,20 @@
       {#if showAdvanced}
       <label class="space-y-1 block">
         <span class="text-xs text-zinc-500">Color</span>
-        <div class="flex gap-2 items-center">
-          <input
-            type="color"
-            value={item.color ?? '#ffffff'}
-            oninput={(e) => update('color', e.target.value)}
-            class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5"
-          />
-          <Input value={item.color ?? '#ffffff'} oninput={(e) => update('color', e.target.value)} class="flex-1 font-mono text-xs" />
-        </div>
+        <ColorInput
+          value={item.color ?? '#ffffff'}
+          vars={sceneVars}
+          onchange={(v) => update('color', v)}
+        />
       </label>
       {:else}
       <label class="space-y-1 block">
         <span class="text-xs text-zinc-500">Color</span>
-        <div class="flex gap-2 items-center">
-          <input
-            type="color"
-            value={primaryColor().slice(0, 7)}
-            oninput={(e) => setAllColors(e.target.value)}
-            class="h-7 w-10 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5"
-          />
-          <Input value={primaryColor()} oninput={(e) => setAllColors(e.target.value)} class="flex-1 font-mono text-xs" />
-        </div>
+        <ColorInput
+          value={primaryColor()}
+          vars={sceneVars}
+          onchange={(v) => setAllColors(v)}
+        />
       </label>
       {/if}
       {#if showAdvanced}

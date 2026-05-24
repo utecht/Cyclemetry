@@ -62,7 +62,7 @@ fn default_fps() -> u32 {
 }
 
 /// A single overlay element. Internally tagged by `type`; every variant's
-/// config carries a stable `id` used for z-order (`scene.layers`) and the
+/// config carries a stable `id` used for z-order (elements array order) and
 /// frontend selection. Adding a new graphic = one new variant + one
 /// `OverlayElement` impl (see frame.rs) + one `scale` arm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +119,10 @@ impl Element {
                     pl.font_size = pl.font_size.map(|v| v * f32f);
                     pl.x_offset = pl.x_offset.map(|v| v * f32f);
                     pl.y_offset = pl.y_offset.map(|v| v * f32f);
+                }
+                if let Some(p) = c.point.as_mut() {
+                    p.weight = p.weight.map(|v| v * f32f);
+                    p.edge_width = p.edge_width.map(|v| v * f32f);
                 }
                 if let Some(points) = c.points.as_mut() {
                     for p in points {
@@ -230,6 +234,12 @@ pub struct PlotConfig {
     pub line: Option<LineConfig>,
     pub fill: Option<FillConfig>,
     pub margin: Option<f64>,
+    /// Single position marker for the current-value dot (preferred schema).
+    pub point: Option<PointConfig>,
+    /// Legacy: a list of markers — only the first entry is used. Kept for
+    /// backward-compat with user templates authored before the schema change;
+    /// new saves always write `point` instead. See `effective_point()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<PointConfig>>,
     pub markers: Option<Vec<CourseMarkerConfig>>,
     pub point_label: Option<PointLabelConfig>,
@@ -463,8 +473,16 @@ pub struct ImageConfig {
 }
 
 impl PlotConfig {
+    /// Returns the single tracking-point config, preferring `point` over the
+    /// legacy `points[0]` so both old and new template schemas work.
+    pub fn effective_point(&self) -> Option<&PointConfig> {
+        self.point
+            .as_ref()
+            .or_else(|| self.points.as_ref()?.first())
+    }
+
     pub fn has_position_markers(&self) -> bool {
-        self.points.as_ref().map(|p| !p.is_empty()).unwrap_or(false)
+        self.effective_point().is_some()
     }
 
     pub fn line_color(&self) -> String {

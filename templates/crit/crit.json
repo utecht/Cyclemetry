@@ -8,7 +8,10 @@
     "height": 2160,
     "opacity": 0.5,
     "start": 0,
-    "width": 3840
+    "width": 3840,
+    "vars": {
+      "primary": "#f4f4f4"
+    }
   },
   "elements": [
     {
@@ -46,26 +49,24 @@
     {
       "type": "plot",
       "id": "plot-0",
-      "color": "#f4f4f4",
+      "color": "$primary",
       "height": 500,
       "line": {
         "width": 6
       },
       "margin": 0.1,
-      "points": [
-        {
-          "weight": 1000
-        }
-      ],
       "value": "course",
       "width": 500,
       "x": 51,
-      "y": 51
+      "y": 51,
+      "point": {
+        "weight": 1000
+      }
     },
     {
       "type": "plot",
       "id": "plot-1",
-      "color": "#f4f4f4",
+      "color": "$primary",
       "fill": {
         "opacity": 0.65
       },
@@ -74,15 +75,13 @@
         "width": 10
       },
       "margin": 0.1,
-      "points": [
-        {
-          "weight": 1200
-        }
-      ],
       "value": "elevation",
       "width": 3840,
       "x": 0,
-      "y": 1760
+      "y": 1760,
+      "point": {
+        "weight": 1200
+      }
     },
     {
       "type": "value",

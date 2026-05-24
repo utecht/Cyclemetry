@@ -4,7 +4,12 @@
     "height": 2160,
     "start": 0,
     "color": "#ffffff",
-    "opacity": 1
+    "opacity": 1,
+    "vars": {
+      "primary": "#ffffff",
+      "accent": "#e86520",
+      "gold": "#c8a800"
+    }
   },
   "elements": [
     {
@@ -20,13 +25,13 @@
       "unit": "mph",
       "gradient": [
         "#cc2e1a",
-        "#e86520",
-        "#c8a800"
+        "$accent",
+        "$gold"
       ],
-      "progress_color": "#e86520",
+      "progress_color": "$accent",
       "arc_color": "#ffffff20",
       "arc_width": 36,
-      "cap_color": "#ffffff",
+      "cap_color": "$primary",
       "cap_radius": 18,
       "needle_width": 0,
       "background_color": "#1c1c1c",
@@ -40,7 +45,7 @@
       "x": 1920,
       "y": 1120,
       "font_size": 160,
-      "color": "#ffffff",
+      "color": "$primary",
       "unit": "mph",
       "text_align": "center",
       "decimal_rounding": 0
@@ -52,7 +57,7 @@
       "x": 1920,
       "y": 1215,
       "font_size": 55,
-      "color": "#c8a800",
+      "color": "$gold",
       "text_align": "center"
     }
   ]

@@ -485,10 +485,14 @@ fn backend_list_templates() -> Result<String, String> {
         let name = name_os.to_string_lossy();
         if ftype.is_file() && name.ends_with(".json") {
             let fname = name.to_string();
+            let path = dir.join(&fname);
+            if !is_template_json_file(&path) {
+                continue;
+            }
             let display = template_display_name(fname.trim_end_matches(".json"));
             let sidecar = dir.join(format!("{fname}.remote"));
             let type_label = if sidecar.exists() {
-                let current = std::fs::read_to_string(dir.join(&fname)).unwrap_or_default();
+                let current = std::fs::read_to_string(&path).unwrap_or_default();
                 let reference = std::fs::read_to_string(&sidecar).unwrap_or_default();
                 if current.trim() == reference.trim() {
                     "community"
@@ -509,6 +513,22 @@ fn backend_list_templates() -> Result<String, String> {
         }
     }
     Ok(serde_json::to_string(&templates).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn is_template_json_file(path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        return false;
+    };
+    let Some(root) = value.as_object() else {
+        return false;
+    };
+    root.get("scene").is_some_and(serde_json::Value::is_object)
+        && root
+            .get("elements")
+            .is_none_or(|elements| elements.is_array() || elements.is_null())
 }
 
 #[tauri::command]

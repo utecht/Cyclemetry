@@ -26,6 +26,12 @@ const SCALAR_DEFAULTS = {
 const EMPTY_ARRAY_DEFAULTS = new Set(['scale_labels'])
 
 /**
+ * Fields that are always stripped from the saved JSON regardless of value.
+ * These are editor-only caches derivable from the source file at load time.
+ */
+const STRIP_ALWAYS = new Set(['natural_width', 'natural_height'])
+
+/**
  * Recursively strip default-valued fields from an element or its sub-objects.
  * Creates a new object — does not mutate the input.
  */
@@ -33,6 +39,7 @@ function stripObj(obj) {
   if (obj === null || typeof obj !== 'object') return obj
   const out = {}
   for (const [k, v] of Object.entries(obj)) {
+    if (STRIP_ALWAYS.has(k)) continue
     if (
       Object.prototype.hasOwnProperty.call(SCALAR_DEFAULTS, k) &&
       v === SCALAR_DEFAULTS[k]

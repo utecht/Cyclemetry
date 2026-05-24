@@ -312,7 +312,7 @@ export const ADD_PRESETS = [
       opacity: 1,
       line: { color: '#ffffff', width: 1.5 },
       fill: { opacity: 0.25, color: '#ffffff' },
-      points: [{ color: '#ffffff', weight: 80, remove_edge_color: true }],
+      point: { color: '#ffffff', weight: 80, remove_edge_color: true },
     }),
   },
   {
@@ -328,7 +328,7 @@ export const ADD_PRESETS = [
       height: 200,
       opacity: 1,
       line: { color: '#ffffff', width: 1.5 },
-      points: [{ color: '#ef4444', weight: 80, edge_color: '#ffffff' }],
+      point: { color: '#ef4444', weight: 80, edge_color: '#ffffff' },
     }),
   },
   {

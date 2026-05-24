@@ -9,16 +9,14 @@
         "width": 10
       },
       "margin": 0.1,
-      "points": [
-        {
-          "weight": 2000
-        }
-      ],
       "type": "plot",
       "value": "course",
       "width": 600,
       "x": 3204,
-      "y": 40
+      "y": 40,
+      "point": {
+        "weight": 2000
+      }
     },
     {
       "fill": {
@@ -27,22 +25,20 @@
       "height": 250,
       "id": "plot-1",
       "line": {
-        "color": "#ffffff",
+        "color": "$primary",
         "width": 5
       },
-      "points": [
-        {
-          "color": "#eed105",
-          "edge_color": "#eed105",
-          "edge_width": 0,
-          "weight": 800
-        }
-      ],
       "type": "plot",
       "value": "elevation",
       "width": 900,
       "x": 0,
-      "y": 1910
+      "y": 1910,
+      "point": {
+        "color": "$accent",
+        "edge_color": "$accent",
+        "edge_width": 0,
+        "weight": 800
+      }
     },
     {
       "font_size": 80,
@@ -77,14 +73,14 @@
     {
       "arc_color": "#ffffff55",
       "arc_width": 14,
-      "color": "#ffffff",
+      "color": "$primary",
       "height": 80,
       "id": "gauge-0",
       "max": 50,
       "min": 0,
       "needle_color": "#d6d6d6",
       "needle_width": 6,
-      "progress_color": "#ffffff",
+      "progress_color": "$primary",
       "type": "gauge",
       "value": "speed",
       "width": 80,
@@ -100,10 +96,10 @@
       "y": 1858
     },
     {
-      "background": "#ffffff",
+      "background": "$primary",
       "background_opacity": 0,
       "border_width": 20,
-      "color": "#ffffff",
+      "color": "$primary",
       "direction": "right",
       "fill_opacity": 1,
       "gradient": [
@@ -131,8 +127,6 @@
       "file": "white_heart.png",
       "height": 80,
       "id": "image-0",
-      "natural_height": 1500,
-      "natural_width": 1500,
       "pulse_metric": "heartrate",
       "type": "image",
       "width": 80,
@@ -142,14 +136,14 @@
     {
       "arc_color": "#ffffff55",
       "arc_width": 14,
-      "color": "#ffffff",
+      "color": "$primary",
       "height": 360,
       "id": "gauge-1",
       "max": 60,
       "min": 0,
       "needle_color": "#ef4444",
       "needle_width": 6,
-      "progress_color": "#ffffff",
+      "progress_color": "$primary",
       "type": "gauge",
       "value": "speed",
       "width": 360,
@@ -186,6 +180,10 @@
           "name": "power group"
         }
       ]
+    },
+    "vars": {
+      "primary": "#ffffff",
+      "accent": "#eed105"
     }
   }
 }

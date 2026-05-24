@@ -403,7 +403,19 @@ export function createAppState() {
       const withoutLocked = Object.fromEntries(
         Object.entries(withoutBbox).filter(([k]) => k !== 'locked'),
       )
-      return isLocked ? { ...withoutLocked, locked: true } : withoutLocked
+      const base = isLocked ? { ...withoutLocked, locked: true } : withoutLocked
+      // Migrate legacy points: [{...}] → point: {...} for plot elements.
+      // Only the first entry is ever used; the array form was pure nesting noise.
+      if (
+        base.type === 'plot' &&
+        Array.isArray(base.points) &&
+        base.points.length > 0
+      ) {
+        // eslint-disable-next-line no-unused-vars
+        const { points: _pts, ...rest } = base
+        return { ...rest, point: base.point ?? base.points[0] }
+      }
+      return base
     })
 
     const sceneBase = Object.fromEntries(

@@ -1,7 +1,7 @@
 {
   "elements": [
     {
-      "color": "#797979",
+      "color": "$card",
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-1",
@@ -12,7 +12,7 @@
       "y": 1820
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "font_size": 60,
       "id": "label-3",
       "text": "KPH",
@@ -31,7 +31,7 @@
       "y": 1950
     },
     {
-      "color": "#797979",
+      "color": "$card",
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-2",
@@ -52,7 +52,7 @@
       "y": 1790
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "font_size": 60,
       "id": "label-4",
       "text": "MPH",
@@ -61,7 +61,7 @@
       "y": 1790
     },
     {
-      "color": "#797979",
+      "color": "$card",
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-0",
@@ -90,7 +90,7 @@
       "y": 2080
     },
     {
-      "color": "#797979",
+      "color": "$card",
       "fill_opacity": 1,
       "height": 150,
       "id": "rect-3",
@@ -113,7 +113,7 @@
       "y": 140
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "fill_opacity": 0.2,
       "height": 140,
       "id": "rect-4",
@@ -132,7 +132,7 @@
       "y": 2105
     },
     {
-      "background": "#ffffff",
+      "background": "$primary",
       "background_opacity": 0,
       "border_color": "#000",
       "border_width": 10,
@@ -154,7 +154,7 @@
       "y": 2010
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "font_size": 70,
       "id": "label-1",
       "text": "BPM",
@@ -163,7 +163,7 @@
       "y": 2105
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "fill_opacity": 0.2,
       "height": 140,
       "id": "rect-5",
@@ -174,7 +174,7 @@
       "y": 1840
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "font_size": 70,
       "id": "label-0",
       "text": "W",
@@ -191,7 +191,7 @@
       "y": 1955
     },
     {
-      "background": "#ffffff",
+      "background": "$primary",
       "background_opacity": 0,
       "border_color": "#000",
       "border_width": 10,
@@ -213,7 +213,7 @@
       "y": 1860
     },
     {
-      "color": "#ffffff",
+      "color": "$primary",
       "fill": {
         "opacity": 0
       },
@@ -224,27 +224,23 @@
       },
       "margin": 0.1,
       "opacity": 0.5,
-      "points": [
-        {
-          "color": "#ffda01",
-          "edge_color": "#710e0b",
-          "edge_width": 8,
-          "weight": 1000
-        }
-      ],
       "rotation": 90,
       "type": "plot",
       "value": "course",
       "width": 600,
       "x": 2538,
-      "y": 1314
+      "y": 1314,
+      "point": {
+        "color": "#ffda01",
+        "edge_color": "#710e0b",
+        "edge_width": 8,
+        "weight": 1000
+      }
     },
     {
       "file": "bolt.svg",
       "height": 124,
       "id": "image-0",
-      "natural_height": 510,
-      "natural_width": 410,
       "type": "image",
       "width": 100,
       "x": 1272,
@@ -254,8 +250,6 @@
       "file": "white_heart.png",
       "height": 125,
       "id": "image-1",
-      "natural_height": 1214,
-      "natural_width": 1295,
       "type": "image",
       "width": 133,
       "x": 1256,
@@ -265,8 +259,6 @@
       "file": "checkered_flag.webp",
       "height": 100,
       "id": "image-2",
-      "natural_height": 200,
-      "natural_width": 200,
       "rotation": 333,
       "type": "image",
       "width": 100,
@@ -277,8 +269,6 @@
       "file": "red_heart.png",
       "height": 94,
       "id": "image-3",
-      "natural_height": 1214,
-      "natural_width": 1295,
       "type": "image",
       "width": 100,
       "x": 1275,
@@ -369,6 +359,10 @@
         "rect-5",
         "meter-1"
       ]
+    },
+    "vars": {
+      "primary": "#ffffff",
+      "card": "#797979"
     }
   }
 }

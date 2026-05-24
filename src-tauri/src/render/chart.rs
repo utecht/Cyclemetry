@@ -223,7 +223,10 @@ impl ChartCache {
             y_min: y_min_out,
             y_max: y_max_out,
             plot_bounds,
-            point_configs: config.points.clone().unwrap_or_default(),
+            point_configs: config
+                .effective_point()
+                .map(|p| vec![p.clone()])
+                .unwrap_or_default(),
             markers: if is_course {
                 config.markers.clone().unwrap_or_default()
             } else {
