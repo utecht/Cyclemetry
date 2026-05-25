@@ -29,6 +29,7 @@ export default async function loadGpx(fileOrPath, state) {
   // Persist the copied filename, not the original absolute path, so macOS does
   // not request Downloads/Desktop/Documents access again on the next launch.
   state.gpxFilename = result.filename ?? displayName
+  state.gpxStartTime = result.start_time ?? null
 
   const duration = result.duration_seconds
   if (duration > 0) {

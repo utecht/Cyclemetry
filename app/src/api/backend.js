@@ -190,6 +190,22 @@ export const getActivityMetricRange = (
   })
 
 /**
+ * @typedef {Object} VideoProbe
+ * @property {string} path - absolute path on disk
+ * @property {number|null} duration - seconds
+ * @property {string|null} creation_time - ISO 8601 from container metadata
+ * @property {string|null} codec - e.g. "h264", "hevc", "prores"
+ * @property {number} width
+ * @property {number} height
+ */
+
+/**
+ * @param {string} path - absolute path to the video file
+ * @returns {Promise<VideoProbe>}
+ */
+export const probeVideo = (path) => invoke('probe_video', { path })
+
+/**
  * @param {File} file
  * @returns {Promise<string>} stored gpx filename
  */

@@ -27,6 +27,15 @@ export function createAppState() {
   let gpxFilename = $state(
     storedActivityName(localStorage.getItem('gpxFilename')),
   )
+  // Wall-clock UTC (ISO 8601) of the first GPX sample. `null` for sources
+  // without timestamps. Set by the GPX load flow; used by the alignment
+  // timeline to position the video clip on the activity's real-time axis.
+  let gpxStartTime = $state(localStorage.getItem('gpxStartTime') || null)
+  // Reference video for timeline alignment + (Phase 4) live overlay preview.
+  // Stored by absolute path — file stays in place on disk; we never copy it.
+  // `missing: true` means the path persisted from a prior session but the file
+  // is no longer there, so the UI can prompt for relink.
+  let video = $state(parseLocalStorage('projectVideo'))
   const initialActivityDuration =
     parseFloat(localStorage.getItem('activityDuration') ?? '73') || 73
   let activityDuration = $state(initialActivityDuration)
@@ -90,6 +99,14 @@ export function createAppState() {
     else localStorage.removeItem('gpxFilename')
   })
   $effect(() => {
+    if (video) localStorage.setItem('projectVideo', JSON.stringify(video))
+    else localStorage.removeItem('projectVideo')
+  })
+  $effect(() => {
+    if (gpxStartTime) localStorage.setItem('gpxStartTime', gpxStartTime)
+    else localStorage.removeItem('gpxStartTime')
+  })
+  $effect(() => {
     localStorage.setItem('activityDuration', String(activityDuration))
   })
   $effect(() => {
@@ -137,6 +154,77 @@ export function createAppState() {
   function confirmIfModified(run) {
     if (templateModified()) pendingDiscard = run
     else run()
+  }
+
+  // ── Reference video ──────────────────────────────────────────────────────
+  // Probe the file, capture container metadata, store by absolute path.
+  // The video stays where the user put it on disk; we never copy.
+  async function loadVideo(absolutePath) {
+    if (!absolutePath) return
+    try {
+      const probe = await backend.probeVideo(absolutePath)
+      video = {
+        path: probe.path,
+        duration: probe.duration,
+        creationTime: probe.creation_time,
+        codec: probe.codec,
+        width: probe.width,
+        height: probe.height,
+        userOffsetSec: 0,
+        missing: false,
+      }
+      // Bump preview FPS so the overlay animation tracks the video instead
+      // of snapping every 200ms. Only when the user is at the default (5);
+      // a deliberate non-default choice is preserved.
+      if (previewFps === 5) previewFps = 15
+    } catch (e) {
+      errorMessage = `Could not read video: ${e?.message ?? e}`
+    }
+  }
+
+  async function pickAndLoadVideo() {
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: 'Video',
+          extensions: [
+            'mp4',
+            'mov',
+            'm4v',
+            'mkv',
+            'webm',
+            'avi',
+            '360',
+            'insv',
+          ],
+        },
+      ],
+      title: 'Select reference video',
+    })
+    if (!selected) return
+    await loadVideo(selected)
+  }
+
+  function clearVideo() {
+    video = null
+  }
+
+  function setVideoOffset(seconds) {
+    if (!video) return
+    video = { ...video, userOffsetSec: seconds }
+  }
+
+  // Mark the video missing if its file disappeared between sessions. Cheap
+  // re-probe is fine — ffmpeg refuses fast on a missing path.
+  async function verifyVideo() {
+    if (!video?.path) return
+    try {
+      await backend.probeVideo(video.path)
+      if (video.missing) video = { ...video, missing: false }
+    } catch {
+      if (!video.missing) video = { ...video, missing: true }
+    }
   }
 
   async function fetchDefaultOutputDir() {
@@ -865,6 +953,20 @@ export function createAppState() {
     set gpxFilename(v) {
       gpxFilename = v
     },
+    get gpxStartTime() {
+      return gpxStartTime
+    },
+    set gpxStartTime(v) {
+      gpxStartTime = v
+    },
+    get video() {
+      return video
+    },
+    loadVideo,
+    pickAndLoadVideo,
+    clearVideo,
+    setVideoOffset,
+    verifyVideo,
     get activityDuration() {
       return activityDuration
     },

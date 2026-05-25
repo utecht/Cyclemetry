@@ -1,6 +1,6 @@
 <script>
   import { getContext } from 'svelte'
-  import { Plus, X } from 'lucide-svelte'
+  import { Plus, X, Film, AlertTriangle } from 'lucide-svelte'
   import TemplateSection from '../panels/TemplateSection.svelte'
   import ElementList from '../panels/ElementList.svelte'
   import Select from '../ui/Select.svelte'
@@ -59,6 +59,11 @@
     }
     const n = Number(str)
     return !isNaN(n) && n >= 0 ? n : NaN
+  }
+
+  function videoBasename(path) {
+    if (!path) return ''
+    return path.split(/[\\/]/).pop()
   }
 
   let timelineError = $derived.by(() => {
@@ -291,6 +296,105 @@
       </div>
     </section>
   {/if}
+
+  <!-- Reference video (Phase 1: probe + metadata only) -->
+  <section class="px-4 py-3 border-b border-zinc-800 space-y-2">
+    <p
+      class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+    >
+      Video
+    </p>
+
+    {#if !app.video}
+      <button
+        onclick={() => app.pickAndLoadVideo()}
+        class="w-full h-7 rounded-[6px] border border-dashed border-zinc-700
+               bg-zinc-800/30 px-2 text-xs text-zinc-400
+               hover:border-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60
+               flex items-center justify-center gap-1.5
+               transition-colors duration-[150ms]"
+      >
+        <Film size={12} />
+        Add video…
+      </button>
+      <p class="text-[10px] text-zinc-600 leading-snug">
+        Optional: load a video to align overlay start/end against real footage.
+      </p>
+    {:else}
+      {#if app.video.missing}
+        <div
+          class="rounded-[6px] border border-red-900/60 bg-red-950/30 px-2 py-1.5 space-y-1.5"
+        >
+          <div class="flex items-start gap-1.5 text-[11px] text-red-300">
+            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
+            <span class="leading-snug">Video file is missing or moved.</span>
+          </div>
+          <div class="flex gap-1.5">
+            <button
+              onclick={() => app.pickAndLoadVideo()}
+              class="flex-1 h-6 rounded border border-red-800/60 bg-red-900/40
+                     px-2 text-[11px] text-red-100
+                     hover:bg-red-900/70 transition-colors"
+              >Locate video…</button
+            >
+            <button
+              onclick={() => app.clearVideo()}
+              class="h-6 px-2 rounded border border-zinc-700 text-[11px]
+                     text-zinc-400 hover:text-zinc-200 hover:border-zinc-500
+                     transition-colors"
+              >Remove</button
+            >
+          </div>
+        </div>
+      {/if}
+
+      <div class="space-y-1">
+        <div class="flex items-center gap-1.5">
+          <Film size={11} class="text-zinc-500 shrink-0" />
+          <span
+            class="text-[11px] text-zinc-300 truncate font-mono"
+            title={app.video.path}>{videoBasename(app.video.path)}</span
+          >
+          <button
+            onclick={() => app.clearVideo()}
+            title="Remove video"
+            class="ml-auto h-5 w-5 shrink-0 rounded flex items-center
+                   justify-center text-zinc-600 hover:text-zinc-300
+                   hover:bg-zinc-700 transition-colors"
+          >
+            <X size={11} />
+          </button>
+        </div>
+        <div class="text-[10px] text-zinc-500 font-mono tabular-nums">
+          {app.video.width}×{app.video.height}{app.video.codec
+            ? ` · ${app.video.codec}`
+            : ''}{app.video.duration
+            ? ` · ${secToTimecode(app.video.duration)}`
+            : ''}
+        </div>
+        {#if app.video.creationTime}
+          <div
+            class="text-[10px] text-zinc-600 font-mono truncate"
+            title={app.video.creationTime}
+          >
+            recorded {app.video.creationTime}
+          </div>
+        {:else}
+          <div class="text-[10px] text-zinc-600 leading-snug">
+            No recording timestamp in container metadata — Phase 2 timeline
+            alignment will need a manual offset.
+          </div>
+        {/if}
+        <button
+          onclick={() => app.pickAndLoadVideo()}
+          class="h-6 px-2 rounded border border-zinc-700 bg-zinc-800/40
+                 text-[11px] text-zinc-400 hover:text-zinc-200
+                 hover:border-zinc-500 transition-colors"
+          >Replace…</button
+        >
+      </div>
+    {/if}
+  </section>
 
   <ElementList />
 </aside>

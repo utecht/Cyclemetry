@@ -950,19 +950,45 @@ fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String
     gpx_metadata_response(&filename, &dest.to_string_lossy())
 }
 
-/// Parse GPX at `path` and return `{ filename, duration_seconds, has_data }`.
+/// Parse GPX at `path` and return `{ filename, duration_seconds, has_data, start_time }`.
+/// `start_time` is the wall-clock UTC of the first recorded sample (ISO 8601)
+/// when the source contained timestamps, else `null` — the alignment timeline
+/// needs it to map activity time onto the video's `creation_time` axis.
 fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
-    let duration = match render::activity::Activity::from_file(path) {
-        Ok(activity) => activity.elapsed_duration().unwrap_or(0.0),
-        Err(_) => 0.0,
+    use chrono::{TimeZone, Utc};
+    let (duration, start_time) = match render::activity::Activity::from_file(path) {
+        Ok(activity) => {
+            let dur = activity.elapsed_duration().unwrap_or(0.0);
+            let start = activity.start_time_ms.and_then(|ms| {
+                Utc.timestamp_millis_opt(ms)
+                    .single()
+                    .map(|dt| dt.to_rfc3339())
+            });
+            (dur, start)
+        }
+        Err(_) => (0.0, None),
     };
     Ok(serde_json::json!({
         "data": "file loaded",
         "filename": filename,
         "duration_seconds": duration,
         "has_data": duration > 0.0,
+        "start_time": start_time,
     })
     .to_string())
+}
+
+// ─── Video probe ──────────────────────────────────────────────────────────────
+
+/// Read container metadata for a video file via the bundled ffmpeg binary.
+/// Used by the timeline alignment UI — duration + creation_time let us map
+/// the video onto the GPX's real-time axis; codec drives the future proxy-
+/// transcode decision; width/height feed the preview canvas sizing.
+#[tauri::command]
+async fn probe_video(path: String) -> Result<render::video::VideoProbe, String> {
+    tokio::task::spawn_blocking(move || render::video::probe(&path))
+        .await
+        .map_err(|e| format!("Probe task join error: {e}"))?
 }
 
 /// Return total activity distance and the overlay window bounds in metres.
@@ -1698,6 +1724,7 @@ pub fn run() {
             backend_open_video,
             backend_load_gpx,
             backend_upload,
+            probe_video,
             backend_community_templates,
             backend_install_community_template,
             backend_delete_template,
@@ -1852,11 +1879,13 @@ pub fn run() {
                     None::<&str>,
                 )?;
 
+                let add_video =
+                    MenuItem::with_id(app, "add_video", "Add Video…", true, None::<&str>)?;
                 let file_submenu = Submenu::with_items(
                     app,
                     "File",
                     true,
-                    &[&open_gpx, &open_recent, &file_sep1, &show_dl],
+                    &[&open_gpx, &open_recent, &add_video, &file_sep1, &show_dl],
                 )?;
 
                 // ── Activities menu ───────────────────────────────────────
@@ -2014,6 +2043,9 @@ pub fn run() {
                         "open_gpx" | "activities_open_gpx" => {
                             app_handle.emit("menu_open_gpx", ()).ok();
                         }
+                        "add_video" => {
+                            app_handle.emit("menu_add_video", ()).ok();
+                        }
                         "activities_show_folder" => {
                             app_handle.emit("menu_show_activities", ()).ok();
                         }
@@ -2084,6 +2116,8 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                let add_video =
+                    MenuItem::with_id(app, "add_video", "Add Video...", true, None::<&str>)?;
                 let file_submenu = Submenu::with_items(
                     app,
                     "File",
@@ -2092,6 +2126,7 @@ pub fn run() {
                         &settings,
                         &PredefinedMenuItem::separator(app)?,
                         &open_gpx,
+                        &add_video,
                         &show_dl,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::quit(app, None)?,
@@ -2246,6 +2281,9 @@ pub fn run() {
                         }
                         "open_gpx" => {
                             app_handle.emit("menu_open_gpx", ()).ok();
+                        }
+                        "add_video" => {
+                            app_handle.emit("menu_add_video", ()).ok();
                         }
                         "activities_show_folder" => {
                             app_handle.emit("menu_show_activities", ()).ok();

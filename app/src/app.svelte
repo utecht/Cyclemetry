@@ -86,6 +86,7 @@
     app.fetchTemplates()
     app.fetchFonts()
     app.fetchDefaultOutputDir()
+    app.verifyVideo()
     if (import.meta.env.DEV) backend.appBuildInfo().then(s => { buildInfo = s }).catch(() => {})
 
     if (typeof window.__TAURI__ !== 'undefined') {
@@ -106,6 +107,7 @@
         listen('menu_paste',            () => { if (app.copiedElement) app.pasteElement() }),
         listen('menu_browse_community_templates', () => { app.showTemplatePicker = true }),
         listen('menu_add_custom_font',  () => app.addCustomFont().catch(e => { app.errorMessage = e.message })),
+        listen('menu_add_video',        () => app.pickAndLoadVideo().catch(e => { app.errorMessage = e.message })),
       ]
       return () => unlisteners.forEach(p => p.then(fn => fn()))
     }

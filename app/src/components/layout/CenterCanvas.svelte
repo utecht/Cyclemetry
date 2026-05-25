@@ -6,8 +6,10 @@
   import { getContext, untrack } from 'svelte'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import PreviewCanvas from '../canvas/PreviewCanvas.svelte'
+  import VideoBackdrop from '../canvas/VideoBackdrop.svelte'
   import WysiwygLayer from '../canvas/WysiwygLayer.svelte'
   import PlaybackControls from '../canvas/PlaybackControls.svelte'
+  import AlignmentTimeline from '../canvas/AlignmentTimeline.svelte'
   import * as backend from '@/api/backend.js'
 
   const app = getContext('app')
@@ -425,6 +427,9 @@
             background-position: 0 0, 0 8px, 8px -8px, -8px 0px;` : ''}
         ></div>
 
+        <!-- Reference video backdrop — driven by selectedSecond, hidden when out of range -->
+        <VideoBackdrop {playing} />
+
         <!-- Rendered frame -->
         {#if sceneInvalid}
           <!-- Invalid timeline range — shown first so it always wins over stale frame/spinner -->
@@ -490,6 +495,11 @@
       </div>
     {/if}
   </div>
+
+  <!-- Alignment timeline (only when a reference video is loaded) -->
+  {#if app.video && !app.video.missing}
+    <AlignmentTimeline />
+  {/if}
 
   <!-- Playback controls (fixed at bottom of canvas area) -->
   <PlaybackControls
