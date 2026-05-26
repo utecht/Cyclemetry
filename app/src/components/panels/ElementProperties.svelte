@@ -45,6 +45,7 @@
     { value: 'overlay_end', label: 'Until overlay end' },
     { value: 'activity_end', label: 'Until activity end' },
     { value: 'custom', label: 'Until custom point' },
+    { value: 'since_custom', label: 'Since custom point' },
   ]
   // Per-metric explicit unit options. Metrics absent from this map (gradient,
   // power, cadence, heartrate, time) have no unit choice and render raw.
@@ -1463,11 +1464,18 @@
             onchange={(v) => update('distance_reference', v)}
           />
         </label>
-        {#if item.distance_reference === 'custom'}
+        {#if item.distance_reference === 'custom' || item.distance_reference === 'since_custom'}
         <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Target ({displayUnit('distance', item.unit)})</span>
+          <span class="text-xs text-zinc-500">Point ({displayUnit('distance', item.unit)})</span>
+          {#if displayUnit('distance', item.unit) === 'm'}
+          <Input type="number"
+            value={item.distance_target != null ? Math.round(item.distance_target) : ''}
+            min={0} step={1}
+            oninput={(e) => app.updateElement(selected().id, { distance_target: e.target.value === '' ? undefined : Math.round(Number(e.target.value)) })} />
+          {:else}
           <Input type="number" value={numVal(item, 'distance_target')} min={0} step={0.1}
             oninput={(e) => update('distance_target', e.target.value)} />
+          {/if}
         </label>
         {/if}
         {:else if UNITS_BY_METRIC[item.value]}

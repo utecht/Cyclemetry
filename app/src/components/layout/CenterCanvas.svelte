@@ -238,7 +238,8 @@
 
   let showDistanceBar = $derived(
     selectedDistanceEl?.value === 'distance' &&
-    selectedDistanceEl?.distance_reference === 'custom'
+    (selectedDistanceEl?.distance_reference === 'custom' ||
+     selectedDistanceEl?.distance_reference === 'since_custom')
   )
   let showCourseMarkerBar = $derived(!!selectedCourseMarker)
 

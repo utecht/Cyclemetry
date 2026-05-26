@@ -869,8 +869,9 @@ impl Activity {
 
     /// Distance in metres adjusted for the requested reference point.
     /// `reference` values: "overlay_start" (default), "activity_start",
-    /// "overlay_end", "activity_end", "custom".
-    /// `target_m`: for "custom" only — the finish-line distance in metres.
+    /// "overlay_end", "activity_end", "custom" (until custom point),
+    /// "since_custom" (since custom point).
+    /// `target_m`: for "custom" / "since_custom" — the reference distance in metres.
     pub fn get_distance(
         &self,
         reference: Option<&str>,
@@ -885,6 +886,7 @@ impl Activity {
             "overlay_end" => (overlay_end - current).max(0.0),
             "activity_end" => (self.total_activity_distance - current).max(0.0),
             "custom" => target_m.map(|t| (t - current).max(0.0)).unwrap_or(0.0),
+            "since_custom" => target_m.map(|t| (current - t).max(0.0)).unwrap_or(0.0),
             _ => (current - overlay_start).max(0.0), // "overlay_start"
         }
     }

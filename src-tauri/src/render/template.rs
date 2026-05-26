@@ -211,10 +211,11 @@ pub struct ValueConfig {
     pub hours_offset: Option<f32>,
     pub time_format: Option<String>,
     /// For `value: "distance"` — which reference point to measure from/to.
-    /// Options: "overlay_start" (default), "activity_start", "overlay_end", "activity_end", "custom".
+    /// Options: "overlay_start" (default), "activity_start", "overlay_end", "activity_end",
+    /// "custom" (distance until a custom point), "since_custom" (distance since a custom point).
     pub distance_reference: Option<String>,
-    /// For `distance_reference: "custom"` — the finish-line distance in the element's display
-    /// unit (km, mi, or m per `unit`). Converted to metres at render time.
+    /// For `distance_reference: "custom"` or `"since_custom"` — the reference distance in the
+    /// element's display unit (km, mi, or m per `unit`). Converted to metres at render time.
     pub distance_target: Option<f64>,
     /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
     pub text_align: Option<String>,
