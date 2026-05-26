@@ -3,6 +3,10 @@ import * as backend from '../api/backend.js'
 import { parseLocalStorage } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 import { stripDefaults } from '../lib/stripDefaults.js'
+import {
+  offsetForVideoStart,
+  wallClockApplicable,
+} from '../lib/videoAlignment.js'
 
 export function createAppState() {
   const storedActivityName = (value) => {
@@ -76,6 +80,10 @@ export function createAppState() {
   let templates = $state([])
   let fonts = $state([])
   let showTemplatePicker = $state(false)
+  // Mirrors the element-selection pattern: when true, the bottom video
+  // alignment bar appears under the playback scrub bar (like the distance
+  // reference bar shows when a 'custom' distance element is selected).
+  let selectedVideo = $state(false)
   let selectedElementId = $state(null)
   let selectedElementIds = $state([])
   let selectedGroupId = $state(null)
@@ -163,7 +171,10 @@ export function createAppState() {
     if (!absolutePath) return
     try {
       const probe = await backend.probeVideo(absolutePath)
-      video = {
+      // Normalize probe → in-memory shape before the wall-clock check, since
+      // the helper expects creationTime (camelCase) + duration on a single
+      // object.
+      const draft = {
         path: probe.path,
         duration: probe.duration,
         creationTime: probe.creation_time,
@@ -173,6 +184,18 @@ export function createAppState() {
         userOffsetSec: 0,
         missing: false,
       }
+      // Auto-align: if the camera's wall clock places the video inside the
+      // activity period, trust it (offset = 0); otherwise snap the video's
+      // first frame to the current overlay window start, so the user sees
+      // it immediately on the alignment bar.
+      const initialOffset = wallClockApplicable(
+        gpxStartTime,
+        draft,
+        activityDuration,
+      )
+        ? 0
+        : offsetForVideoStart(gpxStartTime, draft, config?.scene?.start ?? 0)
+      video = { ...draft, userOffsetSec: initialOffset }
       // Bump preview FPS so the overlay animation tracks the video instead
       // of snapping every 200ms. Only when the user is at the default (5);
       // a deliberate non-default choice is preserved.
@@ -249,6 +272,7 @@ export function createAppState() {
   function selectOnly(id) {
     selectedGroupId = null
     selectedCourseMarkerId = null
+    selectedVideo = false
     selectedElementId = id
     selectedElementIds = id ? [id] : []
   }
@@ -256,6 +280,7 @@ export function createAppState() {
   function setSelectedElements(ids) {
     selectedGroupId = null
     selectedCourseMarkerId = null
+    selectedVideo = false
     selectedElementIds = [...ids]
     selectedElementId = ids.length ? ids[ids.length - 1] : null
   }
@@ -273,6 +298,22 @@ export function createAppState() {
     }
     selectedGroupId = null
     selectedCourseMarkerId = null
+    selectedVideo = false
+  }
+
+  // Selecting the video clears element selection — only one "thing" is
+  // primary at a time, which keeps the bottom helper bars from stacking.
+  // Toggle: clicking the filename row again dismisses the alignment bar.
+  function selectVideo() {
+    if (selectedVideo) {
+      selectedVideo = false
+      return
+    }
+    selectedElementId = null
+    selectedElementIds = []
+    selectedGroupId = null
+    selectedCourseMarkerId = null
+    selectedVideo = true
   }
 
   // ── Undo history ──────────────────────────────────────────────────────────
@@ -967,6 +1008,10 @@ export function createAppState() {
     clearVideo,
     setVideoOffset,
     verifyVideo,
+    get selectedVideo() {
+      return selectedVideo
+    },
+    selectVideo,
     get activityDuration() {
       return activityDuration
     },

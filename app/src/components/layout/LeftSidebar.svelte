@@ -4,6 +4,10 @@
   import TemplateSection from '../panels/TemplateSection.svelte'
   import ElementList from '../panels/ElementList.svelte'
   import Select from '../ui/Select.svelte'
+  import {
+    offsetForVideoStart,
+    wallClockApplicable,
+  } from '@/lib/videoAlignment.js'
 
   const app = getContext('app')
 
@@ -31,34 +35,34 @@
     { label: 'Square', w: 1080, h: 1080 },
   ]
 
-  // h:mm:ss when >= 1 hour, m:ss otherwise
+  // h:mm:ss when >= 1 hour, m:ss otherwise. Always whole seconds — overlay
+  // bounds are scene-second granularity, sub-second precision is noise.
   function secToTimecode(s) {
-    const whole = Math.floor(s)
-    const frac = s - whole
+    const whole = Math.round(s)
     const h = Math.floor(whole / 3600)
     const m = Math.floor((whole % 3600) / 60)
     const sec = whole % 60
-    const ss =
-      frac > 0
-        ? (sec + frac).toFixed(3).padStart(6, '0')
-        : String(sec).padStart(2, '0')
+    const ss = String(sec).padStart(2, '0')
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`
     return `${m}:${ss}`
   }
 
-  // Accepts h:mm:ss, m:ss, or plain seconds. Plain seconds may be fractional.
+  // Accepts h:mm:ss, m:ss, or plain seconds. Always rounds to a whole
+  // second to match secToTimecode's display granularity.
   function timecodeToSec(str) {
     str = str.trim()
+    let raw = NaN
     if (/^\d+:\d{1,2}:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [h, m, s] = str.split(':').map(Number)
-      return h * 3600 + m * 60 + s
-    }
-    if (/^\d+:\d{1,2}(?:\.\d+)?$/.test(str)) {
+      raw = h * 3600 + m * 60 + s
+    } else if (/^\d+:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [m, s] = str.split(':').map(Number)
-      return m * 60 + s
+      raw = m * 60 + s
+    } else {
+      const n = Number(str)
+      raw = !isNaN(n) && n >= 0 ? n : NaN
     }
-    const n = Number(str)
-    return !isNaN(n) && n >= 0 ? n : NaN
+    return isNaN(raw) ? NaN : Math.round(raw)
   }
 
   function videoBasename(path) {
@@ -75,6 +79,70 @@
       return `Start must be before end (${secToTimecode(start)} ≥ ${secToTimecode(end)})`
     return null
   })
+
+  // ── Mini GPX track (overlay-start / overlay-end handles) ────────────────
+  let trackEl = $state(null)
+  let drag = $state(null)
+
+  function clamp(v, lo, hi) {
+    return Math.min(hi, Math.max(lo, v))
+  }
+
+  function beginDrag(handle, e) {
+    if (!trackEl) return
+    e.preventDefault()
+    trackEl.setPointerCapture(e.pointerId)
+    app.beginEditBatch?.()
+    const initial =
+      handle === 'start'
+        ? (app.config?.scene?.start ?? 0)
+        : (app.config?.scene?.end ?? app.timelineDuration)
+    drag = { handle, pointerId: e.pointerId, startX: e.clientX, initial }
+  }
+
+  function onTrackPointerMove(e) {
+    if (!drag || e.pointerId !== drag.pointerId) return
+    const total = Math.max(0.0001, app.timelineDuration ?? 0)
+    const w = trackEl?.offsetWidth ?? 1
+    const dxSec = ((e.clientX - drag.startX) / w) * total
+    const next = Math.round(drag.initial + dxSec)
+    const start = app.config?.scene?.start ?? 0
+    const end = app.config?.scene?.end ?? total
+    if (drag.handle === 'start') {
+      app.updateScene({ start: clamp(next, 0, end - 1) })
+    } else {
+      app.updateScene({ end: clamp(next, start + 1, total) })
+    }
+  }
+
+  function endTrackDrag(e) {
+    if (!drag) return
+    if (trackEl?.hasPointerCapture(e.pointerId)) {
+      trackEl.releasePointerCapture(e.pointerId)
+    }
+    app.endEditBatch?.()
+    drag = null
+  }
+
+  // ── Video alignment actions ─────────────────────────────────────────────
+  function moveVideoToTimelineStart() {
+    app.setVideoOffset(
+      offsetForVideoStart(
+        app.gpxStartTime,
+        app.video,
+        app.config?.scene?.start ?? 0,
+      ),
+    )
+  }
+
+  function moveVideoToRecordingTime() {
+    // Wall-clock alignment: offset = 0 means "use the camera's own clock."
+    app.setVideoOffset(0)
+  }
+
+  let canUseRecordingTime = $derived(
+    wallClockApplicable(app.gpxStartTime, app.video, app.timelineDuration),
+  )
 </script>
 
 <aside
@@ -163,7 +231,7 @@
       </label>
 
       <!-- Timeline range -->
-      <div class="space-y-1">
+      <div class="space-y-1.5">
         <div class="flex items-baseline justify-between">
           <span class="text-[11px] text-zinc-500">Timeline</span>
           <button
@@ -173,6 +241,50 @@
             >{secToTimecode(app.timelineDuration)} total</button
           >
         </div>
+
+        <!-- Mini GPX track with overlay-start / overlay-end handles -->
+        {#if app.timelineDuration > 0}
+          {@const total = app.timelineDuration}
+          {@const start = app.config.scene.start ?? 0}
+          {@const end = app.config.scene.end ?? total}
+          {@const startPct = (start / total) * 100}
+          {@const endPct = (end / total) * 100}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={trackEl}
+            class="relative h-5 select-none"
+            onpointermove={onTrackPointerMove}
+            onpointerup={endTrackDrag}
+            onpointercancel={endTrackDrag}
+          >
+            <div
+              class="absolute inset-x-0 top-2 h-1 rounded-full bg-zinc-800"
+            ></div>
+            <div
+              class="absolute top-2 h-1 bg-primary/70 rounded-full"
+              style="left: {startPct}%; width: {endPct - startPct}%"
+            ></div>
+            <button
+              type="button"
+              aria-label="Overlay start"
+              onpointerdown={(e) => beginDrag('start', e)}
+              class="absolute top-0 -translate-x-1/2 h-5 w-3 rounded-sm
+                     bg-primary border border-zinc-950 cursor-ew-resize
+                     hover:scale-110 transition-transform"
+              style="left: {startPct}%"
+            ></button>
+            <button
+              type="button"
+              aria-label="Overlay end"
+              onpointerdown={(e) => beginDrag('end', e)}
+              class="absolute top-0 -translate-x-1/2 h-5 w-3 rounded-sm
+                     bg-primary border border-zinc-950 cursor-ew-resize
+                     hover:scale-110 transition-transform"
+              style="left: {endPct}%"
+            ></button>
+          </div>
+        {/if}
+
         <div class="flex gap-2 items-center">
           <input
             type="text"
@@ -297,8 +409,13 @@
     </section>
   {/if}
 
-  <!-- Reference video (Phase 1: probe + metadata only) -->
-  <section class="px-4 py-3 border-b border-zinc-800 space-y-2">
+  <!-- Reference video: probe metadata + offset; click to select -->
+  <section
+    class="px-4 py-3 border-b space-y-2 transition-colors
+           {app.selectedVideo
+      ? 'border-l-2 border-l-sky-500 border-b-zinc-800 bg-sky-950/10'
+      : 'border-l-2 border-l-transparent border-b-zinc-800'}"
+  >
     <p
       class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
     >
@@ -348,23 +465,21 @@
         </div>
       {/if}
 
+      <!-- Filename row — clicking selects the video so the bottom alignment bar shows -->
+      <button
+        type="button"
+        onclick={() => app.selectVideo()}
+        title="Select video — shows the alignment bar under the playback scrubber"
+        class="w-full flex items-center gap-1.5 rounded px-1 py-0.5 -mx-1
+               hover:bg-zinc-800/60 transition-colors text-left"
+      >
+        <Film size={11} class="text-zinc-500 shrink-0" />
+        <span
+          class="text-[11px] text-zinc-300 truncate font-mono"
+          title={app.video.path}>{videoBasename(app.video.path)}</span
+        >
+      </button>
       <div class="space-y-1">
-        <div class="flex items-center gap-1.5">
-          <Film size={11} class="text-zinc-500 shrink-0" />
-          <span
-            class="text-[11px] text-zinc-300 truncate font-mono"
-            title={app.video.path}>{videoBasename(app.video.path)}</span
-          >
-          <button
-            onclick={() => app.clearVideo()}
-            title="Remove video"
-            class="ml-auto h-5 w-5 shrink-0 rounded flex items-center
-                   justify-center text-zinc-600 hover:text-zinc-300
-                   hover:bg-zinc-700 transition-colors"
-          >
-            <X size={11} />
-          </button>
-        </div>
         <div class="text-[10px] text-zinc-500 font-mono tabular-nums">
           {app.video.width}×{app.video.height}{app.video.codec
             ? ` · ${app.video.codec}`
@@ -372,26 +487,50 @@
             ? ` · ${secToTimecode(app.video.duration)}`
             : ''}
         </div>
-        {#if app.video.creationTime}
-          <div
-            class="text-[10px] text-zinc-600 font-mono truncate"
-            title={app.video.creationTime}
+
+        <!-- Alignment actions — auto-applied on first load, manual here -->
+        <div class="space-y-1 pt-1">
+          <button
+            type="button"
+            onclick={moveVideoToTimelineStart}
+            title="Snap the video's first frame to the timeline start"
+            class="w-full h-7 rounded border border-zinc-700 bg-zinc-800/40
+                   px-2 text-[11px] text-zinc-300 hover:text-zinc-100
+                   hover:border-zinc-500 transition-colors text-left"
+            >Move video to timeline start</button
           >
-            recorded {app.video.creationTime}
-          </div>
-        {:else}
-          <div class="text-[10px] text-zinc-600 leading-snug">
-            No recording timestamp in container metadata — Phase 2 timeline
-            alignment will need a manual offset.
-          </div>
-        {/if}
-        <button
-          onclick={() => app.pickAndLoadVideo()}
-          class="h-6 px-2 rounded border border-zinc-700 bg-zinc-800/40
-                 text-[11px] text-zinc-400 hover:text-zinc-200
-                 hover:border-zinc-500 transition-colors"
-          >Replace…</button
-        >
+          {#if canUseRecordingTime}
+            <button
+              type="button"
+              onclick={moveVideoToRecordingTime}
+              title="Use the camera's recording timestamp to align"
+              class="w-full h-7 rounded border border-zinc-700 bg-zinc-800/40
+                     px-2 text-[11px] text-zinc-300 hover:text-zinc-100
+                     hover:border-zinc-500 transition-colors text-left"
+              >Move video to recording time</button
+            >
+          {/if}
+        </div>
+
+        <!-- Replace / Remove -->
+        <div class="flex gap-1.5 pt-1">
+          <button
+            onclick={() => app.pickAndLoadVideo()}
+            class="flex-1 h-6 px-2 rounded border border-zinc-700 bg-zinc-800/40
+                   text-[11px] text-zinc-400 hover:text-zinc-200
+                   hover:border-zinc-500 transition-colors"
+            >Replace…</button
+          >
+          <button
+            onclick={() => app.clearVideo()}
+            title="Remove video"
+            class="h-6 w-6 rounded border border-zinc-700 flex items-center
+                   justify-center text-zinc-500 hover:text-zinc-200
+                   hover:border-zinc-500 transition-colors"
+          >
+            <X size={11} />
+          </button>
+        </div>
       </div>
     {/if}
   </section>

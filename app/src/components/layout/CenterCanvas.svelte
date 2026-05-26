@@ -9,7 +9,8 @@
   import VideoBackdrop from '../canvas/VideoBackdrop.svelte'
   import WysiwygLayer from '../canvas/WysiwygLayer.svelte'
   import PlaybackControls from '../canvas/PlaybackControls.svelte'
-  import AlignmentTimeline from '../canvas/AlignmentTimeline.svelte'
+  import VideoAlignmentBar from '../canvas/VideoAlignmentBar.svelte'
+  import { videoStartOnAxis } from '@/lib/videoAlignment.js'
   import * as backend from '@/api/backend.js'
 
   const app = getContext('app')
@@ -202,13 +203,36 @@
     return () => { if (rafHandle) cancelAnimationFrame(rafHandle) }
   })
 
+  // While the video backdrop is in range and playing, the video element is
+  // the master clock — it emits `timeupdate` events that drive
+  // selectedSecond directly. RAF skips its own advancement in that mode so
+  // we're not racing two clocks (and so the sync effect doesn't have to
+  // fight RAF with constant seeks, which was the source of stutter).
+  let videoIsMaster = $derived.by(() => {
+    if (!playing) return false
+    const v = app.video
+    if (!v || v.missing || !(v.duration > 0)) return false
+    const startAbs = videoStartOnAxis(app.gpxStartTime, v)
+    return (
+      app.selectedSecond >= startAbs &&
+      app.selectedSecond <= startAbs + v.duration
+    )
+  })
+
   function tick(now) {
     if (!playing) return
     const dt = (now - lastTick) / 1000
     lastTick = now
-    const next = Math.min(app.selectedSecond + dt, sceneEnd)
-    app.selectedSecond = next
-    if (next >= sceneEnd) { playing = false; return }
+    if (!videoIsMaster) {
+      const next = Math.min(app.selectedSecond + dt, sceneEnd)
+      app.selectedSecond = next
+    }
+    // Always check the end condition — works for both master modes.
+    if (app.selectedSecond >= sceneEnd) {
+      app.selectedSecond = sceneEnd
+      playing = false
+      return
+    }
     rafHandle = requestAnimationFrame(tick)
   }
 
@@ -496,9 +520,9 @@
     {/if}
   </div>
 
-  <!-- Alignment timeline (only when a reference video is loaded) -->
-  {#if app.video && !app.video.missing}
-    <AlignmentTimeline />
+  <!-- Video alignment bar — appears when the Video section is selected -->
+  {#if app.selectedVideo}
+    <VideoAlignmentBar />
   {/if}
 
   <!-- Playback controls (fixed at bottom of canvas area) -->

@@ -4,8 +4,8 @@
 
   let {
     playhead = $bindable(0),
-    start = 0,
-    end = 73,
+    start = 0,                  // overlay window start (sceneStart)
+    end = 73,                   // overlay window end (sceneEnd)
     playing = $bindable(false),
     previewFps = $bindable(5),
     buffered = [],   // array of seconds that are ready in cache
@@ -19,6 +19,10 @@
     onmarkerdistancechange,
   } = $props()
 
+  // Scrubbing is bounded to the overlay render window — the bar's left
+  // edge IS sceneStart, right edge IS sceneEnd. Visualizing the overlay's
+  // position within the broader activity happens on the LeftSidebar mini
+  // GPX track and the VideoAlignmentBar.
   function seek(s) {
     playhead = Math.max(start, Math.min(s, end))
     onseek?.(playhead)
@@ -40,21 +44,75 @@
   }
 
   let duration = $derived(end - start)
-  let pct = $derived(duration > 0 ? ((playhead - start) / duration) * 100 : 0)
 
-  // Distance bar derived values — only computed when distanceInfo is present
-  let distTotal = $derived(distanceInfo?.total_m ?? 1)
-  let distStartPct = $derived(distanceInfo ? (distanceInfo.overlay_start_m / distTotal) * 100 : 0)
-  let distEndPct = $derived(distanceInfo ? (distanceInfo.overlay_end_m / distTotal) * 100 : 0)
+  // ── Visual smoothing for the scrub thumb ────────────────────────────────
+  // During playback the upstream `playhead` updates in coarse hops:
+  // ~4 Hz when the video is master (HTML5 `timeupdate` is sparse), and
+  // ~60 Hz otherwise. The frame cache + prefetch want truth-driven
+  // `playhead`, but the slider thumb feels jumpy without between-update
+  // interpolation. `smoothPlayhead` advances at vsync, clamped to a small
+  // window around truth so it never runs ahead during a stall or lags
+  // behind during a scrub.
+  let smoothPlayhead = $state(playhead)
+  $effect(() => {
+    if (!playing) {
+      smoothPlayhead = playhead
+      return
+    }
+    let lastTick = performance.now()
+    let raf = requestAnimationFrame(function step(now) {
+      const dt = (now - lastTick) / 1000
+      lastTick = now
+      let next = smoothPlayhead + dt
+      // Snap to truth on big jumps (user scrubbed mid-play).
+      if (Math.abs(playhead - next) > 1.0) next = playhead
+      // Cap how far ahead/behind of truth the display can wander, so a
+      // video stall or burst doesn't desync the visual from the audio.
+      next = Math.min(next, playhead + 0.3)
+      next = Math.max(next, playhead - 0.5)
+      // Don't visually overshoot the end of the overlay window.
+      if (next > end) next = end
+      smoothPlayhead = next
+      raf = requestAnimationFrame(step)
+    })
+    return () => cancelAnimationFrame(raf)
+  })
+
+  let pct = $derived(
+    duration > 0 ? ((smoothPlayhead - start) / duration) * 100 : 0,
+  )
+
+  // Distance bar derived values. The bar spans the overlay window's
+  // distance range — overlay_start_m on the left, overlay_end_m on the
+  // right. Visualizing the broader activity context isn't useful here; we
+  // only set reference points that the value element renders inside the
+  // overlay.
+  let distOverlayStart = $derived(distanceInfo?.overlay_start_m ?? 0)
+  let distOverlayEnd = $derived(distanceInfo?.overlay_end_m ?? 1)
+  let distOverlayRange = $derived(
+    Math.max(0.0001, distOverlayEnd - distOverlayStart),
+  )
   let distDotPct = $derived(
     distanceInfo && customDistanceM !== null
-      ? Math.max(0, Math.min(100, (customDistanceM / distTotal) * 100))
-      : 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            ((customDistanceM - distOverlayStart) / distOverlayRange) * 100,
+          ),
+        )
+      : 0,
   )
   let markerDotPct = $derived(
     distanceInfo && markerDistanceM !== null
-      ? Math.max(0, Math.min(100, (markerDistanceM / distTotal) * 100))
-      : 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            ((markerDistanceM - distOverlayStart) / distOverlayRange) * 100,
+          ),
+        )
+      : 0,
   )
   let markerShapeClass = $derived(
     markerStyle === 'circle'
@@ -78,36 +136,35 @@
         ></div>
       {/each}
     </div>
-    <!-- Range input -->
+    <!-- Range input. `value` is bound to the smoothed display playhead so
+         the thumb moves at vsync rather than in 250 ms timeupdate hops.
+         `step` is sub-second so the thumb can sit anywhere on the bar —
+         step=1 would re-quantize it back to integer-second hops, defeating
+         the smoothing. The timecode display still rounds to whole seconds
+         via secToTimecode/formatTime, so display granularity is unaffected.
+         Scrubs still write through to `playhead` via onScrub. -->
     <input
       type="range"
       min={start}
       max={end}
-      step={0.1}
-      value={playhead}
+      step={0.01}
+      value={smoothPlayhead}
       oninput={onScrub}
       style="--pct: {pct}%"
       class="scrub-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
     />
   </div>
 
-  <!-- Distance reference bar — visible only when a distance element with reference='custom' is selected -->
+  <!-- Distance reference bar — visible only when a distance element with reference='custom' is selected.
+       Bar spans the overlay window's distance range; the whole bar IS the overlay. -->
   {#if distanceInfo && customDistanceM !== null}
     <div class="relative h-5 flex items-center">
       <div class="relative w-full h-full flex items-center">
-        <!-- Track background -->
-        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800 overflow-visible">
-          <!-- Overlay window highlight -->
-          <div
-            class="absolute h-full bg-zinc-600/40 rounded-full"
-            style="left: {distStartPct}%; width: {distEndPct - distStartPct}%"
-          ></div>
-        </div>
-        <!-- Draggable amber dot -->
+        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
         <input
           type="range"
-          min={0}
-          max={distTotal}
+          min={distOverlayStart}
+          max={distOverlayEnd}
           step={10}
           value={customDistanceM}
           oninput={onDistanceScrub}
@@ -119,20 +176,16 @@
     </div>
   {/if}
 
-  <!-- Course marker bar — visible when editing a selected map marker -->
+  <!-- Course marker bar — visible when editing a selected map marker.
+       Same axis as the distance bar. -->
   {#if distanceInfo && markerDistanceM !== null}
     <div class="relative h-5 flex items-center">
       <div class="relative w-full h-full flex items-center">
-        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800 overflow-visible">
-          <div
-            class="absolute h-full bg-zinc-600/40 rounded-full"
-            style="left: {distStartPct}%; width: {distEndPct - distStartPct}%"
-          ></div>
-        </div>
+        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
         <input
           type="range"
-          min={0}
-          max={distTotal}
+          min={distOverlayStart}
+          max={distOverlayEnd}
           step={10}
           value={markerDistanceM}
           oninput={onMarkerScrub}
