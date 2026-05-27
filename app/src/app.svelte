@@ -440,7 +440,7 @@
     <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
 
     <!-- Activity file picker -->
-    <Tooltip content={!app.gpxFilename ? 'Load a GPX, FIT, or TCX activity file' : gpxLabel} side="bottom">
+    <Tooltip content="Choose a GPX, FIT, or TCX activity file" side="bottom">
       <button
         onclick={handleOpenGpx}
         class="hdr-btn px-2.5 gap-1.5 max-w-[160px] {onboardingStep === 2 ? 'onboarding-glow' : ''}"
@@ -453,13 +453,19 @@
     <!-- Video — always shown, dashed border signals optional -->
     <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
     {#if !app.video}
-      <button
-        onclick={() => app.pickAndLoadVideo()}
-        class="hdr-btn px-2.5 gap-1.5 shrink-0 border-dashed"
+      <Tooltip
+        content="Adding video is only for preview. The generated overlay will not include the video."
+        side="bottom"
+        class="shrink-0"
       >
-        <Film size={12} class="shrink-0" />
-        Add video…
-      </button>
+        <button
+          onclick={() => app.pickAndLoadVideo()}
+          class="hdr-btn px-2.5 gap-1.5 border-dashed"
+        >
+          <Film size={12} class="shrink-0" />
+          Add video…
+        </button>
+      </Tooltip>
     {:else if app.video.missing}
       <div class="flex items-center gap-1 shrink-0">
         <AlertTriangle size={12} class="text-red-400 shrink-0" />
