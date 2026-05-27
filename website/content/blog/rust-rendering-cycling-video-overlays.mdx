@@ -1,0 +1,355 @@
+---
+title: "How I Built a Native Rust Video Renderer for Cycling Telemetry Overlays"
+description: "A deep dive into Cyclemetry's rendering pipeline — from GPX files to polished video overlays, entirely in Rust."
+---
+# How I Built a Native Rust Video Renderer for Cycling Telemetry Overlays
+
+Cyclemetry is a desktop app for creating cycling telemetry video overlays. It reads a GPX file and renders metrics — speed, power, heart rate, elevation, cadence, gradient — directly into your video as a customizable overlay.
+
+The entire rendering pipeline runs in native Rust: GPX parsing, data interpolation, per-frame Skia rendering, and FFmpeg video encoding. No Python dependency, no cloud backend, no sidecar process.
+
+Here's how it works.
+
+---
+
+## The Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Svelte 5 Frontend (Vite, port 5173)        │
+│  · Drag-and-drop overlay editor             │
+│  · Live preview canvas                      │
+│  · Template configuration UI                │
+└─────────────────┬───────────────────────────┘
+                  │ Tauri IPC (invoke)
+                  ▼
+┌─────────────────────────────────────────────┐
+│  Tauri 2 Runtime (Rust, no sidecar)         │
+│  · GPX / FIT / TCX parsing                  │
+│  · Data interpolation & smoothing           │
+│  · Per-frame Skia rendering                 │
+│  · FFmpeg video encoding                    │
+└─────────────────────────────────────────────┘
+```
+
+The key design decision: **all rendering logic lives in Rust**. No Python, no Node.js sidecar, no browser-based canvas for the final output. The frontend is purely a configuration editor with a preview — the heavy lifting happens in the Tauri backend.
+
+I wrote a [history post](/blog/cyclemetry-seven-iterations) about how Cyclemetry got here — seven iterations over three years, from a Python CLI to a Docker blob to a p5.js experiment to the native Rust renderer you see today.
+
+---
+
+## Parsing Cycling Data
+
+Cyclemetry needs to read three common cycling file formats: **GPX**, **FIT**, and **TCX**. Each has a different structure, and each can contain overlapping sets of telemetry data.
+
+```rust
+pub fn from_file(path: &str) -> Result<Self, String> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "fit" => Self::from_fit(path),
+        "tcx" => { /* parse XML */ },
+        _     => Self::from_gpx(path),
+    }
+}
+```
+
+The `Activity` struct stores each metric as a `Vec<f64>` aligned by elapsed time:
+
+```rust
+pub struct Activity {
+    pub elapsed_seconds: Vec<f64>,
+    pub speed: Vec<f64>,
+    pub power: Vec<f64>,
+    pub heartrate: Vec<f64>,
+    pub cadence: Vec<f64>,
+    pub elevation: Vec<f64>,
+    pub gradient: Vec<f64>,
+    pub distance: Vec<f64>,
+    // ... gear, temperature, coordinates, etc.
+    pub start_time_ms: Option<i64>,
+}
+```
+
+The FIT parser uses the [`fitparser`](https://crates.io/crates/fitparser) crate, while GPX and TCX are parsed with `quick_xml`. FIT files are binary and contain typed messages — the parser decodes each message type (lap, record, heart_rate, power_meter_data) into the appropriate metric vectors.
+
+### Interpolation & Resampling
+
+Raw cycling data is noisy and irregularly sampled. A Garmin Edge might log power at 1 Hz, 3 Hz, or 10 Hz depending on the settings. For smooth video overlays, we need to **resample to a consistent frame rate**.
+
+The pipeline:
+
+1. **Interpolate** missing values using linear interpolation between adjacent samples
+2. **Smooth** power and cadence with a rolling average to reduce visual jitter
+3. **Compute derived metrics** like gradient (from elevation) and speed (from distance/time)
+4. **Resample** to the target frame rate with one data point per frame
+
+This means a 2-hour ride at ~1 Hz becomes roughly 7,200 data points — one per frame at 1 fps — which then gets rendered at the output video's actual frame rate.
+
+---
+
+## Gradient Calculations (A Story for Another Post)
+
+The gradient computation in the rendering pipeline is one of those things that looks simple until you actually dig into it. Cycling devices record GPS coordinates, elevation, and timestamps — and from those, you need to calculate the road's slope at each point. The naive approach uses basic trigonometry between consecutive points, but as I discovered early on, that produces wildly inaccurate results.
+
+I spent a lot of time investigating this — comparing Cyclemetry's gradient output against Garmin VIRB Edit and Strava's values, experimenting with sliding window smoothing, and trying to understand why a -3% grade on paper didn't match what the speed data suggested was physically possible. I even started writing a blog post about it, but it grew into something much longer than I expected and I never finished it.
+
+If you're curious about the math behind gradient calculations from GPS data, sliding window approaches, and why barometric altimeters make everything more complicated — I might get around to writing that post on [my personal blog](https://walkersutton.com) someday.
+
+---
+
+## The Template System
+
+Every overlay is defined by a **JSON template**. Templates are authored at 4K resolution and scaled uniformly to the chosen output resolution at render time. This means a single template works across 1080p, 4K, and any other resolution.
+
+A template defines:
+
+```json
+{
+  "scene": {
+    "width": 3840,
+    "height": 2160,
+    "fps": 30,
+    "start": 0,
+    "end": 7200
+  },
+  "elements": [
+    {
+      "type": "label",
+      "id": "speed_label",
+      "text": "Speed",
+      "position": { "x": 0.85, "y": 0.15 },
+      "style": { "font": "Geist", "size": 48, "color": "#FFFFFF" }
+    },
+    {
+      "type": "value",
+      "id": "speed_value",
+      "metric": "speed",
+      "unit": "kmh",
+      "position": { "x": 0.85, "y": 0.22 },
+      "style": { "font": "Geist Mono", "size": 72, "color": "#DC143C" }
+    },
+    {
+      "type": "plot",
+      "id": "power_plot",
+      "metric": "power",
+      "position": { "x": 0.05, "y": 0.75 },
+      "size": { "width": 0.4, "height": 0.2 },
+      "style": { "color": "#22C55E", "lineWidth": 3 }
+    },
+    {
+      "type": "map",
+      "id": "route_map",
+      "position": { "x": 0.6, "y": 0.6 },
+      "size": { "width": 0.3, "height": 0.35 }
+    }
+  ]
+}
+```
+
+Each element type (`label`, `value`, `plot`, `meter`, `gauge`, `rect`, `image`) is a Rust struct that implements a common `OverlayElement` trait:
+
+```rust
+pub trait OverlayElement {
+    fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds>;
+    fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize);
+    fn is_dynamic(&self) -> bool { false }
+    fn fonts(&self, scene: &SceneConfig) -> Vec<String> { Vec::new() }
+    fn build_chart(&self, activity: &Activity, fonts_dir: &str) -> Option<ChartCache> { None }
+}
+```
+
+This trait-based dispatch means adding a new element type is a matter of implementing one trait — zero branching at the call sites. The frame renderer iterates over elements and calls `measure` → `draw` with no type-specific `match` arms.
+
+---
+
+## Per-Frame Rendering with Skia
+
+Each video frame is rendered as a raw RGBA byte buffer using [Skia](https://skia.org/) via the [`skia-safe`](https://crates.io/crates/skia-safe) bindings.
+
+The render loop for a single frame:
+
+1. **Create an `ElementCtx`** — a shared context containing the activity data, scene config, preloaded fonts, and chart caches
+2. **Measure each element** — compute the bounding box for this frame's data state
+3. **Render the base frame** — draw the background, route map, and any static elements
+4. **Render dynamic elements** — draw text values, plot markers, meter needles for this specific frame
+5. **Composite to RGBA** — the final buffer is written to a `Vec<u8>`
+
+```rust
+pub fn render_frame(
+    activity: &Activity,
+    scene: &SceneConfig,
+    typefaces: &HashMap<String, Typeface>,
+    charts: &HashMap<String, ChartCache>,
+    images: &HashMap<String, Image>,
+    frame_idx: usize,
+    output_width: i32,
+    output_height: i32,
+) -> Vec<u8> {
+    let info = ImageInfo::new(output_width, output_height, ColorType::RGBA8888, ColorType::RGBA8888.into(), None);
+    let mut surface = Surface::new_raster(info).unwrap();
+    let canvas = surface.canvas();
+
+    // Draw background
+    // Draw route map
+    // Draw each element
+    for element in &scene.elements {
+        if let Some(bounds) = element.measure(ctx, frame_idx) {
+            element.draw(&canvas, ctx, frame_idx);
+        }
+    }
+
+    // Read RGBA pixels
+    surface.image().encode(None, EncodedImageFormat::PNG, 85)
+}
+```
+
+### Font Handling
+
+Fonts are loaded from three sources in priority order:
+
+1. **Bundled fonts** — shipped with the app in `resources/fonts/`
+2. **User-installed fonts** — `.ttf`/`.otf` files dropped into `~/Library/Application Support/com.cyclemetry/fonts/`
+3. **System fonts** — all fonts available on the host OS
+
+The renderer uses Skia's `FontMgr` to enumerate available families and loads `Typeface` objects into a cache keyed by font filename. This means template authors can reference any font on their system.
+
+### Chart Caching
+
+Plot elements (power curves, heart rate zones, speed graphs) are expensive to render per-frame. Cyclemetry pre-computes the chart geometry once and caches it:
+
+```rust
+pub struct ChartCache {
+    pub segments: Vec<ChartSegment>,
+    pub min_value: f64,
+    pub max_value: f64,
+}
+```
+
+Each frame, the cached segments are drawn with a single marker indicating the current position. This reduces per-frame chart rendering from O(n) path construction to O(n) line drawing.
+
+---
+
+## The Render Pipeline
+
+The full video render is orchestrated in `render_video()`:
+
+```rust
+pub fn render_video(
+    gpx_path: &str,
+    template: &Template,
+    output_path: &str,
+    fonts_dir: &str,
+    assets_dirs: &[&str],
+    progress: &RenderProgress,
+) -> Result<(), String>
+```
+
+### Phase 1: Preparation (one-time)
+
+1. Parse the GPX/FIT/TCX file into an `Activity`
+2. Sample and interpolate to the scene's time window
+3. Pre-render the base frame (background + map + static elements) — this is the expensive part done once
+4. Build font typeface cache
+5. Build chart caches for all plot elements
+
+### Phase 2: Frame Loop (per-frame)
+
+The render loop uses **rayon for parallel chunk rendering**:
+
+```rust
+// Producer: render frames in parallel chunks
+(0..total_frames)
+    .into_par_iter()
+    .for_each_with(frame_tx, |tx, frame_idx| {
+        let frame_data = render_frame(activity, scene, typefaces, charts, images, frame_idx, ...);
+        tx.send(frame_data).unwrap();
+    });
+
+// Consumer: drain channel and pipe to FFmpeg
+while frames_rendered < total_frames {
+    let frame_data = rx.recv().unwrap();
+    write_to_ffmpeg_stdin(&frame_data);
+}
+```
+
+The key insight: **render and encode run concurrently**. The producer thread fills a bounded channel with raw RGBA frames, and the consumer thread drains them and writes to FFmpeg's stdin. This means encoding starts immediately — the first frame is being encoded while the last frame is still being rendered.
+
+### Phase 3: FFmpeg Encoding
+
+FFmpeg receives raw RGBA frames via stdin and encodes them to the final video:
+
+```rust
+Command::new(ffmpeg_path)
+    .args(&[
+        "-f", "rawvideo",
+        "-pix_fmt", "rgba",
+        "-s", &format!("{}x{}", width, height),
+        "-r", &fps.to_string(),
+        "-i", "-",          // read from stdin
+        "-c:v", "libx264",  // H.264 encoding
+        "-preset", "medium",
+        "-crf", "18",       // high quality, near-lossless
+        "-pix_fmt", "yuv420p",  // compatibility
+        output_path,
+    ])
+    .stdin(Stdio::piped())
+    .spawn()?
+```
+
+The bundled FFmpeg binary is included with the app — no system dependency required. It's fetched during CI and packaged into the app bundle.
+
+---
+
+## Progress Reporting
+
+Render progress is tracked using atomic counters:
+
+```rust
+pub struct RenderProgress {
+    frames_rendered: Arc<AtomicU64>,
+    total_frames: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+}
+```
+
+The frontend polls `native_progress` every 200ms, and the user can cancel at any time by setting the `cancelled` flag. The render loop checks this flag between frame chunks, so cancellation is nearly instantaneous.
+
+---
+
+## Why Rust?
+
+There are three reasons I chose Rust for the rendering pipeline:
+
+1. **Performance** — Parallel frame rendering with rayon, zero-copy data structures, and Skia's native bindings make the render pipeline fast. A 2-hour ride at 30fps renders in minutes, not hours.
+
+2. **No Python dependency** — Many video tools in this space rely on Python for rendering. Python adds installation friction, environment management, and packaging complexity. Rust compiles to a single binary.
+
+3. **Memory safety** — The rendering pipeline deals with large byte buffers (RGBA frames at 4K are ~33 MB each). Rust's ownership model prevents the kind of buffer overruns and use-after-free bugs that are common in C/C++ rendering code.
+
+---
+
+## What's Next
+
+The template system is JSON-based, which means the community can create and share templates. Cyclemetry already ships with several built-in templates (Safa, Norcal, Will, Jeff, Crit, Aaron) and supports community templates installed from the repo.
+
+Future work includes:
+
+- **Live overlay preview** — using the render pipeline to show real-time overlay on a playing video
+- **More element types** — power zones, lap markers, gradient indicators
+- **Template sharing** — a built-in gallery for browsing and installing community templates
+
+---
+
+## Try It
+
+Cyclemetry is open source under the MIT license. It runs on macOS (Apple Silicon & Intel), Windows, and Linux.
+
+- **Download:** [cyclemetry.walkersutton.com/install](https://cyclemetry.walkersutton.com/install)
+- **Source:** [github.com/walkersutton/cyclemetry](https://github.com/walkersutton/cyclemetry)
+- **Showcase:** [cyclemetry.walkersutton.com/showcase](https://cyclemetry.walkersutton.com/showcase)
+
+If you're into cycling, video production, or just building cool desktop tools with Rust — I'd love to have you contribute.

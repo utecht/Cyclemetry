@@ -1,0 +1,145 @@
+---
+title: "Cyclemetry's Seven Iterations: From Python CLI to Native Rust"
+description: "Three years, seven major pivots — the story of how Cyclemetry evolved from a Python script to a native desktop app."
+---
+# Cyclemetry's Seven Iterations: From Python CLI to Native Rust
+
+Cyclemetry didn't start as a Rust app. It started as a Python script in a Jupyter notebook.
+
+Over the past three years, it's gone through **seven major iterations** — from a CLI tool to a bloated Flask app to a p5.js canvas experiment to a Tauri desktop app — before landing on the architecture that powers it today. Along the way, I learned a lot about what works and what doesn't when building video tools for cyclists.
+
+Here's the story of how it evolved.
+
+---
+
+## May 2023 — Python CLI with Pillow + Matplotlib
+
+The very first version was a command-line tool: drop a GPX file, answer some questions in the terminal, and get a video. Rendering was done with Pillow for text and Matplotlib for elevation profiles and course maps.
+
+```python
+# The original main.py — 36 lines
+from gpx import Gpx
+from scene import Scene
+
+def render_overlay(filename):
+    gpx = Gpx(filename)
+    attributes = poll_attributes(gpx.existing_attributes())
+    scene = Scene(gpx, attributes)
+    scene.export_video()
+```
+
+It worked, but it was slow, the UI was a terminal prompt, and every dependency (Python, numpy, matplotlib, Pillow, ffmpeg) had to be installed and managed. The rendering pipeline wrote individual PNG frames to disk and piped them into ffmpeg — a lot of I/O for something that should be in-memory.
+
+On September 8, 2023, I uploaded the first Cyclemetry video demo — a POV clip from a bike ride with telemetry overlaid on top. [You can still watch it on YouTube.](https://youtu.be/gqn5MfcypH4) It was rough, but it proved the concept: a GPX file + a video + some config = a polished overlay video. That video was the spark for everything that followed.
+
+---
+
+## May 2024 — Flask Web App + React Designer
+
+The first major pivot: a web-based designer. Flask served the backend, React handled the frontend, and the rendering logic stayed in Python. This was more user-friendly but introduced new problems — the web server had to manage file uploads, the render still ran on Python, and deployment was a headache (Heroku died mid-build, Docker added another layer of complexity).
+
+---
+
+## August 2024 — The Docker Blob
+
+This was the low point. I had a bloated Flask app running behind a Docker container, shipping images to users who just wanted to overlay telemetry on a video. The Dockerfile was 7 lines but the mental overhead was enormous — Python virtualenvs, Gunicorn workers, CORS configuration, font installation inside containers, template file mounting. It worked in theory and barely at all in practice. Users had to install Docker, configure ports, and deal with a web interface that felt like a backend tool wearing a frontend costume.
+
+```dockerfile
+FROM python:3.11.9
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+CMD ["gunicorn", "--bind", "0.0.0.0:6969", "app:app"]
+```
+
+Seven lines. That was the entire Dockerfile. But the ecosystem around it — Docker, Gunicorn, CORS, virtualenvs, port configuration — made it feel like I was building infrastructure for a video editor.
+
+---
+
+## October 2024 — Tauri 1 + React Desktop
+
+The next step was wrapping the web frontend in Tauri, turning it into a desktop app. This was a big win — no more browser, no more web server, no more Docker. But the rendering was still Python under the hood, and the app was still a web page wearing a desktop costume.
+
+---
+
+## November 2024 — "yoooo basic image creation in rust"
+
+This commit message says it all. I started experimenting with Rust for the rendering, using the `plotters` crate for basic chart generation. The first Rust code was a proof-of-concept — draw a line chart, save a PNG. It worked, and it was fast.
+
+---
+
+## December 2024 — Eel Experiments
+
+Before committing to Rust, I tried Eel — a Python library that bridges Python and web frontends. It was a stopgap between the Docker blob and something real, trying to get desktop-like behavior without rewriting the rendering pipeline. It worked locally but had the same fundamental problem: Python was still doing the heavy lifting.
+
+---
+
+## January 2026 — The Big Rewrite
+
+This is where things got real. The "bibes" commit was a major refactor: React was replaced with Svelte 5, the Python rendering pipeline was replaced with native Rust, and Tauri was upgraded to version 2. The entire rendering pipeline — GPX parsing, data interpolation, per-frame Skia rendering, FFmpeg encoding — moved into Rust.
+
+The result is the app you see today: a fast, native desktop tool with no Python dependency, no cloud backend, and no subscription.
+
+---
+
+## October 2025 — The p5.js Experiment (Abandoned)
+
+Before the big rewrite, I spent months exploring a canvas-based visual editor using p5.js. The idea was elegant: render the overlay directly on a canvas, let users drag and drop elements in real-time, see charts drawn with actual data, and export the configuration as JSON.
+
+It was built as a Next.js app with React + p5.js, with a full sidebar for element management, drag-and-drop on the canvas, real-time chart rendering, and data binding. The codebase grew to include a 450-line p5 canvas component, a 440-line sidebar, and a Next.js router.
+
+It was beautiful in development and completely wrong for the product. The canvas approach worked great for a prototype but didn't translate to the precision needed for a video overlay editor. The p5.js canvas couldn't match the pixel-perfect control needed for video compositing, and the gap between what you see on screen and what gets rendered to video was too large to close. The "oof" commit message says it all.
+
+But the exploration taught me something important: **the rendering engine needs to be the source of truth**. What you see in the editor must be identical to what gets rendered to video. That lesson directly shaped the current architecture.
+
+---
+
+## What I Learned
+
+Looking back at the seven iterations, a few patterns emerge:
+
+1. **Don't ship infrastructure for a tool.** The Docker blob was the most obvious example — I was deploying Gunicorn workers and managing container networking when users just wanted to add telemetry to a video.
+
+2. **The rendering engine is the product.** The p5.js experiment failed because the canvas was a separate rendering path from the video output. When the editor and the renderer are different systems, they drift apart.
+
+3. **Native matters.** Every pivot away from the browser — first to Tauri, then to native Rust rendering — was a step in the right direction. Users don't want a web app wrapped in a window. They want a tool that feels like it belongs on their machine.
+
+---
+
+## Today's Architecture
+
+The app you see today is the result of all those iterations. Here's how it's structured:
+
+```
+┌─────────────────────────────────────────────┐
+│  Svelte 5 Frontend (Vite, port 5173)        │
+│  · Drag-and-drop overlay editor             │
+│  · Live preview canvas                      │
+│  · Template configuration UI                │
+└─────────────────┬───────────────────────────┘
+                  │ Tauri IPC (invoke)
+                  ▼
+┌─────────────────────────────────────────────┐
+│  Tauri 2 Runtime (Rust, no sidecar)         │
+│  · GPX / FIT / TCX parsing                  │
+│  · Data interpolation & smoothing           │
+│  · Per-frame Skia rendering                 │
+│  · FFmpeg video encoding                    │
+└─────────────────────────────────────────────┘
+```
+
+The key design decision: **all rendering logic lives in Rust**. No Python, no Node.js sidecar, no browser-based canvas for the final output. The frontend is purely a configuration editor with a preview — the heavy lifting happens in the Tauri backend.
+
+I wrote a [follow-up post](/blog/rust-rendering-cycling-video-overlays) that goes deep into the rendering pipeline — how GPX data flows through the system, how frames are composited with Skia, and why the parallel producer/consumer pattern makes the whole thing fast.
+
+---
+
+## Try It
+
+Cyclemetry is open source under the MIT license. It runs on macOS (Apple Silicon & Intel), Windows, and Linux.
+
+- **Download:** [cyclemetry.walkersutton.com/install](https://cyclemetry.walkersutton.com/install)
+- **Source:** [github.com/walkersutton/cyclemetry](https://github.com/walkersutton/cyclemetry)
+- **Showcase:** [cyclemetry.walkersutton.com/showcase](https://cyclemetry.walkersutton.com/showcase)
+
+If you're into cycling, video production, or just building cool desktop tools — I'd love to have you contribute.

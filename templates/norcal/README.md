@@ -1,4 +1,4 @@
-# Norcal
+# NorCal
 
 ## Design
 
@@ -6,4 +6,4 @@
 
 ## Preview
 
-![Norcal preview](preview.jpg)
+![NorCal preview](preview.jpg)
