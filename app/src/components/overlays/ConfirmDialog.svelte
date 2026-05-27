@@ -63,14 +63,14 @@
       <button
         onclick={() => oncancel?.()}
         class="text-xs px-3 py-1.5 rounded border border-zinc-600 text-zinc-300
-               hover:border-zinc-400 hover:text-zinc-100 transition-colors"
+               hover:border-zinc-400 hover:text-zinc-100 cursor-pointer transition-colors"
       >
         {cancelText}
       </button>
       <button
         onclick={() => onconfirm?.(dontShowAgain)}
         class="text-xs px-3 py-1.5 rounded border border-red-500/60 text-red-400
-               hover:border-red-400 hover:text-red-300 transition-colors"
+               hover:border-red-400 hover:text-red-300 cursor-pointer transition-colors"
       >
         {confirmText}
       </button>

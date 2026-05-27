@@ -33,6 +33,8 @@
   let draggingId = $state(null)
   let dropIndex = $state(null)      // index into listItems() for between-item drops
   let dropGroupId = $state(null)    // group id when hovering over a group header (add-to-group)
+  let dropGroupedIndex = $state(null)   // insert index within a group's element list
+  let dropGroupedGroupId = $state(null) // which group the within-group drop targets
   let pointerDrag = $state(null)
   let suppressClickId = $state(null)
   let suppressGroupClickId = $state(null)
@@ -226,6 +228,29 @@
 
   function updateDropTarget(clientY) {
     const isDraggingElement = pointerDrag?.kind === 'element'
+    const fromGroupId = pointerDrag?.fromGroupId ?? null
+
+    // Within-group reorder: only when dragging a grouped element over siblings of its own group
+    if (isDraggingElement && fromGroupId != null) {
+      const siblings = [...document.querySelectorAll(`[data-grouped-item="${fromGroupId}"]`)]
+      if (siblings.length > 0) {
+        const firstRect = siblings[0].getBoundingClientRect()
+        const lastRect = siblings[siblings.length - 1].getBoundingClientRect()
+        if (clientY >= firstRect.top && clientY <= lastRect.bottom) {
+          const hitIdx = siblings.findIndex((row) => {
+            const r = row.getBoundingClientRect()
+            return clientY < r.top + r.height / 2
+          })
+          dropGroupedIndex = hitIdx === -1 ? siblings.length : hitIdx
+          dropGroupedGroupId = fromGroupId
+          dropIndex = null
+          dropGroupId = null
+          return
+        }
+      }
+    }
+    dropGroupedIndex = null
+    dropGroupedGroupId = null
 
     // Check group headers for add-to-group (only when dragging an ungrouped element)
     if (isDraggingElement) {
@@ -262,9 +287,47 @@
     e.preventDefault()
   }
 
+  // Rebuild elementLayerOrder so the given group's elements occupy their
+  // existing layer slots, but in the order specified (front-to-back).
+  function reorderWithinGroup(groupId, newGroupElsFrontToBack) {
+    const currentOrder = app.elementLayerOrder ?? []
+    const groupElSet = new Set(newGroupElsFrontToBack)
+    const newBackToFront = [...newGroupElsFrontToBack].reverse()
+    const newOrder = [...currentOrder]
+    let cursor = 0
+    for (let i = 0; i < newOrder.length; i++) {
+      if (groupElSet.has(newOrder[i])) {
+        newOrder[i] = newBackToFront[cursor++]
+      }
+    }
+    app.setElementLayerOrder(newOrder)
+  }
+
   function commitPointerDrop() {
     if (!pointerDrag?.moved) return
     const { id, kind, fromGroupId } = pointerDrag
+
+    // Within-group reorder
+    if (kind === 'element' && dropGroupedIndex != null && dropGroupedGroupId != null) {
+      const groupId = dropGroupedGroupId
+      const groupItem = listItems().find((it) => it.kind === 'group' && it.id === groupId)
+      if (!groupItem) return
+      const fromIdx = groupItem.elements.findIndex((e) => e.id === id)
+      if (fromIdx < 0) return
+      const newGroupEls = [...groupItem.elements]
+      const [moved] = newGroupEls.splice(fromIdx, 1)
+      const toIdx = Math.max(0, Math.min(newGroupEls.length, dropGroupedIndex - (fromIdx < dropGroupedIndex ? 1 : 0)))
+      if (toIdx === fromIdx) {
+        app.selectedElementId = id
+        suppressClickId = id
+        return
+      }
+      newGroupEls.splice(toIdx, 0, moved)
+      reorderWithinGroup(groupId, newGroupEls.map((e) => e.id))
+      app.selectedElementId = id
+      suppressClickId = id
+      return
+    }
 
     if (kind === 'element' && dropGroupId != null) {
       // Drop element onto a group → add it to that group (also removes from old group)
@@ -351,6 +414,8 @@
     draggingId = null
     dropIndex = null
     dropGroupId = null
+    dropGroupedIndex = null
+    dropGroupedGroupId = null
   }
 
   function selectElement(e, id) {
@@ -442,7 +507,7 @@
             >
               <button
                 data-layer-action
-                class="shrink-0 p-0.5 rounded hover:bg-zinc-700/60 transition-colors"
+                class="shrink-0 p-0.5 rounded cursor-pointer hover:bg-zinc-700/60 transition-colors"
                 onclick={(e) => { e.stopPropagation(); toggleCollapse(item.id) }}
                 title={collapsed ? 'Expand' : 'Collapse'}
               >
@@ -480,7 +545,7 @@
                 <button
                   data-layer-action
                   onclick={(e) => { e.stopPropagation(); app.deleteGroup(item.id) }}
-                  class="p-0.5 rounded text-zinc-600 hover:text-destructive transition-colors"
+                  class="p-0.5 rounded text-zinc-600 cursor-pointer hover:text-destructive transition-colors"
                   title="Ungroup"
                 >
                   <X size={11} />
@@ -491,16 +556,24 @@
             <!-- Grouped element rows -->
             {#if !collapsed}
               <ul class="mt-0.5 space-y-0.5 pl-4">
-                {#each item.elements as el (el.id)}
+                {#each item.elements as el, elIdx (el.id)}
                   {@const selected = app.selectedElementIds.includes(el.id)}
                   {@const Icon = ICONS[el.type] ?? BarChart2}
+                  {@const showTopDrop = dropGroupedGroupId === item.id && dropGroupedIndex === elIdx && draggingId !== el.id}
+                  {@const showBottomDrop = dropGroupedGroupId === item.id && dropGroupedIndex === item.elements.length && elIdx === item.elements.length - 1 && draggingId !== el.id}
                   <li
+                    data-grouped-item={item.id}
+                    data-grouped-item-idx={elIdx}
                     onpointerdown={(e) => onRowPointerDown(e, el.id, 'element', item.id)}
-                    class={`group/el relative rounded-[6px] cursor-grab active:cursor-grabbing ${draggingId === el.id ? 'opacity-45' : ''}`}
+                    class={`group/el relative rounded-[6px] cursor-grab active:cursor-grabbing
+                      ${draggingId === el.id ? 'opacity-45' : ''}
+                      ${showTopDrop ? 'before:absolute before:left-0 before:right-0 before:-top-0.5 before:h-px before:bg-primary' : ''}
+                      ${showBottomDrop ? 'after:absolute after:left-0 after:right-0 after:-bottom-0.5 after:h-px after:bg-primary' : ''}`}
                   >
                     <button
                       onclick={(e) => selectElement(e, el.id)}
                       class={`w-full flex items-center gap-2 px-2.5 py-2 pr-24 rounded-[6px] text-left text-sm transition-colors
+                        cursor-grab active:cursor-grabbing
                         ${selected
                           ? 'bg-primary/10 text-primary border border-primary/30'
                           : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100'}`}
@@ -515,28 +588,28 @@
                       <button
                         data-layer-action
                         onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, 1) }}
-                        class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
+                        class="p-1 rounded text-zinc-600 cursor-pointer hover:text-zinc-200 transition-colors"
                         title="Bring forward"
                         tabindex="-1"
                       ><ArrowUp size={11} /></button>
                       <button
                         data-layer-action
                         onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, -1) }}
-                        class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
+                        class="p-1 rounded text-zinc-600 cursor-pointer hover:text-zinc-200 transition-colors"
                         title="Send backward"
                         tabindex="-1"
                       ><ArrowDown size={11} /></button>
                       <button
                         data-layer-action
                         onclick={(e) => { e.stopPropagation(); app.removeElementFromGroups(el.id) }}
-                        class="p-1 rounded text-zinc-600 hover:text-zinc-400 transition-colors"
+                        class="p-1 rounded text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors"
                         title="Remove from group"
                         tabindex="-1"
                       ><X size={11} /></button>
                       <button
                         data-layer-action
                         onclick={(e) => { e.stopPropagation(); app.removeElement(el.id) }}
-                        class="p-1 rounded text-zinc-600 hover:text-destructive transition-colors"
+                        class="p-1 rounded text-zinc-600 cursor-pointer hover:text-destructive transition-colors"
                         title="Remove"
                         tabindex="-1"
                       ><Trash2 size={11} /></button>
@@ -579,21 +652,21 @@
               <button
                 data-layer-action
                 onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, 1) }}
-                class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
+                class="p-1 rounded text-zinc-600 cursor-pointer hover:text-zinc-200 transition-colors"
                 title="Bring forward"
                 tabindex="-1"
               ><ArrowUp size={11} /></button>
               <button
                 data-layer-action
                 onclick={(e) => { e.stopPropagation(); app.moveElementLayer(el.id, -1) }}
-                class="p-1 rounded text-zinc-600 hover:text-zinc-200 transition-colors"
+                class="p-1 rounded text-zinc-600 cursor-pointer hover:text-zinc-200 transition-colors"
                 title="Send backward"
                 tabindex="-1"
               ><ArrowDown size={11} /></button>
               <button
                 data-layer-action
                 onclick={(e) => { e.stopPropagation(); app.removeElement(el.id) }}
-                class="p-1 rounded text-zinc-600 hover:text-destructive transition-colors"
+                class="p-1 rounded text-zinc-600 cursor-pointer hover:text-destructive transition-colors"
                 title="Remove"
                 tabindex="-1"
               ><Trash2 size={11} /></button>

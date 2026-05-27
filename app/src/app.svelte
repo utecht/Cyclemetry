@@ -115,6 +115,8 @@
   let buildInfo = $state('')
 
   const REVERT_SKIP_KEY = 'confirm_skip_revert_template'
+  const RENDERED_ONCE_KEY = 'has_rendered_once'
+  let hasRenderedOnce = $state(localStorage.getItem(RENDERED_ONCE_KEY) === 'true')
 
   function handleRevertClick() {
     if (localStorage.getItem(REVERT_SKIP_KEY) === 'true') {
@@ -274,6 +276,10 @@
 
   async function handleRender() {
     if (rendering || !app.hasActivity) return
+    if (!hasRenderedOnce) {
+      hasRenderedOnce = true
+      localStorage.setItem(RENDERED_ONCE_KEY, 'true')
+    }
     rendering = true
     try {
       const result = await renderVideo(app)
@@ -624,7 +630,7 @@
         <Button
           onclick={handleRender}
           disabled={!app.config || !app.hasActivity || app.renderingVideo}
-          class="gap-1.5 min-w-[104px] border border-[#DC143C]/70 bg-[#DC143C]/15 text-zinc-100 hover:border-[#DC143C] hover:bg-[#DC143C]/25"
+          class="gap-1.5 min-w-[104px] border border-[#DC143C]/70 bg-[#DC143C]/15 text-zinc-100 hover:border-[#DC143C] hover:bg-[#DC143C]/25 {onboardingStep === 0 && !hasRenderedOnce ? 'onboarding-glow' : ''}"
           size="sm"
         >
           <Play size={13} />
