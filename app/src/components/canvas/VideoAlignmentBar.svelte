@@ -2,15 +2,16 @@
   /**
    * Shows the reference video's extent on the same time axis as the
    * playback scrubber, with the video band draggable to nudge the
-   * userOffset. Only mounted when `app.selectedVideo` is true, mirroring
-   * the conditional distance-reference bar pattern.
+   * userOffset. Always mounted when a valid video is loaded.
    *
-   * The band is positioned by the shared `videoStartOnAxis()` helper
-   * (Phase 3) — when both timestamps are present this is real wall-clock
-   * alignment; otherwise the offset alone places it.
+   * The band is positioned by the shared `videoStartOnAxis()` helper —
+   * when both timestamps are present this is real wall-clock alignment;
+   * otherwise the offset alone places it.
+   *
+   * Auto-snap: if the video band is entirely outside the overlay window,
+   * it is automatically moved to the timeline start.
    */
   import { getContext } from 'svelte'
-  import { AlertTriangle } from 'lucide-svelte'
   import {
     videoStartOnAxis as computeStartOnAxis,
     offsetForVideoStart,
@@ -108,27 +109,22 @@
   function moveVideoToTimelineStart() {
     app.setVideoOffset(offsetForVideoStart(app.gpxStartTime, video, sceneStart))
   }
+
+  // Auto-snap: move to timeline start when the video is entirely outside
+  // the overlay window and the user isn't actively dragging.
+  $effect(() => {
+    if (!hasOverlap && videoDuration > 0 && !drag) {
+      moveVideoToTimelineStart()
+    }
+  })
 </script>
 
 {#if video && !video.missing && videoDuration > 0}
   <div class="px-4 pt-2 pb-1 space-y-1.5">
-    <div class="flex items-center justify-between text-[10px]">
+    <div class="flex items-center text-[10px]">
       <span class="font-semibold uppercase tracking-wider text-sky-400/80"
         >Video alignment</span
       >
-      {#if !hasOverlap}
-        <span class="flex items-center gap-1.5 text-amber-400">
-          <AlertTriangle size={10} />
-          No overlap —
-          <button
-            type="button"
-            onclick={moveVideoToTimelineStart}
-            class="underline decoration-dotted underline-offset-2
-                   hover:text-amber-200 transition-colors"
-            >move to timeline start</button
-          >
-        </span>
-      {/if}
     </div>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->

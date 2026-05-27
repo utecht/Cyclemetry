@@ -6,9 +6,14 @@
     message = '',
     confirmText = 'Confirm',
     cancelText = 'Cancel',
+    // When provided, a "don't show again" checkbox is rendered.
+    // onconfirm receives a boolean — true if the box was checked at confirm time.
+    dontShowAgainLabel = null,
     onconfirm,
     oncancel,
   } = $props()
+
+  let dontShowAgain = $state(false)
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown)
@@ -21,7 +26,7 @@
       oncancel?.()
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      onconfirm?.()
+      onconfirm?.(dontShowAgain)
     }
   }
 </script>
@@ -41,6 +46,19 @@
     {#if message}
       <p class="mt-2 text-xs text-zinc-400 leading-relaxed">{message}</p>
     {/if}
+
+    {#if dontShowAgainLabel}
+      <label class="mt-4 flex items-center gap-2 cursor-pointer select-none w-fit">
+        <input
+          type="checkbox"
+          bind:checked={dontShowAgain}
+          class="w-3.5 h-3.5 rounded-[3px] border border-zinc-600 bg-zinc-800
+                 accent-zinc-400 cursor-pointer"
+        />
+        <span class="text-[11px] text-zinc-500">{dontShowAgainLabel}</span>
+      </label>
+    {/if}
+
     <div class="mt-5 flex justify-end gap-2">
       <button
         onclick={() => oncancel?.()}
@@ -50,7 +68,7 @@
         {cancelText}
       </button>
       <button
-        onclick={() => onconfirm?.()}
+        onclick={() => onconfirm?.(dontShowAgain)}
         class="text-xs px-3 py-1.5 rounded border border-red-500/60 text-red-400
                hover:border-red-400 hover:text-red-300 transition-colors"
       >
