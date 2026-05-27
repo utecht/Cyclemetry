@@ -161,6 +161,31 @@ export const openVideo = (filename) =>
 export const loadGpxFromPath = (path) => invoke('backend_load_gpx', { path })
 
 /**
+ * @typedef {Object} SavedActivity
+ * @property {string} filename
+ * @property {number} start_ms - activity's start time as unix epoch ms
+ *   (falls back to the file mtime when the activity has no usable timestamp)
+ */
+
+/** @returns {Promise<SavedActivity[]>} newest first */
+export const listActivities = () => invoke('backend_list_activities')
+
+/**
+ * Load a previously saved activity by its filename in the uploads dir.
+ * @param {string} filename
+ * @returns {Promise<string>}
+ */
+export const loadSavedActivity = (filename) =>
+  invoke('backend_load_saved_activity', { filename })
+
+/**
+ * @param {string} filename
+ * @returns {Promise<void>}
+ */
+export const deleteActivity = (filename) =>
+  invoke('backend_delete_activity', { filename })
+
+/**
  * @param {string} gpxFilename
  * @param {number} sceneStart
  * @param {number} sceneEnd

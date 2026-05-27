@@ -1,6 +1,5 @@
 <script>
   import { setContext, onMount } from 'svelte'
-  import { open } from '@tauri-apps/plugin-dialog'
   import { listen } from '@tauri-apps/api/event'
   import { createAppState } from './state/appState.svelte.js'
   import * as backend from './api/backend.js'
@@ -15,6 +14,7 @@
   import UpdateBanner from './components/overlays/UpdateBanner.svelte'
   import Settings from './components/overlays/Settings.svelte'
   import TemplatePickerModal from './components/overlays/TemplatePickerModal.svelte'
+  import ActivityPickerModal from './components/overlays/ActivityPickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
   import NewTemplateDialog from './components/overlays/NewTemplateDialog.svelte'
   import Button from './components/ui/Button.svelte'
@@ -110,6 +110,7 @@
   let rendering = $state(false)
   let showSettings = $state(false)
   let showNewTemplateDialog = $state(false)
+  let showActivityPicker = $state(false)
   let showRevertConfirm = $state(false)
   let buildInfo = $state('')
 
@@ -129,7 +130,7 @@
       t?.tagName === 'TEXTAREA' ||
       t?.tagName === 'SELECT' ||
       t?.isContentEditable
-    const blocked = showSettings || app.showTemplatePicker || showNewTemplateDialog
+    const blocked = showSettings || app.showTemplatePicker || showNewTemplateDialog || showActivityPicker
 
     if (e.key === 'Escape' && showResolutionMenu) {
       showResolutionMenu = false
@@ -210,53 +211,62 @@
   })
 
   // ── Actions ────────────────────────────────────────────────────────────────
+  // Open the picker (Tauri) or fall back to a browser file input (web preview).
   async function handleOpenGpx() {
+    const inTauri = typeof window.__TAURI__ !== 'undefined'
+    if (inTauri) {
+      showActivityPicker = true
+      return
+    }
     try {
-      const inTauri = typeof window.__TAURI__ !== 'undefined'
-      if (inTauri) {
-        const selected = await open({
-          multiple: false,
-          filters: [{ name: 'Activity (GPX, FIT, TCX)', extensions: ['gpx', 'fit', 'tcx'] }],
-          title: 'Select Activity File',
-        })
-        if (!selected) return
-        await loadGpx(selected, app)
-        backend.recordGpxOpened(selected).catch(() => {})
-        if (!app.config) {
-          try {
-            const def = await backend.getTemplate('default.json')
-            app.config = def
-            app.loadedTemplateFilename = 'default.json'
-            app.updateScene({ start: 0, end: app.timelineDuration })
-          } catch { /* use existing config */ }
-        }
-      } else {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.accept = '.gpx,.fit,.tcx'
-        input.onchange = async (e) => {
-          const file = e.target.files?.[0]
-          if (file) await loadGpx(file, app)
-        }
-        input.click()
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.gpx,.fit,.tcx'
+      input.onchange = async (e) => {
+        const file = e.target.files?.[0]
+        if (file) await loadGpx(file, app)
       }
+      input.click()
     } catch (err) {
       app.errorMessage = `Activity load failed: ${errorText(err)}`
     }
   }
 
+  /**
+   * Load an activity from either an absolute path (string, from the native
+   * dialog) or a previously saved uploads-dir entry ({ savedFilename }).
+   * Called by ActivityPickerModal and by the macOS recent menu.
+   */
+  async function loadActivityFromPickerOrMenu(source) {
+    if (typeof source === 'string') {
+      await loadGpx(source, app)
+      backend.recordGpxOpened(source).catch(() => {})
+    } else {
+      const filename = source.savedFilename
+      const stored = await backend.loadSavedActivity(filename)
+      const result = typeof stored === 'string' ? JSON.parse(stored) : stored
+      if (result.error) throw new Error(result.error)
+      app.gpxFilename = result.filename ?? filename
+      app.gpxStartTime = result.start_time ?? null
+      app.activityDuration = result.duration_seconds
+      app.selectedSecond = 0
+      if (app.config?.scene) {
+        app.updateScene({ start: 0, end: app.timelineDuration })
+      }
+    }
+    if (!app.config) {
+      try {
+        const def = await backend.getTemplate('default.json')
+        app.config = def
+        app.loadedTemplateFilename = 'default.json'
+        app.updateScene({ start: 0, end: app.timelineDuration })
+      } catch { /* use existing config */ }
+    }
+  }
+
   async function handleOpenRecentGpx(path) {
     try {
-      await loadGpx(path, app)
-      backend.recordGpxOpened(path).catch(() => {})
-      if (!app.config) {
-        try {
-          const def = await backend.getTemplate('default.json')
-          app.config = def
-          app.loadedTemplateFilename = 'default.json'
-          app.updateScene({ start: 0, end: app.timelineDuration })
-        } catch { /* use existing config */ }
-      }
+      await loadActivityFromPickerOrMenu(path)
     } catch (err) {
       app.errorMessage = `Could not open ${path.split('/').pop()}: ${errorText(err)}`
     }
@@ -295,6 +305,14 @@
     return Math.round(((end - start) * fps) / renderFps)
   })
 
+  let renderTooltip = $derived.by(() => {
+    if (!app.config) return 'Load a template first'
+    if (!app.hasActivity) return 'Load an activity first'
+    if (app.renderingVideo) return 'Render in progress'
+    if (renderEstimateSecs != null) return `Estimated render time: ~${formatTime(renderEstimateSecs)}`
+    return null
+  })
+
   let gpxLabel = $derived.by(() => {
     if (!app.gpxFilename) return 'Load Activity'
     return app.gpxFilename.split(/[\\/]/).pop()
@@ -319,6 +337,12 @@
   {/if}
   {#if app.showTemplatePicker}
     <TemplatePickerModal onclose={() => { app.showTemplatePicker = false }} />
+  {/if}
+  {#if showActivityPicker}
+    <ActivityPickerModal
+      onload={loadActivityFromPickerOrMenu}
+      onclose={() => { showActivityPicker = false }}
+    />
   {/if}
   {#if showNewTemplateDialog}
     <NewTemplateDialog
@@ -590,19 +614,17 @@
 
     <div class="flex-1"></div>
 
-    <!-- Render button + estimate -->
+    <!-- Render button -->
     <div class="flex items-center gap-2">
-      {#if renderEstimateSecs != null}
-        <span class="text-xs text-zinc-500 font-mono">~{formatTime(renderEstimateSecs)}</span>
-      {/if}
       <Tooltip
-        content={!app.config ? 'Load a template first' : !app.hasActivity ? 'Load an activity first' : app.renderingVideo ? 'Render in progress' : null}
+        content={renderTooltip}
         side="bottom"
+        align="end"
       >
         <Button
           onclick={handleRender}
           disabled={!app.config || !app.hasActivity || app.renderingVideo}
-          class="gap-1.5 min-w-[104px] shadow-sm shadow-primary/10"
+          class="gap-1.5 min-w-[104px] border border-[#DC143C]/70 bg-[#DC143C]/15 text-zinc-100 hover:border-[#DC143C] hover:bg-[#DC143C]/25"
           size="sm"
         >
           <Play size={13} />

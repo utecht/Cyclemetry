@@ -6,6 +6,7 @@
   import { getContext } from 'svelte'
   import { Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
   import Input from '../ui/Input.svelte'
+  import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
   import Switch from '../ui/Switch.svelte'
   import ColorInput from '../ui/ColorInput.svelte'
@@ -559,7 +560,7 @@
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <Input type="number" value={item.opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.opacity ?? 1}
             oninput={(e) => update('opacity', e.target.value)} />
         </label>
         {/if}
@@ -576,7 +577,7 @@
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Element opacity (0–1)</span>
-          <Input type="number" value={item.opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.opacity ?? 1}
             oninput={(e) => update('opacity', e.target.value)} />
         </label>
         {/if}
@@ -597,7 +598,7 @@
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <Input type="number" value={item.fill_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
             oninput={(e) => update('fill_opacity', e.target.value)} />
         </label>
       </section>
@@ -622,7 +623,7 @@
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-            <Input type="number" value={item.border_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
               oninput={(e) => update('border_opacity', e.target.value)} />
           </label>
         </div>
@@ -831,7 +832,7 @@
         </div>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <Input type="number" value={item.fill_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
             oninput={(e) => update('fill_opacity', e.target.value)} />
         </label>
       </section>
@@ -852,7 +853,7 @@
         {#if item.background}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <Input type="number" value={item.background_opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.background_opacity ?? 1}
             oninput={(e) => update('background_opacity', e.target.value)} />
         </label>
         {/if}
@@ -878,7 +879,7 @@
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-            <Input type="number" value={item.border_opacity ?? item.opacity ?? 1} min={0} max={1} step={0.05}
+            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
               oninput={(e) => update('border_opacity', e.target.value)} />
           </label>
         </div>
@@ -1114,7 +1115,7 @@
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Opacity</span>
-            <Input type="number" value={item.background_opacity ?? 0} min={0} max={1} step={0.05}
+            <OpacityControl value={item.background_opacity ?? 0}
               oninput={(e) => update('background_opacity', e.target.value)} />
           </label>
           <label class="space-y-1">
@@ -1149,12 +1150,12 @@
         {#if showAdvanced && item.value === 'course'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Past opacity (traveled, 0–1)</span>
-          <Input type="number" value={item.line?.past_opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.line?.past_opacity ?? 1}
             oninput={(e) => updateNested('line', 'past_opacity', e.target.value)} />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Future opacity (ahead, 0–1)</span>
-          <Input type="number" value={item.line?.future_opacity ?? 1} min={0} max={1} step={0.05}
+          <OpacityControl value={item.line?.future_opacity ?? 1}
             oninput={(e) => updateNested('line', 'future_opacity', e.target.value)} />
         </label>
         {/if}
@@ -1173,7 +1174,7 @@
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <Input type="number" value={item.fill?.opacity ?? 0} min={0} max={1} step={0.05}
+          <OpacityControl value={item.fill?.opacity ?? 0}
             oninput={(e) => updateNested('fill', 'opacity', e.target.value)} />
         </label>
       </section>
@@ -1251,7 +1252,7 @@
               </label>
               <label class="space-y-1">
                 <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-                <Input type="number" value={marker.opacity ?? 1} min={0} max={1} step={0.05}
+                <OpacityControl value={marker.opacity ?? 1}
                   oninput={(e) => updateCourseMarker('opacity', e.target.value)} />
               </label>
             </div>
@@ -1440,7 +1441,7 @@
       {#if showAdvanced}
       <label class="space-y-1 block">
         <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-        <Input type="number" value={item.opacity ?? app.config?.scene?.opacity ?? 1} min={0} max={1} step={0.05} oninput={(e) => update('opacity', e.target.value)} />
+        <OpacityControl value={item.opacity ?? app.config?.scene?.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
       </label>
       {/if}
     </section>

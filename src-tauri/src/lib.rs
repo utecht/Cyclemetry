@@ -708,6 +708,84 @@ fn backend_open_activities() -> Result<String, String> {
     Ok(r#"{"message":"Activities folder opened"}"#.to_string())
 }
 
+#[derive(Serialize)]
+struct SavedActivity {
+    filename: String,
+    /// Unix epoch milliseconds of the *first recorded sample* — the activity's
+    /// start time, not when the user added the file. Falls back to the file's
+    /// mtime when the source lacks usable timestamps so the entry still sorts
+    /// reasonably and shows *some* date.
+    start_ms: i64,
+}
+
+/// List activities in the uploads dir, newest first. Used by the
+/// activity picker modal so the user can re-open a recently added GPX
+/// without going through the native file dialog again.
+#[tauri::command]
+fn backend_list_activities() -> Vec<SavedActivity> {
+    use std::time::UNIX_EPOCH;
+    let mut items: Vec<SavedActivity> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(uploads_dir()) else {
+        return items;
+    };
+    for entry in entries.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if !(lower.ends_with(".gpx") || lower.ends_with(".fit") || lower.ends_with(".tcx")) {
+            continue;
+        }
+        let path = entry.path();
+        // symlink_metadata so a broken symlink still shows up (user can delete it).
+        let mtime_ms = path
+            .symlink_metadata()
+            .ok()
+            .and_then(|m| m.modified().ok().or_else(|| m.created().ok()))
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        // Prefer the activity's first-sample timestamp; fall back to file mtime
+        // so timestamp-less or unreadable files still show *a* date.
+        let start_ms = render::activity::Activity::from_file(&path.to_string_lossy())
+            .ok()
+            .and_then(|a| a.start_time_ms)
+            .unwrap_or(mtime_ms);
+        items.push(SavedActivity {
+            filename: name,
+            start_ms,
+        });
+    }
+    items.sort_by_key(|a| std::cmp::Reverse(a.start_ms));
+    items
+}
+
+/// Load a previously saved activity by its filename in the uploads dir.
+/// Thin wrapper over [`backend_load_gpx`] so the frontend never needs to
+/// know the absolute path of the uploads directory.
+#[tauri::command]
+fn backend_load_saved_activity(filename: String) -> Result<String, String> {
+    let path = uploads_dir().join(&filename);
+    if !path.exists() {
+        return Err(format!(
+            "Saved activity is missing or its source moved: {filename}"
+        ));
+    }
+    backend_load_gpx(path.to_string_lossy().into_owned())
+}
+
+/// Remove a saved activity from the uploads dir. For symlinked entries this
+/// only unlinks our pointer; the file at the original path is untouched.
+#[tauri::command]
+fn backend_delete_activity(filename: String) -> Result<(), String> {
+    let path = uploads_dir().join(&filename);
+    // symlink_metadata so a broken symlink can still be deleted.
+    if path.symlink_metadata().is_err() {
+        return Err(format!("Activity not found: {filename}"));
+    }
+    std::fs::remove_file(&path).map_err(|e| format!("Failed to delete activity: {e}"))
+}
+
 #[tauri::command]
 fn backend_default_output_dir() -> String {
     default_output_dir().to_string_lossy().to_string()
@@ -975,7 +1053,9 @@ fn backend_report_issue(title: String, body: String) -> Result<(), String> {
 // ─── GPX upload / load ────────────────────────────────────────────────────────
 
 /// Load a GPX from an absolute path chosen via the native file dialog.
-/// Copies it to the uploads dir and returns metadata.
+/// Symlinks it into the uploads dir (falling back to copy when the OS or
+/// filesystem can't support symlinks) and returns metadata. The frontend
+/// stores only the basename, so re-opens never re-prompt for file access.
 #[tauri::command]
 fn backend_load_gpx(path: String) -> Result<String, String> {
     let src = Path::new(&path);
@@ -987,7 +1067,11 @@ fn backend_load_gpx(path: String) -> Result<String, String> {
         .and_then(|n| n.to_str())
         .ok_or("Invalid filename")?;
     let dest = uploads_dir().join(filename);
-    std::fs::copy(src, &dest).map_err(|e| format!("Failed to copy GPX: {e}"))?;
+    let already_registered =
+        std::fs::canonicalize(src).ok() == std::fs::canonicalize(&dest).ok() && src.exists();
+    if !already_registered {
+        link_or_copy(src, &dest).map_err(|e| format!("Failed to register GPX: {e}"))?;
+    }
     match gpx_metadata_response(filename, &dest.to_string_lossy()) {
         Ok(response) => Ok(response),
         Err(e) => {
@@ -995,6 +1079,29 @@ fn backend_load_gpx(path: String) -> Result<String, String> {
             Err(e)
         }
     }
+}
+
+/// Replace `dest` with a symlink to `src` when possible; otherwise copy bytes.
+/// We always wipe `dest` first so re-opening the same filename never leaves
+/// a stale link pointing at a now-moved original.
+fn link_or_copy(src: &Path, dest: &Path) -> std::io::Result<()> {
+    if dest.exists() || dest.symlink_metadata().is_ok() {
+        std::fs::remove_file(dest)?;
+    }
+    #[cfg(unix)]
+    {
+        if std::os::unix::fs::symlink(src, dest).is_ok() {
+            return Ok(());
+        }
+    }
+    #[cfg(windows)]
+    {
+        if std::os::windows::fs::symlink_file(src, dest).is_ok() {
+            return Ok(());
+        }
+    }
+    std::fs::copy(src, dest)?;
+    Ok(())
 }
 
 /// Receive raw GPX bytes from the frontend (web drag-drop / file picker).
@@ -1790,6 +1897,9 @@ pub fn run() {
             backend_open_downloads,
             backend_open_video,
             backend_load_gpx,
+            backend_list_activities,
+            backend_load_saved_activity,
+            backend_delete_activity,
             backend_upload,
             probe_video,
             backend_community_templates,

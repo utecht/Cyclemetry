@@ -3,6 +3,7 @@
   let {
     content = '',
     side = 'top',
+    align = 'center',
     children,
     class: className = '',
   } = $props()
@@ -25,10 +26,13 @@
       class={cn(
         'absolute z-50 w-max max-w-[200px] rounded-[6px] border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-foreground shadow-lg',
         'pointer-events-none',
-        side === 'top' && 'bottom-full left-1/2 -translate-x-1/2 mb-1.5',
-        side === 'bottom' && 'top-full left-1/2 -translate-x-1/2 mt-1.5',
+        side === 'top' && 'bottom-full mb-1.5',
+        side === 'bottom' && 'top-full mt-1.5',
         side === 'left' && 'right-full top-1/2 -translate-y-1/2 mr-1.5',
         side === 'right' && 'left-full top-1/2 -translate-y-1/2 ml-1.5',
+        (side === 'top' || side === 'bottom') && align === 'center' && 'left-1/2 -translate-x-1/2',
+        (side === 'top' || side === 'bottom') && align === 'start' && 'left-0',
+        (side === 'top' || side === 'bottom') && align === 'end' && 'right-0',
       )}
     >{content}</span>
   {/if}

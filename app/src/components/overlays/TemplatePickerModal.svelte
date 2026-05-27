@@ -216,7 +216,7 @@
                 <!-- Preview (clickable) -->
                 <button
                   onclick={() => handleLoad(tpl.id)}
-                  class="w-full text-left aspect-video bg-zinc-800 flex items-center justify-center overflow-hidden block"
+                  class="w-full text-left aspect-video bg-zinc-800 flex items-center justify-center overflow-hidden block cursor-pointer"
                 >
                   {#if tpl.preview_url && !previewFailed(tpl.id)}
                     <img
@@ -233,7 +233,7 @@
                 <div class="px-2.5 py-2 flex items-center gap-1">
                   <button
                     onclick={() => handleLoad(tpl.id)}
-                    class="flex-1 min-w-0 text-left"
+                    class="flex-1 min-w-0 text-left cursor-pointer"
                   >
                     <span class="text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
                   </button>
