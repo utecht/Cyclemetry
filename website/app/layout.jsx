@@ -1,4 +1,4 @@
-import { Footer, Layout, Navbar } from 'nextra-theme-docs'
+import { Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import Script from 'next/script'
@@ -45,22 +45,6 @@ const navbar = (
   </Navbar>
 )
 
-const footer = (
-  <Footer>
-    <span style={{ color: '#a1a1aa', fontSize: '0.875rem' }}>
-      MIT {new Date().getFullYear()} ©{' '}
-      <a
-        href="https://github.com/walkersutton"
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{ color: '#fafafa' }}
-      >
-        Walker Sutton
-      </a>
-    </span>
-  </Footer>
-)
-
 export default async function RootLayout({ children }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
@@ -79,7 +63,8 @@ export default async function RootLayout({ children }) {
           navbar={navbar}
           pageMap={await getPageMap()}
           docsRepositoryBase="https://github.com/walkersutton/cyclemetry/blob/main/website"
-          footer={footer}
+          darkMode={false}
+          nextThemes={{ defaultTheme: 'dark', forcedTheme: 'dark' }}
           sidebar={{ defaultMenuCollapseLevel: 1 }}
           editLink="Edit this page on GitHub"
         >
