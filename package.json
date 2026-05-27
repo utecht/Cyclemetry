@@ -2,6 +2,7 @@
   "name": "cyclemetry",
   "version": "0.1.3",
   "scripts": {
+    "prepare": "git config core.hooksPath scripts/git-hooks || true",
     "dev": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev",
     "build": "CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri build",
     "lint": "pnpm --dir app lint",

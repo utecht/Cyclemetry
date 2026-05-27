@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+fail() {
+  echo ""
+  echo "pre-commit: $1"
+  echo "Run 'pnpm format' and 'pnpm lint' to fix, then re-stage."
+  exit 1
+}
+
+echo "pre-commit: checking JS (ESLint)..."
+(cd "$REPO_ROOT/app" && pnpm lint) || fail "ESLint failed"
+
+echo "pre-commit: checking JS (Prettier)..."
+(cd "$REPO_ROOT/app" && pnpm exec prettier --check .) || fail "Prettier check failed — run 'pnpm format:frontend'"
+
+echo "pre-commit: checking Rust (cargo fmt)..."
+(cd "$REPO_ROOT/src-tauri" && cargo fmt --check) || fail "cargo fmt check failed — run 'cargo fmt' in src-tauri/"
+
+echo "pre-commit: checking templates generated outputs..."
+node "$REPO_ROOT/scripts/update-templates-readme.mjs" >/dev/null
+if [ -n "$(cd "$REPO_ROOT" && git diff --name-only -- templates/README.md website/content/templates.json)" ]; then
+  fail "templates/README.md or website/content/templates.json is stale vs template READMEs — regen ran; 'git add' the changes and retry"
+fi
+
+echo "pre-commit: all checks passed."

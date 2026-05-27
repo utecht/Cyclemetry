@@ -2,8 +2,8 @@
   {
     "name": "aaron",
     "displayName": "Aaron",
-    "inspiration": {
-      "label": "YouTube",
+    "design": {
+      "label": "YouTube Inspo",
       "url": "https://www.youtube.com/watch?v=S8R3_HIBeGs"
     },
     "previewUrl": "/templates/aaron/preview.jpg",
@@ -13,7 +13,10 @@
   {
     "name": "crit",
     "displayName": "Crit",
-    "inspiration": null,
+    "design": {
+      "label": "Designer",
+      "url": "https://github.com/walkersutton"
+    },
     "previewUrl": "/templates/crit/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/crit",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/crit/crit.json"
@@ -21,7 +24,10 @@
   {
     "name": "jeff",
     "displayName": "Jeff",
-    "inspiration": null,
+    "design": {
+      "label": "YouTube Inspo",
+      "url": "https://www.youtube.com/watch?v=oAVvY4d0vdM"
+    },
     "previewUrl": "/templates/jeff/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/jeff",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/jeff/jeff.json"
@@ -29,7 +35,10 @@
   {
     "name": "norcal",
     "displayName": "Norcal",
-    "inspiration": null,
+    "design": {
+      "label": "YouTube Inspo",
+      "url": "https://www.youtube.com/watch?v=mKGhoX06Nns"
+    },
     "previewUrl": "/templates/norcal/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/norcal",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/norcal/norcal.json"
@@ -37,7 +46,10 @@
   {
     "name": "safa",
     "displayName": "Safa",
-    "inspiration": null,
+    "design": {
+      "label": "YouTube Inspo",
+      "url": "https://www.youtube.com/watch?v=khzXmWDej0Q"
+    },
     "previewUrl": "/templates/safa/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/safa",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/safa/safa.json"
@@ -45,7 +57,10 @@
   {
     "name": "will",
     "displayName": "Will",
-    "inspiration": null,
+    "design": {
+      "label": "YouTube Inspo",
+      "url": "https://www.youtube.com/watch?v=9wKOlAVeDa4"
+    },
     "previewUrl": "/templates/will/preview.jpg",
     "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/will",
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/will/will.json"

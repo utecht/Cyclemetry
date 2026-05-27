@@ -1,8 +1,8 @@
 # Aaron
 
-## Inspiration
+## Design
 
-- [YouTube](https://www.youtube.com/watch?v=S8R3_HIBeGs)
+- [YouTube Inspo](https://www.youtube.com/watch?v=S8R3_HIBeGs)
 
 ## Preview
 
