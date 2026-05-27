@@ -33,8 +33,8 @@
   class={cn(
     'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] font-medium transition-colors',
     'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-    'disabled:pointer-events-none disabled:opacity-50',
-    'cursor-pointer',
+    'disabled:cursor-not-allowed disabled:opacity-50',
+    disabled ? 'cursor-not-allowed' : 'cursor-pointer',
     variants[variant] ?? variants.default,
     sizes[size] ?? sizes.default,
     className,

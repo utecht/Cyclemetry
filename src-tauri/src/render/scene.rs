@@ -487,7 +487,7 @@ fn write_placement_sidecar(
     }
 }
 
-fn resolve_ffmpeg() -> String {
+pub(crate) fn resolve_ffmpeg() -> String {
     // On Windows the binary is ffmpeg.exe; on Unix it's ffmpeg.
     let bin_name = if cfg!(windows) {
         "ffmpeg.exe"
@@ -596,7 +596,7 @@ struct FfmpegEncoder {
     mode: &'static str,
 }
 
-fn ffmpeg_command(ffmpeg_bin: &str) -> Command {
+pub(crate) fn ffmpeg_command(ffmpeg_bin: &str) -> Command {
     #[cfg(windows)]
     {
         let mut cmd = Command::new(ffmpeg_bin);

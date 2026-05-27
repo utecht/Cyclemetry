@@ -19,7 +19,7 @@
   // frameImage: full rendered scene PNG (data URL) at output resolution.
   let { measuredElements = [], frameImage = null, zoom = 1 } = $props()
 
-  // The backend renders + measures the demo frame at the chosen OUTPUT
+  // The backend renders + measures the preview frame at the chosen OUTPUT
   // resolution, scaled from the template's authored size by a uniform
   // height-based factor. The SVG overlay must use that same output space so
   // measured element bounds line up; config-derived fallbacks and drag

@@ -41,6 +41,11 @@ pub struct Activity {
     pub valid_attributes: Vec<String>,
     /// Total cumulative distance (metres) of the full activity before any trim.
     pub total_activity_distance: f64,
+    /// Unix millis of the first recorded sample, or `None` for sources without
+    /// timestamps (some screen-recorded TCX, manually authored GPX). Used by
+    /// the alignment timeline to map activity time → wall-clock for matching
+    /// against a video's container `creation_time`.
+    pub start_time_ms: Option<i64>,
 }
 
 impl Activity {
@@ -543,6 +548,7 @@ impl Activity {
                 .collect();
             if elapsed.windows(2).all(|w| w[1] >= w[0]) {
                 activity.elapsed_seconds = elapsed;
+                activity.start_time_ms = Some(base);
             }
         }
 

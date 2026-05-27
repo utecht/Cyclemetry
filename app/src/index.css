@@ -110,6 +110,137 @@ body {
   }
 }
 
+/* ── Header button tokens ───────────────────────────────────────────────── */
+/* Base style shared by all interactive buttons in the top bar.              */
+/* Extend with layout utilities: px-2.5 gap-1.5 (text) or hdr-btn-icon (icon). */
+.hdr-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem; /* h-7 */
+  border-radius: 6px;
+  border: 1px solid #3f3f46; /* zinc-700 */
+  background: transparent;
+  color: #a1a1aa; /* zinc-400 */
+  font-size: 0.75rem; /* text-xs */
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms,
+    border-color 150ms,
+    background-color 150ms;
+}
+.hdr-btn:hover {
+  border-color: #71717a; /* zinc-500 */
+  background-color: rgb(39 39 42 / 0.6); /* zinc-800/60 */
+  color: #e4e4e7; /* zinc-200 */
+}
+.hdr-btn:active {
+  transform: scale(0.98);
+}
+
+/* Square icon-only variant */
+.hdr-btn-icon {
+  width: 1.75rem; /* w-7 */
+  justify-content: center;
+}
+
+.resolution-popover {
+  transform-origin: 18px 0;
+  animation: popover-enter 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.resolution-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 2.75rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  padding: 0.45rem 0.55rem;
+  color: #a1a1aa;
+  background: transparent;
+  font-size: 0.75rem;
+  line-height: 1.1;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color 140ms,
+    border-color 140ms,
+    background-color 140ms,
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.resolution-option:hover {
+  background: rgb(39 39 42 / 0.65);
+  color: #e4e4e7;
+}
+
+.resolution-option:active {
+  transform: scale(0.98);
+}
+
+.resolution-option--active {
+  border-color: rgba(220, 20, 60, 0.5);
+  background: rgba(220, 20, 60, 0.1);
+  color: #fafafa;
+}
+
+/* ── Onboarding glow — crimson pulse on header buttons & active card ────── */
+@keyframes onboarding-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(220, 20, 60, 0.35),
+      0 0 8px 2px rgba(220, 20, 60, 0.12);
+    border-color: rgba(220, 20, 60, 0.5);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(220, 20, 60, 0.75),
+      0 0 18px 5px rgba(220, 20, 60, 0.28);
+    border-color: rgba(220, 20, 60, 0.9);
+  }
+}
+
+.onboarding-glow {
+  animation: onboarding-glow 2s ease-in-out infinite;
+}
+
+.onboarding-card--active {
+  border-color: rgba(220, 20, 60, 0.5);
+  animation: onboarding-glow 2s ease-in-out infinite;
+}
+
+.onboarding-card--complete {
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.18);
+}
+
+.onboarding-step-badge--active {
+  background-color: rgba(220, 20, 60, 0.15);
+  border: 1px solid rgba(220, 20, 60, 0.55);
+  color: #dc143c;
+}
+
+.onboarding-step-badge--complete {
+  background-color: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.6);
+  color: #34d399;
+}
+
 .bg-grid-transparent {
   background-image:
     linear-gradient(45deg, #222 25%, transparent 25%),

@@ -1,7 +1,6 @@
 <script>
   import { getContext } from 'svelte'
   import { Plus, X } from 'lucide-svelte'
-  import TemplateSection from '../panels/TemplateSection.svelte'
   import ElementList from '../panels/ElementList.svelte'
   import Select from '../ui/Select.svelte'
 
@@ -22,43 +21,34 @@
     app.updateScene({ font: v })
   }
 
-  // Resolution presets — common formats for cycling/action cam footage sharing
-  const RES_PRESETS = [
-    { label: '4K', w: 3840, h: 2160 },
-    { label: '1080p', w: 1920, h: 1080 },
-    { label: '720p', w: 1280, h: 720 },
-    { label: 'Portrait', w: 1080, h: 1920 },
-    { label: 'Square', w: 1080, h: 1080 },
-  ]
-
-  // h:mm:ss when >= 1 hour, m:ss otherwise
+  // h:mm:ss when >= 1 hour, m:ss otherwise. Always whole seconds — overlay
+  // bounds are scene-second granularity, sub-second precision is noise.
   function secToTimecode(s) {
-    const whole = Math.floor(s)
-    const frac = s - whole
+    const whole = Math.round(s)
     const h = Math.floor(whole / 3600)
     const m = Math.floor((whole % 3600) / 60)
     const sec = whole % 60
-    const ss =
-      frac > 0
-        ? (sec + frac).toFixed(3).padStart(6, '0')
-        : String(sec).padStart(2, '0')
+    const ss = String(sec).padStart(2, '0')
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`
     return `${m}:${ss}`
   }
 
-  // Accepts h:mm:ss, m:ss, or plain seconds. Plain seconds may be fractional.
+  // Accepts h:mm:ss, m:ss, or plain seconds. Always rounds to a whole
+  // second to match secToTimecode's display granularity.
   function timecodeToSec(str) {
     str = str.trim()
+    let raw = NaN
     if (/^\d+:\d{1,2}:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [h, m, s] = str.split(':').map(Number)
-      return h * 3600 + m * 60 + s
-    }
-    if (/^\d+:\d{1,2}(?:\.\d+)?$/.test(str)) {
+      raw = h * 3600 + m * 60 + s
+    } else if (/^\d+:\d{1,2}(?:\.\d+)?$/.test(str)) {
       const [m, s] = str.split(':').map(Number)
-      return m * 60 + s
+      raw = m * 60 + s
+    } else {
+      const n = Number(str)
+      raw = !isNaN(n) && n >= 0 ? n : NaN
     }
-    const n = Number(str)
-    return !isNaN(n) && n >= 0 ? n : NaN
+    return isNaN(raw) ? NaN : Math.round(raw)
   }
 
   let timelineError = $derived.by(() => {
@@ -70,104 +60,120 @@
       return `Start must be before end (${secToTimecode(start)} ≥ ${secToTimecode(end)})`
     return null
   })
+
+  // ── Mini GPX track (overlay-start / overlay-end handles) ────────────────
+  let trackEl = $state(null)
+  let drag = $state(null)
+
+  function clamp(v, lo, hi) {
+    return Math.min(hi, Math.max(lo, v))
+  }
+
+  function beginDrag(handle, e) {
+    if (!trackEl) return
+    e.preventDefault()
+    trackEl.setPointerCapture(e.pointerId)
+    app.beginEditBatch?.()
+    const initial =
+      handle === 'start'
+        ? (app.config?.scene?.start ?? 0)
+        : (app.config?.scene?.end ?? app.timelineDuration)
+    drag = { handle, pointerId: e.pointerId, startX: e.clientX, initial }
+  }
+
+  function onTrackPointerMove(e) {
+    if (!drag || e.pointerId !== drag.pointerId) return
+    const total = Math.max(0.0001, app.timelineDuration ?? 0)
+    const w = trackEl?.offsetWidth ?? 1
+    const dxSec = ((e.clientX - drag.startX) / w) * total
+    const next = Math.round(drag.initial + dxSec)
+    const start = app.config?.scene?.start ?? 0
+    const end = app.config?.scene?.end ?? total
+    if (drag.handle === 'start') {
+      app.updateScene({ start: clamp(next, 0, end - 1) })
+    } else {
+      app.updateScene({ end: clamp(next, start + 1, total) })
+    }
+  }
+
+  function endTrackDrag(e) {
+    if (!drag) return
+    if (trackEl?.hasPointerCapture(e.pointerId)) {
+      trackEl.releasePointerCapture(e.pointerId)
+    }
+    app.endEditBatch?.()
+    drag = null
+  }
+
 </script>
 
 <aside
   class="w-[272px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden"
 >
-  <TemplateSection />
-
-  <!-- Scene settings -->
   {#if app.config?.scene}
-    <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
-      <p
-        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-      >
-        Scene
-      </p>
+    {#if app.hasActivity}
+      <!-- Overlay timeline -->
+      <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
+        <p
+          class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+        >
+          Overlay Timeline
+        </p>
 
-      <!-- Resolution -->
-      <div class="space-y-1.5">
-        <span class="text-[11px] text-zinc-500">Resolution</span>
-        <div class="flex items-center gap-1.5">
-          <input
-            type="number"
-            value={app.outputWidth}
-            min={1}
-            oninput={(e) => {
-              const v = parseInt(e.target.value)
-              if (v > 0) app.outputWidth = v
-            }}
-            class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-          />
-          <span class="text-zinc-600 text-xs shrink-0">×</span>
-          <input
-            type="number"
-            value={app.outputHeight}
-            min={1}
-            oninput={(e) => {
-              const v = parseInt(e.target.value)
-              if (v > 0) app.outputHeight = v
-            }}
-            class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-          />
-        </div>
-        <div class="flex flex-wrap gap-1">
-          {#each RES_PRESETS as p (p.label)}
-            {@const active =
-              app.outputWidth === p.w && app.outputHeight === p.h}
+        <div class="space-y-1.5">
+          <div class="flex items-baseline justify-between">
+            <span class="text-[11px] text-zinc-500">Range</span>
             <button
-              onclick={() => {
-                app.outputWidth = p.w
-                app.outputHeight = p.h
-              }}
-              class="rounded px-1.5 py-0.5 text-[10px] border transition-colors duration-[150ms]
-                {active
-                ? 'border-zinc-500 text-zinc-300 bg-zinc-800'
-                : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
-              >{p.label}</button
+              onclick={() => app.updateScene({ end: app.timelineDuration })}
+              title="Set end to activity duration"
+              class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
+              >{secToTimecode(app.timelineDuration)} total</button
             >
-          {/each}
-        </div>
-      </div>
+          </div>
 
-      <!-- Font (scene default — elements inherit unless overridden) -->
-      <div class="space-y-1">
-        <span class="text-[11px] text-zinc-500">Font</span>
-        <Select
-          value={app.config.scene.font ?? 'Arial.ttf'}
-          options={fontOpts()}
-          onchange={onSceneFont}
-        />
-      </div>
-
-      <!-- FPS -->
-      <label class="flex items-center justify-between">
-        <span class="text-[11px] text-zinc-500">FPS</span>
-        <input
-          type="number"
-          min="1"
-          max="240"
-          value={app.config.scene.fps ?? 30}
-          oninput={(e) => {
-            const v = parseInt(e.target.value)
-            if (v > 0) app.updateScene({ fps: v })
-          }}
-          class="h-7 w-24 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-        />
-      </label>
-
-      <!-- Timeline range -->
-      <div class="space-y-1">
-        <div class="flex items-baseline justify-between">
-          <span class="text-[11px] text-zinc-500">Timeline</span>
-          <button
-            onclick={() => app.updateScene({ end: app.timelineDuration })}
-            title="Set end to activity duration"
-            class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
-            >{secToTimecode(app.timelineDuration)} total</button
+        <!-- Mini GPX track with overlay-start / overlay-end handles -->
+        {#if app.timelineDuration > 0}
+          {@const total = app.timelineDuration}
+          {@const start = app.config.scene.start ?? 0}
+          {@const end = app.config.scene.end ?? total}
+          {@const startPct = (start / total) * 100}
+          {@const endPct = (end / total) * 100}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={trackEl}
+            class="relative h-5 select-none"
+            onpointermove={onTrackPointerMove}
+            onpointerup={endTrackDrag}
+            onpointercancel={endTrackDrag}
           >
-        </div>
+            <div
+              class="absolute inset-x-0 top-2 h-1 rounded-full bg-zinc-800"
+            ></div>
+            <div
+              class="absolute top-2 h-1 bg-primary/70 rounded-full"
+              style="left: {startPct}%; width: {endPct - startPct}%"
+            ></div>
+            <button
+              type="button"
+              aria-label="Overlay start"
+              onpointerdown={(e) => beginDrag('start', e)}
+              class="absolute top-0 -translate-x-1/2 h-5 w-3 rounded-sm
+                     bg-primary border border-zinc-950 cursor-ew-resize
+                     hover:scale-110 transition-transform"
+              style="left: {startPct}%"
+            ></button>
+            <button
+              type="button"
+              aria-label="Overlay end"
+              onpointerdown={(e) => beginDrag('end', e)}
+              class="absolute top-0 -translate-x-1/2 h-5 w-3 rounded-sm
+                     bg-primary border border-zinc-950 cursor-ew-resize
+                     hover:scale-110 transition-transform"
+              style="left: {endPct}%"
+            ></button>
+          </div>
+        {/if}
+
         <div class="flex gap-2 items-center">
           <input
             type="text"
@@ -212,6 +218,26 @@
         {#if timelineError}
           <p class="text-[11px] text-red-500">{timelineError}</p>
         {/if}
+        </div>
+      </section>
+    {/if}
+
+    <!-- Scene settings -->
+    <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
+      <p
+        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      >
+        Scene
+      </p>
+
+      <!-- Font (scene default — elements inherit unless overridden) -->
+      <div class="space-y-1">
+        <span class="text-[11px] text-zinc-500">Font</span>
+        <Select
+          value={app.config.scene.font ?? 'Arial.ttf'}
+          options={fontOpts()}
+          onchange={onSceneFont}
+        />
       </div>
 
       <!-- Color variables -->

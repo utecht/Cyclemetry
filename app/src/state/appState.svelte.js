@@ -3,11 +3,23 @@ import * as backend from '../api/backend.js'
 import { parseLocalStorage } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 import { stripDefaults } from '../lib/stripDefaults.js'
+import {
+  offsetForVideoStart,
+  wallClockApplicable,
+} from '../lib/videoAlignment.js'
+
+// Dev-only: if the reset button set this flag, wipe localStorage before any
+// state reads so the persist $effect can't race-restore the old values.
+if (import.meta.env.DEV && sessionStorage.getItem('dev_reset') === '1') {
+  sessionStorage.removeItem('dev_reset')
+  localStorage.clear()
+}
 
 export function createAppState() {
   const storedActivityName = (value) => {
     if (!value || value === 'null' || value === 'undefined') return null
-    return value.split(/[\\/]/).pop() || null
+    const basename = value.split(/[\\/]/).pop() || null
+    return /\.(gpx|fit|tcx)$/i.test(basename) ? basename : null
   }
 
   // ── Persistent ──────────────────────────────────────────────────────────────
@@ -24,11 +36,24 @@ export function createAppState() {
   }
   const initialConfig = migrateConfig(_persisted)
   let config = $state(initialConfig)
-  let gpxFilename = $state(
-    storedActivityName(localStorage.getItem('gpxFilename')),
+  const storedGpxFilename = storedActivityName(
+    localStorage.getItem('gpxFilename'),
+  )
+  let gpxFilename = $state(storedGpxFilename)
+  // Wall-clock UTC (ISO 8601) of the first GPX sample. `null` for sources
+  // without timestamps. Set by the GPX load flow; used by the alignment
+  // timeline to position the video clip on the activity's real-time axis.
+  let gpxStartTime = $state(localStorage.getItem('gpxStartTime') || null)
+  // Reference video for timeline alignment + (Phase 4) live overlay preview.
+  // Stored by absolute path — file stays in place on disk; we never copy it.
+  // `missing: true` means the path persisted from a prior session but the file
+  // is no longer there, so the UI can prompt for relink.
+  let video = $state(parseLocalStorage('projectVideo'))
+  const storedActivityDuration = parseFloat(
+    localStorage.getItem('activityDuration') ?? '',
   )
   const initialActivityDuration =
-    parseFloat(localStorage.getItem('activityDuration') ?? '73') || 73
+    storedGpxFilename && storedActivityDuration > 0 ? storedActivityDuration : 0
   let activityDuration = $state(initialActivityDuration)
   let selectedSecond = $state(
     parseInt(localStorage.getItem('selectedSecond') ?? '0'),
@@ -60,7 +85,7 @@ export function createAppState() {
     parseFloat(localStorage.getItem('lastRenderFps') ?? '') || null,
   )
   let renderingVideo = $state(false)
-  let currentPreviewImage = $state(null) // data:image/png;base64,... from latest demo frame
+  let currentPreviewImage = $state(null) // data:image/png;base64,... from latest preview frame
   let errorMessage = $state(null)
   let successMessage = $state(null)
   let successTimer = null
@@ -88,6 +113,14 @@ export function createAppState() {
   $effect(() => {
     if (gpxFilename) localStorage.setItem('gpxFilename', gpxFilename)
     else localStorage.removeItem('gpxFilename')
+  })
+  $effect(() => {
+    if (video) localStorage.setItem('projectVideo', JSON.stringify(video))
+    else localStorage.removeItem('projectVideo')
+  })
+  $effect(() => {
+    if (gpxStartTime) localStorage.setItem('gpxStartTime', gpxStartTime)
+    else localStorage.removeItem('gpxStartTime')
   })
   $effect(() => {
     localStorage.setItem('activityDuration', String(activityDuration))
@@ -118,15 +151,19 @@ export function createAppState() {
     localStorage.setItem('previewFps', String(previewFps))
   })
 
+  function templateSnapshot(value) {
+    return value ? JSON.stringify(stripDefaults(toEditorFormat(value))) : null
+  }
+
   function markPristine() {
-    pristineConfig = config ? JSON.stringify(config) : null
+    pristineConfig = templateSnapshot(config)
   }
 
   function templateModified() {
     return (
       !!config &&
       pristineConfig != null &&
-      JSON.stringify(config) !== pristineConfig
+      templateSnapshot(config) !== pristineConfig
     )
   }
 
@@ -137,6 +174,92 @@ export function createAppState() {
   function confirmIfModified(run) {
     if (templateModified()) pendingDiscard = run
     else run()
+  }
+
+  // ── Reference video ──────────────────────────────────────────────────────
+  // Probe the file, capture container metadata, store by absolute path.
+  // The video stays where the user put it on disk; we never copy.
+  async function loadVideo(absolutePath) {
+    if (!absolutePath) return
+    try {
+      const probe = await backend.probeVideo(absolutePath)
+      // Normalize probe → in-memory shape before the wall-clock check, since
+      // the helper expects creationTime (camelCase) + duration on a single
+      // object.
+      const draft = {
+        path: probe.path,
+        duration: probe.duration,
+        creationTime: probe.creation_time,
+        codec: probe.codec,
+        width: probe.width,
+        height: probe.height,
+        userOffsetSec: 0,
+        missing: false,
+      }
+      // Auto-align: if the camera's wall clock places the video inside the
+      // activity period, trust it (offset = 0); otherwise snap the video's
+      // first frame to the current overlay window start, so the user sees
+      // it immediately on the alignment bar.
+      const initialOffset = wallClockApplicable(
+        gpxStartTime,
+        draft,
+        activityDuration,
+      )
+        ? 0
+        : offsetForVideoStart(gpxStartTime, draft, config?.scene?.start ?? 0)
+      video = { ...draft, userOffsetSec: initialOffset }
+      // Bump preview FPS so the overlay animation tracks the video instead
+      // of snapping every 200ms. Only when the user is at the default (5);
+      // a deliberate non-default choice is preserved.
+      if (previewFps === 5) previewFps = 15
+    } catch (e) {
+      errorMessage = `Could not read video: ${e?.message ?? e}`
+    }
+  }
+
+  async function pickAndLoadVideo() {
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: 'Video',
+          extensions: [
+            'mp4',
+            'mov',
+            'm4v',
+            'mkv',
+            'webm',
+            'avi',
+            '360',
+            'insv',
+          ],
+        },
+      ],
+      title: 'Select reference video',
+    })
+    if (!selected) return
+    await loadVideo(selected)
+  }
+
+  function clearVideo() {
+    video = null
+  }
+
+  function setVideoOffset(seconds) {
+    if (!video) return
+    video = { ...video, userOffsetSec: seconds }
+  }
+
+  // Mark the video missing if its file disappeared between sessions. Cheap
+  // re-probe is fine — ffmpeg refuses fast on a missing path.
+  async function verifyVideo() {
+    if (!video?.path) return
+    try {
+      await backend.probeVideo(video.path)
+      if (video.missing) video = { ...video, missing: false }
+    } catch {
+      if (!video.missing) video = { ...video, missing: true }
+    }
   }
 
   async function fetchDefaultOutputDir() {
@@ -672,7 +795,7 @@ export function createAppState() {
         height: outputHeight,
         fps: 30,
         start: 0,
-        end: Math.max(1, Math.floor(activityDuration || 60)),
+        end: Math.max(1, Math.floor(activityDuration || 1)),
         color: '#ffffff',
         opacity: 1,
         font_size: 64,
@@ -808,7 +931,14 @@ export function createAppState() {
   }
 
   async function runBenchmark() {
-    if (renderingVideo || benchmarking || !config || !gpxFilename) return
+    if (
+      renderingVideo ||
+      benchmarking ||
+      !config ||
+      !gpxFilename ||
+      activityDuration <= 0
+    )
+      return
     benchmarking = true
     try {
       const result = await backend.nativeBenchmark(
@@ -837,18 +967,36 @@ export function createAppState() {
     void gpxFilename
     void outputWidth
     void outputHeight
-    if (!config || !gpxFilename) return
+    if (!config || !gpxFilename || activityDuration <= 0) return
     const timer = setTimeout(runBenchmark, 800)
     return () => clearTimeout(timer)
   })
 
   async function loadTemplate(filename) {
     const data = await backend.getTemplate(filename)
-    config = migrateConfig(data)
+    const loaded = migrateConfig(data)
+    // start/end are activity-specific timeline bounds, not template config.
+    // Preserve the user's current timeline window when switching templates.
+    if (loaded?.scene) {
+      const currentStart = config?.scene?.start ?? 0
+      const currentEnd = config?.scene?.end ?? activityDuration
+      loaded.scene = {
+        ...loaded.scene,
+        start: currentStart,
+        end: currentEnd > currentStart ? currentEnd : activityDuration,
+      }
+    }
+    config = loaded
     loadedTemplateFilename = filename
     selectOnly(null)
     resetHistory()
     markPristine()
+  }
+
+  // Reload the current template from disk, discarding any unsaved changes.
+  async function revertTemplate() {
+    if (!loadedTemplateFilename) return
+    await loadTemplate(loadedTemplateFilename)
   }
 
   return {
@@ -865,11 +1013,28 @@ export function createAppState() {
     set gpxFilename(v) {
       gpxFilename = v
     },
+    get gpxStartTime() {
+      return gpxStartTime
+    },
+    set gpxStartTime(v) {
+      gpxStartTime = v
+    },
+    get video() {
+      return video
+    },
+    loadVideo,
+    pickAndLoadVideo,
+    clearVideo,
+    setVideoOffset,
+    verifyVideo,
     get activityDuration() {
       return activityDuration
     },
     set activityDuration(v) {
       activityDuration = v
+    },
+    get hasActivity() {
+      return !!gpxFilename && activityDuration > 0
     },
     get timelineDuration() {
       return activityDuration
@@ -1043,5 +1208,6 @@ export function createAppState() {
     saveTemplateAs,
     newTemplate,
     renameTemplate,
+    revertTemplate,
   }
 }
