@@ -1,7 +1,8 @@
 <script>
   import { getContext, onMount } from 'svelte'
+  import { open } from '@tauri-apps/plugin-dialog'
   import * as backend from '@/api/backend.js'
-  import { X, Trash2, Plus } from 'lucide-svelte'
+  import { X, Trash2, Plus, Upload } from 'lucide-svelte'
   import NewTemplateDialog from './NewTemplateDialog.svelte'
 
   const app = getContext('app')
@@ -15,6 +16,7 @@
   let confirmingDelete = $state(null)
   let failedPreviews = $state([])
   let creating = $state(false)
+  let importing = $state(false)
   let showNameDialog = $state(false)
 
   onMount(async () => {
@@ -119,6 +121,32 @@
       creating = false
     }
   }
+
+  async function handleImport() {
+    importing = true
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Cyclemetry Template', extensions: ['json'] }],
+        title: 'Import Template',
+      })
+      if (!selected) return
+      const result = await backend.importTemplate(selected)
+      await app.fetchTemplates()
+      app.confirmIfModified(async () => {
+        try {
+          await app.loadTemplate(result.filename)
+          onclose()
+        } catch (e) {
+          app.errorMessage = `Imported, but failed to load: ${e?.message ?? e}`
+        }
+      })
+    } catch (e) {
+      app.errorMessage = `Import failed: ${e?.message ?? e}`
+    } finally {
+      importing = false
+    }
+  }
 </script>
 
 <div
@@ -127,9 +155,13 @@
   aria-label="Choose Template"
   tabindex="-1"
   class="fixed inset-0 z-50 flex items-center justify-center"
-  onmousedown={(e) => { if (e.target === e.currentTarget) onclose() }}
 >
-  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+  <button
+    type="button"
+    class="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+    aria-label="Close template picker"
+    onclick={onclose}
+  ></button>
 
   <div class="relative z-10 w-[720px] max-h-[80vh] flex flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
 
@@ -138,16 +170,24 @@
       <h2 class="text-sm font-semibold text-zinc-100">Choose Template</h2>
       <div class="flex items-center gap-2">
         <button
+          onclick={handleImport}
+          disabled={importing}
+          class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Upload size={12} />
+          {importing ? 'Importing…' : 'Import from disk'}
+        </button>
+        <button
           onclick={handleCreate}
           disabled={creating}
-          class="inline-flex items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus size={12} />
           {creating ? 'Creating…' : 'New template'}
         </button>
         <button
           onclick={onclose}
-          class="text-zinc-500 hover:text-zinc-200 transition-colors rounded-md p-0.5"
+          class="cursor-pointer text-zinc-500 hover:text-zinc-200 transition-colors rounded-md p-0.5"
           aria-label="Close"
         >
           <X size={16} />
@@ -204,13 +244,13 @@
                     <button
                       onclick={() => handleDelete(tpl.id)}
                       disabled={busy}
-                      class="shrink-0 text-[10px] text-red-400 hover:text-red-300 transition-colors disabled:opacity-40 ml-1"
+                      class="shrink-0 cursor-pointer text-[10px] text-red-400 hover:text-red-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ml-1"
                     >
                       {busy ? '…' : 'Delete'}
                     </button>
                     <button
                       onclick={() => (confirmingDelete = null)}
-                      class="shrink-0 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                      class="shrink-0 cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
                     >
                       Cancel
                     </button>
@@ -218,7 +258,7 @@
                     <button
                       onclick={() => (confirmingDelete = tpl.id)}
                       disabled={busy}
-                      class="shrink-0 p-1 rounded text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
+                      class="shrink-0 cursor-pointer p-1 rounded text-zinc-500 hover:text-red-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ml-0.5"
                       title="Delete template"
                     >
                       {#if busy}
@@ -276,7 +316,7 @@
                   <button
                     onclick={() => handleInstall(tpl.id)}
                     disabled={busy}
-                    class="shrink-0 text-[10px] px-2 py-1 rounded border border-zinc-600 text-zinc-300
+                    class="shrink-0 cursor-pointer text-[10px] px-2 py-1 rounded border border-zinc-600 text-zinc-300
                            hover:border-zinc-400 hover:text-zinc-100 transition-colors
                            disabled:opacity-40 disabled:cursor-not-allowed"
                   >

@@ -5,7 +5,7 @@
   let {
     playhead = $bindable(0),
     start = 0,                  // overlay window start (sceneStart)
-    end = 73,                   // overlay window end (sceneEnd)
+    end = 1,                    // overlay window end (sceneEnd)
     playing = $bindable(false),
     previewFps = $bindable(5),
     buffered = [],   // array of seconds that are ready in cache

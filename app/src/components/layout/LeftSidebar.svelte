@@ -1,13 +1,8 @@
 <script>
   import { getContext } from 'svelte'
-  import { Plus, X, Film, AlertTriangle } from 'lucide-svelte'
-  import TemplateSection from '../panels/TemplateSection.svelte'
+  import { Plus, X } from 'lucide-svelte'
   import ElementList from '../panels/ElementList.svelte'
   import Select from '../ui/Select.svelte'
-  import {
-    offsetForVideoStart,
-    wallClockApplicable,
-  } from '@/lib/videoAlignment.js'
 
   const app = getContext('app')
 
@@ -25,15 +20,6 @@
   function onSceneFont(v) {
     app.updateScene({ font: v })
   }
-
-  // Resolution presets — common formats for cycling/action cam footage sharing
-  const RES_PRESETS = [
-    { label: '4K', w: 3840, h: 2160 },
-    { label: '1080p', w: 1920, h: 1080 },
-    { label: '720p', w: 1280, h: 720 },
-    { label: 'Portrait', w: 1080, h: 1920 },
-    { label: 'Square', w: 1080, h: 1080 },
-  ]
 
   // h:mm:ss when >= 1 hour, m:ss otherwise. Always whole seconds — overlay
   // bounds are scene-second granularity, sub-second precision is noise.
@@ -63,11 +49,6 @@
       raw = !isNaN(n) && n >= 0 ? n : NaN
     }
     return isNaN(raw) ? NaN : Math.round(raw)
-  }
-
-  function videoBasename(path) {
-    if (!path) return ''
-    return path.split(/[\\/]/).pop()
   }
 
   let timelineError = $derived.by(() => {
@@ -124,123 +105,31 @@
     drag = null
   }
 
-  // ── Video alignment actions ─────────────────────────────────────────────
-  function moveVideoToTimelineStart() {
-    app.setVideoOffset(
-      offsetForVideoStart(
-        app.gpxStartTime,
-        app.video,
-        app.config?.scene?.start ?? 0,
-      ),
-    )
-  }
-
-  function moveVideoToRecordingTime() {
-    // Wall-clock alignment: offset = 0 means "use the camera's own clock."
-    app.setVideoOffset(0)
-  }
-
-  let canUseRecordingTime = $derived(
-    wallClockApplicable(app.gpxStartTime, app.video, app.timelineDuration),
-  )
 </script>
 
 <aside
   class="w-[272px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden"
 >
-  <TemplateSection />
-
-  <!-- Scene settings -->
   {#if app.config?.scene}
-    <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
-      <p
-        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-      >
-        Scene
-      </p>
+    {#if app.hasActivity}
+      <!-- Overlay timeline -->
+      <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
+        <p
+          class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+        >
+          Overlay Timeline
+        </p>
 
-      <!-- Resolution -->
-      <div class="space-y-1.5">
-        <span class="text-[11px] text-zinc-500">Resolution</span>
-        <div class="flex items-center gap-1.5">
-          <input
-            type="number"
-            value={app.outputWidth}
-            min={1}
-            oninput={(e) => {
-              const v = parseInt(e.target.value)
-              if (v > 0) app.outputWidth = v
-            }}
-            class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-          />
-          <span class="text-zinc-600 text-xs shrink-0">×</span>
-          <input
-            type="number"
-            value={app.outputHeight}
-            min={1}
-            oninput={(e) => {
-              const v = parseInt(e.target.value)
-              if (v > 0) app.outputHeight = v
-            }}
-            class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-          />
-        </div>
-        <div class="flex flex-wrap gap-1">
-          {#each RES_PRESETS as p (p.label)}
-            {@const active =
-              app.outputWidth === p.w && app.outputHeight === p.h}
+        <div class="space-y-1.5">
+          <div class="flex items-baseline justify-between">
+            <span class="text-[11px] text-zinc-500">Range</span>
             <button
-              onclick={() => {
-                app.outputWidth = p.w
-                app.outputHeight = p.h
-              }}
-              class="rounded px-1.5 py-0.5 text-[10px] border transition-colors duration-[150ms]
-                {active
-                ? 'border-zinc-500 text-zinc-300 bg-zinc-800'
-                : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
-              >{p.label}</button
+              onclick={() => app.updateScene({ end: app.timelineDuration })}
+              title="Set end to activity duration"
+              class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
+              >{secToTimecode(app.timelineDuration)} total</button
             >
-          {/each}
-        </div>
-      </div>
-
-      <!-- Font (scene default — elements inherit unless overridden) -->
-      <div class="space-y-1">
-        <span class="text-[11px] text-zinc-500">Font</span>
-        <Select
-          value={app.config.scene.font ?? 'Arial.ttf'}
-          options={fontOpts()}
-          onchange={onSceneFont}
-        />
-      </div>
-
-      <!-- FPS -->
-      <label class="flex items-center justify-between">
-        <span class="text-[11px] text-zinc-500">FPS</span>
-        <input
-          type="number"
-          min="1"
-          max="240"
-          value={app.config.scene.fps ?? 30}
-          oninput={(e) => {
-            const v = parseInt(e.target.value)
-            if (v > 0) app.updateScene({ fps: v })
-          }}
-          class="h-7 w-24 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-        />
-      </label>
-
-      <!-- Timeline range -->
-      <div class="space-y-1.5">
-        <div class="flex items-baseline justify-between">
-          <span class="text-[11px] text-zinc-500">Timeline</span>
-          <button
-            onclick={() => app.updateScene({ end: app.timelineDuration })}
-            title="Set end to activity duration"
-            class="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors duration-[150ms] tabular-nums"
-            >{secToTimecode(app.timelineDuration)} total</button
-          >
-        </div>
+          </div>
 
         <!-- Mini GPX track with overlay-start / overlay-end handles -->
         {#if app.timelineDuration > 0}
@@ -329,6 +218,26 @@
         {#if timelineError}
           <p class="text-[11px] text-red-500">{timelineError}</p>
         {/if}
+        </div>
+      </section>
+    {/if}
+
+    <!-- Scene settings -->
+    <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
+      <p
+        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      >
+        Scene
+      </p>
+
+      <!-- Font (scene default — elements inherit unless overridden) -->
+      <div class="space-y-1">
+        <span class="text-[11px] text-zinc-500">Font</span>
+        <Select
+          value={app.config.scene.font ?? 'Arial.ttf'}
+          options={fontOpts()}
+          onchange={onSceneFont}
+        />
       </div>
 
       <!-- Color variables -->
@@ -408,132 +317,6 @@
       </div>
     </section>
   {/if}
-
-  <!-- Reference video: probe metadata + offset; click to select -->
-  <section
-    class="px-4 py-3 border-b space-y-2 transition-colors
-           {app.selectedVideo
-      ? 'border-l-2 border-l-sky-500 border-b-zinc-800 bg-sky-950/10'
-      : 'border-l-2 border-l-transparent border-b-zinc-800'}"
-  >
-    <p
-      class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-    >
-      Video
-    </p>
-
-    {#if !app.video}
-      <button
-        onclick={() => app.pickAndLoadVideo()}
-        class="w-full h-7 rounded-[6px] border border-dashed border-zinc-700
-               bg-zinc-800/30 px-2 text-xs text-zinc-400
-               hover:border-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60
-               flex items-center justify-center gap-1.5
-               transition-colors duration-[150ms]"
-      >
-        <Film size={12} />
-        Add video…
-      </button>
-      <p class="text-[10px] text-zinc-600 leading-snug">
-        Optional: load a video to align overlay start/end against real footage.
-      </p>
-    {:else}
-      {#if app.video.missing}
-        <div
-          class="rounded-[6px] border border-red-900/60 bg-red-950/30 px-2 py-1.5 space-y-1.5"
-        >
-          <div class="flex items-start gap-1.5 text-[11px] text-red-300">
-            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
-            <span class="leading-snug">Video file is missing or moved.</span>
-          </div>
-          <div class="flex gap-1.5">
-            <button
-              onclick={() => app.pickAndLoadVideo()}
-              class="flex-1 h-6 rounded border border-red-800/60 bg-red-900/40
-                     px-2 text-[11px] text-red-100
-                     hover:bg-red-900/70 transition-colors"
-              >Locate video…</button
-            >
-            <button
-              onclick={() => app.clearVideo()}
-              class="h-6 px-2 rounded border border-zinc-700 text-[11px]
-                     text-zinc-400 hover:text-zinc-200 hover:border-zinc-500
-                     transition-colors"
-              >Remove</button
-            >
-          </div>
-        </div>
-      {/if}
-
-      <!-- Filename row — clicking selects the video so the bottom alignment bar shows -->
-      <button
-        type="button"
-        onclick={() => app.selectVideo()}
-        title="Select video — shows the alignment bar under the playback scrubber"
-        class="w-full flex items-center gap-1.5 rounded px-1 py-0.5 -mx-1
-               hover:bg-zinc-800/60 transition-colors text-left"
-      >
-        <Film size={11} class="text-zinc-500 shrink-0" />
-        <span
-          class="text-[11px] text-zinc-300 truncate font-mono"
-          title={app.video.path}>{videoBasename(app.video.path)}</span
-        >
-      </button>
-      <div class="space-y-1">
-        <div class="text-[10px] text-zinc-500 font-mono tabular-nums">
-          {app.video.width}×{app.video.height}{app.video.codec
-            ? ` · ${app.video.codec}`
-            : ''}{app.video.duration
-            ? ` · ${secToTimecode(app.video.duration)}`
-            : ''}
-        </div>
-
-        <!-- Alignment actions — auto-applied on first load, manual here -->
-        <div class="space-y-1 pt-1">
-          <button
-            type="button"
-            onclick={moveVideoToTimelineStart}
-            title="Snap the video's first frame to the timeline start"
-            class="w-full h-7 rounded border border-zinc-700 bg-zinc-800/40
-                   px-2 text-[11px] text-zinc-300 hover:text-zinc-100
-                   hover:border-zinc-500 transition-colors text-left"
-            >Move video to timeline start</button
-          >
-          {#if canUseRecordingTime}
-            <button
-              type="button"
-              onclick={moveVideoToRecordingTime}
-              title="Use the camera's recording timestamp to align"
-              class="w-full h-7 rounded border border-zinc-700 bg-zinc-800/40
-                     px-2 text-[11px] text-zinc-300 hover:text-zinc-100
-                     hover:border-zinc-500 transition-colors text-left"
-              >Move video to recording time</button
-            >
-          {/if}
-        </div>
-
-        <!-- Replace / Remove -->
-        <div class="flex gap-1.5 pt-1">
-          <button
-            onclick={() => app.pickAndLoadVideo()}
-            class="flex-1 h-6 px-2 rounded border border-zinc-700 bg-zinc-800/40
-                   text-[11px] text-zinc-400 hover:text-zinc-200
-                   hover:border-zinc-500 transition-colors"
-            >Replace…</button
-          >
-          <button
-            onclick={() => app.clearVideo()}
-            title="Remove video"
-            class="h-6 w-6 rounded border border-zinc-700 flex items-center
-                   justify-center text-zinc-500 hover:text-zinc-200
-                   hover:border-zinc-500 transition-colors"
-          >
-            <X size={11} />
-          </button>
-        </div>
-      </div>
-    {/if}
-  </section>
 
   <ElementList />
 </aside>

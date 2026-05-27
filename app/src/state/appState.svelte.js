@@ -8,10 +8,18 @@ import {
   wallClockApplicable,
 } from '../lib/videoAlignment.js'
 
+// Dev-only: if the reset button set this flag, wipe localStorage before any
+// state reads so the persist $effect can't race-restore the old values.
+if (import.meta.env.DEV && sessionStorage.getItem('dev_reset') === '1') {
+  sessionStorage.removeItem('dev_reset')
+  localStorage.clear()
+}
+
 export function createAppState() {
   const storedActivityName = (value) => {
     if (!value || value === 'null' || value === 'undefined') return null
-    return value.split(/[\\/]/).pop() || null
+    const basename = value.split(/[\\/]/).pop() || null
+    return /\.(gpx|fit|tcx)$/i.test(basename) ? basename : null
   }
 
   // ── Persistent ──────────────────────────────────────────────────────────────
@@ -28,9 +36,10 @@ export function createAppState() {
   }
   const initialConfig = migrateConfig(_persisted)
   let config = $state(initialConfig)
-  let gpxFilename = $state(
-    storedActivityName(localStorage.getItem('gpxFilename')),
+  const storedGpxFilename = storedActivityName(
+    localStorage.getItem('gpxFilename'),
   )
+  let gpxFilename = $state(storedGpxFilename)
   // Wall-clock UTC (ISO 8601) of the first GPX sample. `null` for sources
   // without timestamps. Set by the GPX load flow; used by the alignment
   // timeline to position the video clip on the activity's real-time axis.
@@ -40,8 +49,11 @@ export function createAppState() {
   // `missing: true` means the path persisted from a prior session but the file
   // is no longer there, so the UI can prompt for relink.
   let video = $state(parseLocalStorage('projectVideo'))
+  const storedActivityDuration = parseFloat(
+    localStorage.getItem('activityDuration') ?? '',
+  )
   const initialActivityDuration =
-    parseFloat(localStorage.getItem('activityDuration') ?? '73') || 73
+    storedGpxFilename && storedActivityDuration > 0 ? storedActivityDuration : 0
   let activityDuration = $state(initialActivityDuration)
   let selectedSecond = $state(
     parseInt(localStorage.getItem('selectedSecond') ?? '0'),
@@ -73,17 +85,13 @@ export function createAppState() {
     parseFloat(localStorage.getItem('lastRenderFps') ?? '') || null,
   )
   let renderingVideo = $state(false)
-  let currentPreviewImage = $state(null) // data:image/png;base64,... from latest demo frame
+  let currentPreviewImage = $state(null) // data:image/png;base64,... from latest preview frame
   let errorMessage = $state(null)
   let successMessage = $state(null)
   let successTimer = null
   let templates = $state([])
   let fonts = $state([])
   let showTemplatePicker = $state(false)
-  // Mirrors the element-selection pattern: when true, the bottom video
-  // alignment bar appears under the playback scrub bar (like the distance
-  // reference bar shows when a 'custom' distance element is selected).
-  let selectedVideo = $state(false)
   let selectedElementId = $state(null)
   let selectedElementIds = $state([])
   let selectedGroupId = $state(null)
@@ -143,15 +151,19 @@ export function createAppState() {
     localStorage.setItem('previewFps', String(previewFps))
   })
 
+  function templateSnapshot(value) {
+    return value ? JSON.stringify(stripDefaults(toEditorFormat(value))) : null
+  }
+
   function markPristine() {
-    pristineConfig = config ? JSON.stringify(config) : null
+    pristineConfig = templateSnapshot(config)
   }
 
   function templateModified() {
     return (
       !!config &&
       pristineConfig != null &&
-      JSON.stringify(config) !== pristineConfig
+      templateSnapshot(config) !== pristineConfig
     )
   }
 
@@ -272,7 +284,6 @@ export function createAppState() {
   function selectOnly(id) {
     selectedGroupId = null
     selectedCourseMarkerId = null
-    selectedVideo = false
     selectedElementId = id
     selectedElementIds = id ? [id] : []
   }
@@ -280,7 +291,6 @@ export function createAppState() {
   function setSelectedElements(ids) {
     selectedGroupId = null
     selectedCourseMarkerId = null
-    selectedVideo = false
     selectedElementIds = [...ids]
     selectedElementId = ids.length ? ids[ids.length - 1] : null
   }
@@ -298,22 +308,6 @@ export function createAppState() {
     }
     selectedGroupId = null
     selectedCourseMarkerId = null
-    selectedVideo = false
-  }
-
-  // Selecting the video clears element selection — only one "thing" is
-  // primary at a time, which keeps the bottom helper bars from stacking.
-  // Toggle: clicking the filename row again dismisses the alignment bar.
-  function selectVideo() {
-    if (selectedVideo) {
-      selectedVideo = false
-      return
-    }
-    selectedElementId = null
-    selectedElementIds = []
-    selectedGroupId = null
-    selectedCourseMarkerId = null
-    selectedVideo = true
   }
 
   // ── Undo history ──────────────────────────────────────────────────────────
@@ -801,7 +795,7 @@ export function createAppState() {
         height: outputHeight,
         fps: 30,
         start: 0,
-        end: Math.max(1, Math.floor(activityDuration || 60)),
+        end: Math.max(1, Math.floor(activityDuration || 1)),
         color: '#ffffff',
         opacity: 1,
         font_size: 64,
@@ -937,7 +931,14 @@ export function createAppState() {
   }
 
   async function runBenchmark() {
-    if (renderingVideo || benchmarking || !config || !gpxFilename) return
+    if (
+      renderingVideo ||
+      benchmarking ||
+      !config ||
+      !gpxFilename ||
+      activityDuration <= 0
+    )
+      return
     benchmarking = true
     try {
       const result = await backend.nativeBenchmark(
@@ -966,18 +967,36 @@ export function createAppState() {
     void gpxFilename
     void outputWidth
     void outputHeight
-    if (!config || !gpxFilename) return
+    if (!config || !gpxFilename || activityDuration <= 0) return
     const timer = setTimeout(runBenchmark, 800)
     return () => clearTimeout(timer)
   })
 
   async function loadTemplate(filename) {
     const data = await backend.getTemplate(filename)
-    config = migrateConfig(data)
+    const loaded = migrateConfig(data)
+    // start/end are activity-specific timeline bounds, not template config.
+    // Preserve the user's current timeline window when switching templates.
+    if (loaded?.scene) {
+      const currentStart = config?.scene?.start ?? 0
+      const currentEnd = config?.scene?.end ?? activityDuration
+      loaded.scene = {
+        ...loaded.scene,
+        start: currentStart,
+        end: currentEnd > currentStart ? currentEnd : activityDuration,
+      }
+    }
+    config = loaded
     loadedTemplateFilename = filename
     selectOnly(null)
     resetHistory()
     markPristine()
+  }
+
+  // Reload the current template from disk, discarding any unsaved changes.
+  async function revertTemplate() {
+    if (!loadedTemplateFilename) return
+    await loadTemplate(loadedTemplateFilename)
   }
 
   return {
@@ -1008,15 +1027,14 @@ export function createAppState() {
     clearVideo,
     setVideoOffset,
     verifyVideo,
-    get selectedVideo() {
-      return selectedVideo
-    },
-    selectVideo,
     get activityDuration() {
       return activityDuration
     },
     set activityDuration(v) {
       activityDuration = v
+    },
+    get hasActivity() {
+      return !!gpxFilename && activityDuration > 0
     },
     get timelineDuration() {
       return activityDuration
@@ -1190,5 +1208,6 @@ export function createAppState() {
     saveTemplateAs,
     newTemplate,
     renameTemplate,
+    revertTemplate,
   }
 }

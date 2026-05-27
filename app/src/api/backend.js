@@ -105,6 +105,13 @@ export const saveTemplate = (filename, config) =>
 export const renameTemplate = (from, to) =>
   invoke('backend_rename_template', { from, to })
 
+/**
+ * @param {string} path
+ * @returns {Promise<{filename: string}>}
+ */
+export const importTemplate = (path) =>
+  invoke('backend_import_template', { path })
+
 /** @returns {Promise<void>} */
 export const openTemplatesFolder = () => invoke('backend_open_templates')
 
@@ -242,6 +249,14 @@ export const deleteTemplate = (filename) =>
  */
 export const saveTemplatePreview = (filename, imageDataUrl) =>
   invoke('backend_save_template_preview', { filename, imageDataUrl })
+
+/**
+ * @param {string} title
+ * @param {string} body
+ * @returns {Promise<void>}
+ */
+export const reportIssue = (title, body) =>
+  invoke('backend_report_issue', { title, body })
 
 // ─── Native Rust renderer ─────────────────────────────────────────────────────
 

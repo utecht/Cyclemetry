@@ -25,19 +25,22 @@ export default async function loadGpx(fileOrPath, state) {
     throw new Error(result.error)
   }
 
+  const duration = result.duration_seconds
+  if (!(duration > 0)) {
+    throw new Error(
+      'This activity file does not contain a usable timestamped timeline.',
+    )
+  }
+
   // The backend copies native dialog selections into Cyclemetry's uploads dir.
   // Persist the copied filename, not the original absolute path, so macOS does
   // not request Downloads/Desktop/Documents access again on the next launch.
   state.gpxFilename = result.filename ?? displayName
   state.gpxStartTime = result.start_time ?? null
-
-  const duration = result.duration_seconds
-  if (duration > 0) {
-    state.activityDuration = duration
-    state.selectedSecond = 0
-    if (state.config?.scene) {
-      state.updateScene({ start: 0, end: duration })
-    }
+  state.activityDuration = duration
+  state.selectedSecond = 0
+  if (state.config?.scene) {
+    state.updateScene({ start: 0, end: duration })
   }
 
   return {

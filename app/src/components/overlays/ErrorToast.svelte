@@ -25,7 +25,7 @@
     <p class="text-sm text-zinc-200 flex-1">{app.errorMessage}</p>
     <button
       onclick={() => app.clearError()}
-      class="text-zinc-500 hover:text-zinc-200 text-lg leading-none"
+      class="cursor-pointer text-zinc-500 hover:text-zinc-200 text-lg leading-none"
       aria-label="Dismiss"
     >×</button>
   </div>

@@ -203,7 +203,7 @@ fn resolve_preview_value(user_dir: &Path, base: &str) -> serde_json::Value {
 // ─── GPX path resolution ──────────────────────────────────────────────────────
 
 /// Resolve a bare GPX filename to an absolute path.
-/// Order: absolute path → prod uploads → dev uploads → dev backend → exe dir → demo fallback.
+/// Order: absolute path → prod uploads → dev uploads → dev backend → exe dir.
 fn resolve_gpx_path(gpx_filename: &str) -> Result<(String, Option<String>), String> {
     let p = Path::new(gpx_filename);
     if p.is_absolute() && p.exists() {
@@ -239,36 +239,7 @@ fn resolve_gpx_path(gpx_filename: &str) -> Result<(String, Option<String>), Stri
         }
     }
 
-    if let Some(demo) = resolve_demo_gpx() {
-        let warning = format!(
-            "GPX '{}' not found — showing demo activity instead",
-            basename
-        );
-        log::warn!("{warning}");
-        return Ok((demo, Some(warning)));
-    }
-
     Err(format!("GPX file not found: {gpx_filename}"))
-}
-
-fn resolve_demo_gpx() -> Option<String> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            for name in &["demo.gpxinit", "demo.gpx"] {
-                let p = parent.join(name);
-                if p.exists() {
-                    return Some(p.to_string_lossy().to_string());
-                }
-            }
-        }
-        if let Some(root) = exe.ancestors().find(|p| p.join("backend").exists()) {
-            let p = root.join("backend").join("demo.gpxinit");
-            if p.exists() {
-                return Some(p.to_string_lossy().to_string());
-            }
-        }
-    }
-    None
 }
 
 fn resolve_fonts_dir() -> String {
@@ -609,6 +580,60 @@ fn backend_rename_template(from: String, to: String) -> Result<String, String> {
         .to_string())
 }
 
+#[tauri::command]
+fn backend_import_template(path: String) -> Result<String, String> {
+    let src = Path::new(&path);
+    if !src.exists() {
+        return Err(format!("Template file not found: {path}"));
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+    if !matches!(ext.as_deref(), Some("json")) {
+        return Err("Template must be a .json file".to_string());
+    }
+    if !is_template_json_file(src) {
+        return Err("Selected file is not a Cyclemetry template JSON.".to_string());
+    }
+
+    let file_name = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid template filename".to_string())?;
+    let base = file_name.trim_end_matches(".json");
+    let sanitized = base
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    let stem = if sanitized.is_empty() {
+        "imported_template".to_string()
+    } else {
+        sanitized
+    };
+
+    let dir = templates_user_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create templates dir: {e}"))?;
+    let mut rel = format!("{stem}.json");
+    let mut dest = dir.join(&rel);
+    let mut n = 2;
+    while dest.exists() {
+        rel = format!("{stem}_{n}.json");
+        dest = dir.join(&rel);
+        n += 1;
+    }
+    std::fs::copy(src, &dest).map_err(|e| format!("Failed to import template: {e}"))?;
+    Ok(serde_json::json!({ "filename": rel }).to_string())
+}
+
 /// Validate a template path: at most `folder/file.json`, no `..`, must end with `.json`.
 fn validate_template_path(filename: &str) -> Result<String, String> {
     let parts: Vec<&str> = filename.splitn(3, '/').collect();
@@ -923,6 +948,30 @@ fn open_url(url: &str) {
     let _ = std::process::Command::new(cmd.0).arg(cmd.1).spawn();
 }
 
+fn url_encode_component(value: &str) -> String {
+    let mut out = String::new();
+    for b in value.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+#[tauri::command]
+fn backend_report_issue(title: String, body: String) -> Result<(), String> {
+    let url = format!(
+        "https://github.com/walkersutton/cyclemetry/issues/new?title={}&body={}",
+        url_encode_component(&title),
+        url_encode_component(&body),
+    );
+    open_url(&url);
+    Ok(())
+}
+
 // ─── GPX upload / load ────────────────────────────────────────────────────────
 
 /// Load a GPX from an absolute path chosen via the native file dialog.
@@ -939,7 +988,13 @@ fn backend_load_gpx(path: String) -> Result<String, String> {
         .ok_or("Invalid filename")?;
     let dest = uploads_dir().join(filename);
     std::fs::copy(src, &dest).map_err(|e| format!("Failed to copy GPX: {e}"))?;
-    gpx_metadata_response(filename, &dest.to_string_lossy())
+    match gpx_metadata_response(filename, &dest.to_string_lossy()) {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            let _ = std::fs::remove_file(&dest);
+            Err(e)
+        }
+    }
 }
 
 /// Receive raw GPX bytes from the frontend (web drag-drop / file picker).
@@ -947,7 +1002,13 @@ fn backend_load_gpx(path: String) -> Result<String, String> {
 fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String> {
     let dest = uploads_dir().join(&filename);
     std::fs::write(&dest, &file_data).map_err(|e| format!("Failed to write GPX: {e}"))?;
-    gpx_metadata_response(&filename, &dest.to_string_lossy())
+    match gpx_metadata_response(&filename, &dest.to_string_lossy()) {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            let _ = std::fs::remove_file(&dest);
+            Err(e)
+        }
+    }
 }
 
 /// Parse GPX at `path` and return `{ filename, duration_seconds, has_data, start_time }`.
@@ -956,18 +1017,22 @@ fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String
 /// needs it to map activity time onto the video's `creation_time` axis.
 fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
     use chrono::{TimeZone, Utc};
-    let (duration, start_time) = match render::activity::Activity::from_file(path) {
-        Ok(activity) => {
-            let dur = activity.elapsed_duration().unwrap_or(0.0);
-            let start = activity.start_time_ms.and_then(|ms| {
-                Utc.timestamp_millis_opt(ms)
-                    .single()
-                    .map(|dt| dt.to_rfc3339())
-            });
-            (dur, start)
-        }
-        Err(_) => (0.0, None),
+    let activity = render::activity::Activity::from_file(path)
+        .map_err(|e| format!("Could not read activity file: {e}"))?;
+    if !activity.has_wall_clock_time_axis() {
+        return Err(
+            "This activity file does not include usable timestamps. Cyclemetry needs activity timestamps to align the overlay timeline.".to_string(),
+        );
+    }
+    let duration = activity.elapsed_duration().unwrap_or(0.0);
+    if !duration.is_finite() || duration <= 0.0 {
+        return Err("This activity file has no usable duration.".to_string());
     };
+    let start_time = activity.start_time_ms.and_then(|ms| {
+        Utc.timestamp_millis_opt(ms)
+            .single()
+            .map(|dt| dt.to_rfc3339())
+    });
     Ok(serde_json::json!({
         "data": "file loaded",
         "filename": filename,
@@ -999,8 +1064,8 @@ async fn backend_activity_distance_info(
     scene_start: f64,
     scene_end: f64,
 ) -> Result<String, String> {
-    // No bundled demo file: if the GPX can't be resolved, fall back to
-    // synthetic sample data so the slider still works (mirrors native_demo).
+    // If a previously selected activity can no longer be resolved, keep the
+    // distance slider usable with synthetic sample data.
     let gpx_path = match resolve_gpx_path(&gpx_filename) {
         Ok((p, _)) => p,
         Err(_) => "<synthetic>".to_string(),
@@ -1447,17 +1512,18 @@ async fn native_demo(
     // Preview canvas = chosen output resolution (so aspect ratio is honored).
     let wh = target.unwrap_or_else(|| template_value_wh(&config));
     let preview_fps = preview_fps.max(1);
+    if gpx_filename.is_empty() || gpx_filename == "null" || gpx_filename == "undefined" {
+        return Err("No activity selected".to_string());
+    }
     // Include preview_fps + target in cache hash so changing either rebuilds.
     let config_hash = quick_hash(&format!("{}:{}:{:?}", config, preview_fps, target));
-    // No bundled demo file: if the GPX can't be resolved, preview synthetic
-    // sample data rather than failing the whole preview.
+    // If a previously selected activity can no longer be resolved, preview
+    // synthetic sample data rather than failing the whole preview.
     let (gpx_path, gpx_warning) = match resolve_gpx_path(&gpx_filename) {
         Ok(v) => v,
         Err(_) => {
-            let real = !gpx_filename.is_empty()
-                && gpx_filename != "null"
-                && gpx_filename != "demo.gpxinit"
-                && gpx_filename != "demo.gpx";
+            let real =
+                !gpx_filename.is_empty() && gpx_filename != "null" && gpx_filename != "undefined";
             let warning = real
                 .then(|| format!("GPX '{gpx_filename}' not found — showing sample data instead"));
             ("<synthetic>".to_string(), warning)
@@ -1712,6 +1778,7 @@ pub fn run() {
             backend_get_template,
             backend_save_template,
             backend_rename_template,
+            backend_import_template,
             backend_open_templates,
             backend_default_output_dir,
             backend_list_fonts,
@@ -1729,6 +1796,7 @@ pub fn run() {
             backend_install_community_template,
             backend_delete_template,
             backend_save_template_preview,
+            backend_report_issue,
             backend_activity_distance_info,
             backend_activity_metric_range,
             record_gpx_opened,

@@ -158,12 +158,11 @@
 
   async function defaultCourseMarkerDistance(markers) {
     if (markers.length > 0) return markers[markers.length - 1]?.distance ?? 0
+    if (!app.hasActivity) return 0
     try {
-      const raw = app.gpxFilename
-      const gpx = raw && raw !== 'null' && raw !== 'undefined' ? raw : 'demo.gpxinit'
       const start = app.config?.scene?.start ?? 0
       const end = app.config?.scene?.end ?? app.timelineDuration
-      const info = await backend.getActivityDistanceInfo(gpx, start, end)
+      const info = await backend.getActivityDistanceInfo(app.gpxFilename, start, end)
       return info.overlay_end_m ?? info.total_m ?? 0
     } catch {
       return 0

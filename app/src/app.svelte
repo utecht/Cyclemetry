@@ -20,17 +20,108 @@
   import Button from './components/ui/Button.svelte'
   import Tooltip from './components/ui/Tooltip.svelte'
 
-  import { Activity, Play } from 'lucide-svelte'
+  import { Activity, AlertTriangle, Check, ChevronDown, Clock, Film, LayoutGrid, Monitor, Pencil, Play, RotateCcw, Save, X } from 'lucide-svelte'
   import { formatTime } from './lib/utils.js'
+  import { wallClockApplicable } from './lib/videoAlignment.js'
 
   // ── State ──────────────────────────────────────────────────────────────────
   const app = createAppState()
   setContext('app', app)
 
+  // ── Scene toolbar helpers ──────────────────────────────────────────────────
+  const RES_PRESETS = [
+    { label: '4K', w: 3840, h: 2160 },
+    { label: '1080p', w: 1920, h: 1080 },
+    { label: '4K Vertical', w: 2160, h: 3840 },
+    { label: '1080p Vertical', w: 1080, h: 1920 },
+    { label: 'Square', w: 1080, h: 1080 },
+  ]
+
+  // True when the user is in custom-resolution mode. Initialised to true when
+  // the persisted dims don't match any preset (e.g. loaded from a prior session).
+  let customResActive = $state(
+    !RES_PRESETS.some((p) => p.w === app.outputWidth && p.h === app.outputHeight),
+  )
+  let showResolutionMenu = $state(false)
+
+  let resolutionLabel = $derived.by(() => {
+    const preset = RES_PRESETS.find(
+      (p) => p.w === app.outputWidth && p.h === app.outputHeight,
+    )
+    return preset ? preset.label : `${app.outputWidth}×${app.outputHeight}`
+  })
+
+  function videoBasename(path) {
+    if (!path) return ''
+    return path.split(/[\\/]/).pop()
+  }
+
+  function moveVideoToRecordingTime() {
+    app.setVideoOffset(0)
+  }
+
+  function errorText(err, fallback = 'Unknown error') {
+    if (typeof err === 'string') return err
+    return err?.message ?? String(err ?? fallback)
+  }
+
+  function chooseResolution(preset) {
+    app.outputWidth = preset.w
+    app.outputHeight = preset.h
+    customResActive = false
+    showResolutionMenu = false
+  }
+
+  let canUseRecordingTime = $derived(
+    app.hasActivity &&
+      wallClockApplicable(app.gpxStartTime, app.video, app.timelineDuration),
+  )
+
+  // ── Template toolbar helpers ───────────────────────────────────────────────
+  let renaming = $state(false)
+  let renameValue = $state('')
+
+  let templateLabel = $derived.by(() => {
+    if (!app.loadedTemplateFilename) return null
+    const t = (app.templates ?? []).find((t) => t.id === app.loadedTemplateFilename)
+    return t?.name ?? app.loadedTemplateFilename.replace('.json', '')
+  })
+
+  function startRename() {
+    if (!app.loadedTemplateFilename) return
+    renameValue = templateLabel ?? app.loadedTemplateFilename.replace('.json', '')
+    renaming = true
+  }
+
+  function cancelRename() {
+    renaming = false
+    renameValue = ''
+  }
+
+  async function submitRename() {
+    try {
+      await app.renameTemplate(renameValue)
+      cancelRename()
+    } catch (e) {
+      app.errorMessage = e?.message ?? String(e)
+    }
+  }
+
   let rendering = $state(false)
   let showSettings = $state(false)
   let showNewTemplateDialog = $state(false)
+  let showRevertConfirm = $state(false)
   let buildInfo = $state('')
+
+  const REVERT_SKIP_KEY = 'confirm_skip_revert_template'
+
+  function handleRevertClick() {
+    if (localStorage.getItem(REVERT_SKIP_KEY) === 'true') {
+      app.revertTemplate().catch((e) => { app.errorMessage = e?.message ?? String(e) })
+    } else {
+      showRevertConfirm = true
+    }
+  }
   function onWindowKeydown(e) {
     const t = e.target
     const inField =
@@ -39,6 +130,11 @@
       t?.tagName === 'SELECT' ||
       t?.isContentEditable
     const blocked = showSettings || app.showTemplatePicker || showNewTemplateDialog
+
+    if (e.key === 'Escape' && showResolutionMenu) {
+      showResolutionMenu = false
+      return
+    }
 
     // Undo (⌘/Ctrl+Z). Skip when typing in a field so native text undo works.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -145,7 +241,7 @@
         input.click()
       }
     } catch (err) {
-      app.errorMessage = `Activity load failed: ${err.message}`
+      app.errorMessage = `Activity load failed: ${errorText(err)}`
     }
   }
 
@@ -162,12 +258,12 @@
         } catch { /* use existing config */ }
       }
     } catch (err) {
-      app.errorMessage = `Could not open ${path.split('/').pop()}: ${err.message}`
+      app.errorMessage = `Could not open ${path.split('/').pop()}: ${errorText(err)}`
     }
   }
 
   async function handleRender() {
-    if (rendering) return
+    if (rendering || !app.hasActivity) return
     rendering = true
     try {
       const result = await renderVideo(app)
@@ -189,7 +285,7 @@
   // Re-evaluates whenever renderingVideo or config changes, so it picks up
   // the freshly-stored FPS right after a render finishes.
   let renderEstimateSecs = $derived.by(() => {
-    if (app.renderingVideo || !app.config?.scene) return null
+    if (app.renderingVideo || !app.config?.scene || !app.hasActivity) return null
     const fps = app.config.scene.fps ?? 30
     const start = app.config.scene.start ?? 0
     const end = app.config.scene.end ?? app.timelineDuration
@@ -201,12 +297,18 @@
 
   let gpxLabel = $derived.by(() => {
     if (!app.gpxFilename) return 'Load Activity'
-    const basename = app.gpxFilename.split(/[\\/]/).pop()
-    return basename === 'demo.gpxinit' ? 'Load Activity' : basename
+    return app.gpxFilename.split(/[\\/]/).pop()
+  })
+
+  // 1 = no template, 2 = template but no activity, 0 = ready
+  let onboardingStep = $derived.by(() => {
+    if (!app.config) return 1
+    if (!app.hasActivity) return 2
+    return 0
   })
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} onclick={() => { showResolutionMenu = false }} />
 
 <div class="h-screen flex flex-col bg-[#09090b] text-foreground overflow-hidden select-none">
   <ErrorToast />
@@ -237,6 +339,21 @@
       oncancel={() => app.resolvePendingDiscard(false)}
     />
   {/if}
+  {#if showRevertConfirm}
+    <ConfirmDialog
+      title="Revert template?"
+      message="This will discard all unsaved changes and reload the last saved version. This cannot be undone."
+      confirmText="Revert"
+      cancelText="Keep editing"
+      dontShowAgainLabel="Don't ask again"
+      onconfirm={(skip) => {
+        if (skip) localStorage.setItem(REVERT_SKIP_KEY, 'true')
+        showRevertConfirm = false
+        app.revertTemplate().catch((e) => { app.errorMessage = e?.message ?? String(e) })
+      }}
+      oncancel={() => { showRevertConfirm = false }}
+    />
+  {/if}
 
   <!-- ── Header ─────────────────────────────────────────────────────────────── -->
   <header class="h-12 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 px-4 z-50">
@@ -247,35 +364,243 @@
     </div>
 
     <div class="h-5 w-px bg-zinc-800"></div>
+    {#if import.meta.env.DEV}
+      <button
+        onclick={() => { sessionStorage.setItem('dev_reset', '1'); window.location.reload() }}
+        title="Dev only — clear all state and reload (simulates fresh install)"
+        class="h-5 px-1.5 rounded text-[10px] font-mono border border-orange-500/40 text-orange-400/60
+               hover:border-orange-400/80 hover:text-orange-300 transition-colors shrink-0"
+      >↺ reset</button>
+    {/if}
     {#if buildInfo}<span class="text-[10px] text-zinc-600 font-mono">{buildInfo}</span>{/if}
+
+    <!-- ── Template toolbar ─────────────────────────────────────────────────── -->
+    <div class="flex items-center gap-1 shrink-0">
+      {#if renaming}
+        <form
+          class="flex items-center gap-1"
+          onsubmit={(e) => { e.preventDefault(); submitRename() }}
+        >
+          <input
+            bind:value={renameValue}
+            class="h-7 w-36 rounded-[6px] border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-100
+                   focus:outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Template name"
+          />
+          <button
+            type="submit"
+            title="Confirm rename"
+            class="hdr-btn hdr-btn-icon"
+          ><Check size={12} /></button>
+          <button
+            type="button"
+            onclick={cancelRename}
+            title="Cancel"
+            class="hdr-btn hdr-btn-icon"
+          ><X size={12} /></button>
+        </form>
+      {:else}
+        <!-- Template picker -->
+        <button
+          onclick={() => { app.showTemplatePicker = true }}
+          title="Choose a template"
+          class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep === 1 ? 'onboarding-glow' : ''}"
+        >
+          <LayoutGrid size={12} class="text-zinc-500 shrink-0" />
+          <span class="truncate {templateLabel ? 'text-zinc-200' : 'text-zinc-500'}">
+            {templateLabel ?? 'Templates…'}
+          </span>
+          {#if app.isTemplateModified}
+            <span class="text-amber-400 shrink-0" title="Unsaved changes">•</span>
+          {/if}
+        </button>
+
+        <!-- Rename -->
+        {#if app.loadedTemplateFilename}
+          <button onclick={startRename} title="Rename template" class="hdr-btn hdr-btn-icon shrink-0"
+          ><Pencil size={12} /></button>
+        {/if}
+
+        <!-- Save — amber when modified -->
+        {#if app.isTemplateModified}
+          <button
+            onclick={() => app.saveTemplate().catch((e) => { app.errorMessage = e?.message ?? String(e) })}
+            title="Save template"
+            class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
+                   hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+          ><Save size={12} /></button>
+
+          <!-- Revert to last saved -->
+          <button onclick={handleRevertClick} title="Revert to last saved" class="hdr-btn hdr-btn-icon shrink-0"
+          ><RotateCcw size={12} /></button>
+        {/if}
+      {/if}
+    </div>
+
+    <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
 
     <!-- Activity file picker -->
     <Tooltip content={!app.gpxFilename ? 'Load a GPX, FIT, or TCX activity file' : gpxLabel} side="bottom">
-      <Button variant="outline" size="sm" onclick={handleOpenGpx} class="gap-1.5 max-w-[160px]">
-        <Activity size={13} />
+      <button
+        onclick={handleOpenGpx}
+        class="hdr-btn px-2.5 gap-1.5 max-w-[160px] {onboardingStep === 2 ? 'onboarding-glow' : ''}"
+      >
+        <Activity size={12} class="shrink-0" />
         <span class="truncate">{gpxLabel}</span>
-      </Button>
+      </button>
     </Tooltip>
+
+    <!-- Video — always shown, dashed border signals optional -->
+    <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+    {#if !app.video}
+      <button
+        onclick={() => app.pickAndLoadVideo()}
+        class="hdr-btn px-2.5 gap-1.5 shrink-0 border-dashed"
+      >
+        <Film size={12} class="shrink-0" />
+        Add video…
+      </button>
+    {:else if app.video.missing}
+      <div class="flex items-center gap-1 shrink-0">
+        <AlertTriangle size={12} class="text-red-400 shrink-0" />
+        <span class="text-xs font-mono text-red-300 truncate max-w-[100px]" title={app.video.path}
+          >{videoBasename(app.video.path)}</span>
+        <button
+          onclick={() => app.pickAndLoadVideo()}
+          class="hdr-btn px-2.5 border-red-800/60 text-red-300 hover:border-red-600/60 hover:bg-red-900/30 hover:text-red-200"
+          >Locate…</button>
+        <button onclick={() => app.clearVideo()} class="hdr-btn hdr-btn-icon shrink-0"><X size={12} /></button>
+      </div>
+    {:else}
+      <div class="flex items-center gap-1 shrink-0">
+        <Film size={12} class="text-zinc-500 shrink-0" />
+        <span class="text-xs font-mono text-zinc-300 truncate max-w-[130px]" title={app.video.path}
+          >{videoBasename(app.video.path)}</span>
+        {#if canUseRecordingTime}
+          <button onclick={moveVideoToRecordingTime} title="Align to camera recording time"
+            class="hdr-btn hdr-btn-icon shrink-0"><Clock size={12} /></button>
+        {/if}
+        <button onclick={() => app.pickAndLoadVideo()} class="hdr-btn px-2.5">Replace…</button>
+        <button onclick={() => app.clearVideo()} class="hdr-btn hdr-btn-icon shrink-0"><X size={12} /></button>
+      </div>
+    {/if}
+
+    <!-- ── Scene toolbar: resolution + FPS (shown when a template is loaded) ── -->
+    {#if app.config?.scene}
+      <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+
+      <!-- Resolution popover -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="relative shrink-0" onclick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onclick={() => { showResolutionMenu = !showResolutionMenu }}
+          class="hdr-btn px-2.5 gap-1.5 min-w-[112px] justify-between {showResolutionMenu ? 'border-zinc-500 bg-zinc-800 text-zinc-200' : ''}"
+          title="Choose output resolution"
+          aria-haspopup="menu"
+          aria-expanded={showResolutionMenu}
+        >
+          <span class="inline-flex items-center gap-1.5 min-w-0">
+            <Monitor size={12} class="text-zinc-500 shrink-0" />
+            <span class="truncate">{resolutionLabel}</span>
+          </span>
+          <ChevronDown size={12} class="text-zinc-600 shrink-0" />
+        </button>
+
+        {#if showResolutionMenu}
+          <div
+            class="resolution-popover absolute left-0 top-[calc(100%+6px)] z-[80] w-56 rounded-[8px] border border-zinc-700 bg-zinc-950/98 p-2 shadow-2xl shadow-black/50"
+            role="menu"
+          >
+            <div class="grid grid-cols-2 gap-1">
+              {#each RES_PRESETS as p (p.label)}
+                {@const active = !customResActive && app.outputWidth === p.w && app.outputHeight === p.h}
+                <button
+                  type="button"
+                  onclick={() => chooseResolution(p)}
+                  class="resolution-option {active ? 'resolution-option--active' : ''}"
+                  role="menuitem"
+                >
+                  <span class="font-medium">{p.label}</span>
+                  <span class="font-mono text-[10px] text-zinc-500">{p.w}×{p.h}</span>
+                </button>
+              {/each}
+            </div>
+
+            <div class="mt-2 border-t border-zinc-800 pt-2">
+              <button
+                type="button"
+                onclick={() => { customResActive = true }}
+                class="resolution-option w-full {customResActive ? 'resolution-option--active' : ''}"
+              >
+                <span class="font-medium">Custom</span>
+                <span class="font-mono text-[10px] text-zinc-500">{app.outputWidth}×{app.outputHeight}</span>
+              </button>
+
+              <div class="mt-2 flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={app.outputWidth}
+                  min={1}
+                  onfocus={() => { customResActive = true }}
+                  oninput={(e) => { customResActive = true; const v = parseInt(e.target.value); if (v > 0) app.outputWidth = v }}
+                  class="h-7 min-w-0 flex-1 rounded-[6px] border px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring {customResActive ? 'border-zinc-700 bg-zinc-900 text-foreground' : 'border-zinc-800 bg-zinc-950/70 text-zinc-500'}"
+                  aria-label="Output width"
+                />
+                <span class="text-zinc-600 text-xs">×</span>
+                <input
+                  type="number"
+                  value={app.outputHeight}
+                  min={1}
+                  onfocus={() => { customResActive = true }}
+                  oninput={(e) => { customResActive = true; const v = parseInt(e.target.value); if (v > 0) app.outputHeight = v }}
+                  class="h-7 min-w-0 flex-1 rounded-[6px] border px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring {customResActive ? 'border-zinc-700 bg-zinc-900 text-foreground' : 'border-zinc-800 bg-zinc-950/70 text-zinc-500'}"
+                  aria-label="Output height"
+                />
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      {#if app.hasActivity}
+        <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+
+        <!-- FPS -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span class="text-xs text-zinc-500">FPS</span>
+          <input
+            type="number"
+            min="1"
+            max="240"
+            value={app.config.scene.fps ?? 30}
+            oninput={(e) => { const v = parseInt(e.target.value); if (v > 0) app.updateScene({ fps: v }) }}
+            class="h-7 w-14 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+          />
+        </div>
+      {/if}
+    {/if}
 
     <div class="flex-1"></div>
 
     <!-- Render button + estimate -->
     <div class="flex items-center gap-2">
       {#if renderEstimateSecs != null}
-        <span class="text-[11px] text-zinc-500 font-mono">~{formatTime(renderEstimateSecs)}</span>
+        <span class="text-xs text-zinc-500 font-mono">~{formatTime(renderEstimateSecs)}</span>
       {/if}
       <Tooltip
-        content={!app.config ? 'Load a template first' : app.renderingVideo ? 'Render in progress' : null}
+        content={!app.config ? 'Load a template first' : !app.hasActivity ? 'Load an activity first' : app.renderingVideo ? 'Render in progress' : null}
         side="bottom"
       >
         <Button
           onclick={handleRender}
-          disabled={!app.config || app.renderingVideo}
-          class="gap-1.5"
+          disabled={!app.config || !app.hasActivity || app.renderingVideo}
+          class="gap-1.5 min-w-[104px] shadow-sm shadow-primary/10"
           size="sm"
         >
           <Play size={13} />
-          {app.renderingVideo ? 'Rendering…' : 'Render'}
+          {app.renderingVideo ? 'Rendering…' : 'Render Video'}
         </Button>
       </Tooltip>
     </div>
@@ -284,8 +609,12 @@
 
   <!-- ── Three-panel layout ─────────────────────────────────────────────────── -->
   <div class="flex-1 flex overflow-hidden min-h-0">
-    <LeftSidebar />
-    <CenterCanvas />
-    <RightPanel />
+    {#if app.config}
+      <LeftSidebar />
+    {/if}
+    <CenterCanvas onopenactivity={handleOpenGpx} />
+    {#if app.config}
+      <RightPanel />
+    {/if}
   </div>
 </div>
