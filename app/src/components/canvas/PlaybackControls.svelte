@@ -1,6 +1,7 @@
 <script>
   import { formatTime } from '@/lib/utils.js'
   import { Play, Pause, SkipBack, SkipForward } from 'lucide-svelte'
+  import Tooltip from '@/components/ui/Tooltip.svelte'
 
   let {
     playhead = $bindable(0),
@@ -151,7 +152,7 @@
       value={smoothPlayhead}
       oninput={onScrub}
       style="--pct: {pct}%"
-      class="scrub-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
+      class="scrub-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
     />
   </div>
 
@@ -169,7 +170,7 @@
           value={customDistanceM}
           oninput={onDistanceScrub}
           style="--dist-pct: {distDotPct}%"
-          class="dist-range absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
+          class="dist-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
           title="Custom distance reference: {customDistanceM >= 1000 ? (customDistanceM / 1000).toFixed(1) + ' km' : Math.round(customDistanceM) + ' m'}"
         />
       </div>
@@ -190,7 +191,7 @@
           value={markerDistanceM}
           oninput={onMarkerScrub}
           style={markerCss}
-          class="{markerShapeClass} absolute inset-x-0 h-full w-full cursor-pointer appearance-none bg-transparent"
+          class="{markerShapeClass} absolute inset-x-0 h-full w-full appearance-none bg-transparent"
           title="Course marker: {markerDistanceM >= 1000 ? (markerDistanceM / 1000).toFixed(1) + ' km' : Math.round(markerDistanceM) + ' m'}"
         />
       </div>
@@ -199,34 +200,38 @@
 
   <!-- Controls row -->
   <div class="relative flex items-center justify-center">
-    <div class="flex items-center gap-3">
-      <button
-        onclick={stepBack}
-        class="text-zinc-500 hover:text-zinc-200 transition-colors"
-        aria-label="Step back"
-      >
-        <SkipBack size={14} />
-      </button>
+    <div class="flex items-center gap-2">
+      <Tooltip content="−1 second" side="top">
+        <button
+          onclick={stepBack}
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          aria-label="Step back 1 second"
+        >
+          <SkipBack size={14} />
+        </button>
+      </Tooltip>
 
       <button
         onclick={() => playing = !playing}
-        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary hover:bg-primary/80 transition-colors text-white"
+        class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary/85 active:scale-95"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {#if playing}
-          <Pause size={13} />
+          <Pause size={14} fill="currentColor" strokeWidth={0} />
         {:else}
-          <Play size={13} class="translate-x-px" />
+          <Play size={14} fill="currentColor" strokeWidth={0} class="translate-x-[1px]" />
         {/if}
       </button>
 
-      <button
-        onclick={stepForward}
-        class="text-zinc-500 hover:text-zinc-200 transition-colors"
-        aria-label="Step forward"
-      >
-        <SkipForward size={14} />
-      </button>
+      <Tooltip content="+1 second" side="top">
+        <button
+          onclick={stepForward}
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          aria-label="Step forward 1 second"
+        >
+          <SkipForward size={14} />
+        </button>
+      </Tooltip>
     </div>
 
     <span class="absolute right-0 font-mono text-[11px] text-zinc-500 tabular-nums">
@@ -236,12 +241,18 @@
 </div>
 
 <style>
+  /* Default cursor for the full input hit area; the visible track + thumb
+     pseudo-elements override to pointer below, so the cursor only changes
+     when the user is over the actual draggable surface. */
+  .scrub-range {
+    cursor: default;
+  }
   .scrub-range::-webkit-slider-thumb {
     appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #DC143C;
+    background: var(--primary);
     cursor: pointer;
     position: relative;
     z-index: 1;
@@ -249,14 +260,19 @@
   }
   .scrub-range::-webkit-slider-runnable-track {
     height: 4px;
+    cursor: pointer;
     background: linear-gradient(
       to right,
-      #DC143C calc(var(--pct, 0%) ),
+      var(--primary) calc(var(--pct, 0%)),
       #3f3f46 calc(var(--pct, 0%))
     );
     border-radius: 9999px;
   }
 
+  .dist-range,
+  .marker-range {
+    cursor: default;
+  }
   .dist-range::-webkit-slider-thumb {
     appearance: none;
     width: 12px;
@@ -270,6 +286,7 @@
   }
   .dist-range::-webkit-slider-runnable-track {
     height: 4px;
+    cursor: pointer;
     background: transparent;
     border-radius: 9999px;
   }
@@ -306,6 +323,7 @@
   }
   .marker-range::-webkit-slider-runnable-track {
     height: 4px;
+    cursor: pointer;
     background: transparent;
     border-radius: 9999px;
   }

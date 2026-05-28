@@ -201,11 +201,10 @@
     width={Math.max(d.w, 4)}
     height={Math.max(d.h, 4)}
     fill="none"
-    stroke={selected ? (locked ? '#F59E0B' : '#DC143C') : 'rgba(255,255,255,0.25)'}
     stroke-width={selected ? 1.5 : 1}
     stroke-dasharray={selected ? 'none' : '4 3'}
     rx="2"
-    style="pointer-events: none"
+    style="pointer-events: none; stroke: {selected ? (locked ? '#F59E0B' : 'var(--primary)') : 'rgba(255,255,255,0.25)'}"
   />
 
   <!-- Label tag (only when selected) -->
@@ -215,9 +214,8 @@
       y={d.y - 18}
       width={Math.max(label.length * 6.5 + 8, 30)}
       height={16}
-      fill="#DC143C"
       rx="3"
-      style="pointer-events: none"
+      style="pointer-events: none; fill: var(--primary)"
     />
     <text
       x={d.x + 4}
@@ -237,9 +235,8 @@
         y={hy - 3}
         width={6}
         height={6}
-        fill="#DC143C"
         rx="1"
-        style="pointer-events: none"
+        style="pointer-events: none; fill: var(--primary)"
       />
       <!-- Resize hit area (resizable elements only) -->
       {#if resizable}
@@ -264,8 +261,8 @@
     <line
       x1={cx} y1={d.y}
       x2={cx} y2={d.y - ROTATE_HANDLE_OFFSET}
-      stroke="#DC143C" stroke-width="1"
-      style="pointer-events: none"
+      stroke-width="1"
+      style="pointer-events: none; stroke: var(--primary)"
     />
 
     <!-- Rotation handle: large transparent hit area + small visual dot -->
@@ -286,10 +283,9 @@
       cx={cx}
       cy={d.y - ROTATE_HANDLE_OFFSET}
       r="6"
-      fill="#DC143C"
       stroke="white"
       stroke-width="1.5"
-      style="pointer-events: none"
+      style="pointer-events: none; fill: var(--primary)"
     />
   {/if}
 </g>

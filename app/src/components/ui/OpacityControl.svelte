@@ -7,7 +7,7 @@
     value = 1,
     min = 0,
     max = 1,
-    step = 0.05,
+    step = 0.01,
     class: className = '',
     oninput,
   } = $props()
@@ -16,6 +16,16 @@
   // Writable $derived: tracks the `value` prop but can be reassigned locally
   // for in-flight slider/number-input edits before `oninput` is committed.
   let currentValue = $derived(value ?? 1)
+
+  // Filled-track percentage. Drives a CSS variable on the input so the
+  // custom track gradient knows where to switch from crimson → zinc, giving
+  // pixel-perfect color control instead of relying on the browser's
+  // accent-color (which Chromium desaturates).
+  let pct = $derived.by(() => {
+    const span = max - min
+    if (!(span > 0)) return 0
+    return Math.max(0, Math.min(100, ((currentValue - min) / span) * 100))
+  })
 
   function emit(value) {
     currentValue = value
@@ -38,6 +48,7 @@
     {min}
     {max}
     {step}
+    style={`--pct: ${pct}%`}
     onpointerdown={beginRangeEdit}
     onpointerup={endRangeEdit}
     onpointercancel={endRangeEdit}
@@ -61,6 +72,29 @@
 
 <style>
   .opacity-slider {
-    accent-color: var(--primary);
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  .opacity-slider:focus {
+    outline: none;
+  }
+  .opacity-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--primary) calc(var(--pct, 0%)),
+      #3f3f46 calc(var(--pct, 0%))
+    );
+  }
+  .opacity-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--primary);
+    margin-top: -4px;
+    cursor: pointer;
   }
 </style>

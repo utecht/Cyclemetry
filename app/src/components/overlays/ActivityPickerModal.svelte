@@ -139,7 +139,7 @@
         <button
           onclick={handleChooseFromDisk}
           disabled={opening}
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[#DC143C]/70 bg-[#DC143C]/15 px-2.5 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:border-[#DC143C] hover:bg-[#DC143C]/25 disabled:cursor-not-allowed disabled:opacity-50"
+          class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-primary/70 bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:border-primary hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <FolderOpen size={12} />
           {opening ? 'Opening…' : 'Choose from disk'}
@@ -178,7 +178,7 @@
               <div
                 class="rounded-lg border overflow-hidden transition-colors flex items-center
                        {active
-                         ? 'border-[#DC143C] bg-zinc-800'
+                         ? 'border-primary bg-zinc-800'
                          : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/80'}"
               >
                 <button

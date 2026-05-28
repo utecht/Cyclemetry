@@ -210,7 +210,7 @@
               <div
                 class="rounded-lg border overflow-hidden transition-colors
                        {active
-                         ? 'border-[#DC143C] bg-zinc-800'
+                         ? 'border-primary bg-zinc-800'
                          : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/80'}"
               >
                 <!-- Preview (clickable) -->

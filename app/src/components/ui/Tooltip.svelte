@@ -4,20 +4,32 @@
     content = '',
     side = 'top',
     align = 'center',
+    delay = 500,
     children,
     class: className = '',
   } = $props()
 
   let visible = $state(false)
+  let timer = null
+
+  function show() {
+    if (timer) clearTimeout(timer)
+    if (delay > 0) timer = setTimeout(() => { visible = true }, delay)
+    else visible = true
+  }
+  function hide() {
+    if (timer) { clearTimeout(timer); timer = null }
+    visible = false
+  }
 </script>
 
 <span
   role="group"
   class={cn('relative inline-flex', className)}
-  onmouseenter={() => visible = true}
-  onmouseleave={() => visible = false}
-  onfocus={() => visible = true}
-  onblur={() => visible = false}
+  onmouseenter={show}
+  onmouseleave={hide}
+  onfocus={show}
+  onblur={hide}
 >
   {@render children?.()}
   {#if content && visible}

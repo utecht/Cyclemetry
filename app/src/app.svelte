@@ -857,7 +857,7 @@
         <Button
           onclick={handleRender}
           disabled={!app.config || !app.hasActivity || app.renderingVideo}
-          class="gap-1.5 min-w-[104px] border border-[#DC143C]/70 bg-[#DC143C]/15 text-zinc-100 hover:border-[#DC143C] hover:bg-[#DC143C]/25 {onboardingStep ===
+          class="gap-1.5 min-w-[104px] border border-primary/70 bg-primary/15 text-zinc-100 hover:border-primary hover:bg-primary/25 {onboardingStep ===
             0 && !hasRenderedOnce
             ? 'onboarding-glow'
             : ''}"

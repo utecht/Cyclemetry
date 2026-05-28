@@ -540,9 +540,8 @@
     <rect
       x={marquee.x} y={marquee.y}
       width={marquee.w} height={marquee.h}
-      fill="rgba(220,20,60,0.12)"
-      stroke="#DC143C" stroke-width="1" stroke-dasharray="4 3"
-      style="pointer-events:none"
+      stroke-width="1" stroke-dasharray="4 3"
+      style="pointer-events:none; fill: rgb(var(--primary-rgb) / 0.12); stroke: var(--primary)"
     />
   {/if}
 </svg>
