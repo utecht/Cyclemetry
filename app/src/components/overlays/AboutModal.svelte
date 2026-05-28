@@ -27,7 +27,7 @@
   tabindex="-1"
   class="fixed inset-0 z-50 flex items-center justify-center"
 >
-  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onmousedown={onclose}></div>
+  <div role="presentation" class="absolute inset-0 bg-black/60 backdrop-blur-sm" onmousedown={onclose}></div>
 
   <!-- Panel -->
   <div class="relative z-10 w-72 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
@@ -68,7 +68,7 @@
       </div>
 
       <!-- Copyright -->
-      <p class="text-[11px] text-zinc-600 mt-1">© 2025 Walker Sutton</p>
+      <p class="text-[11px] text-zinc-600 mt-1">© 2025-2026 Walker Sutton</p>
     </div>
   </div>
 </div>

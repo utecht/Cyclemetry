@@ -460,7 +460,15 @@ fn backend_list_templates() -> Result<String, String> {
             if !is_template_json_file(&path) {
                 continue;
             }
-            let display = template_display_name(fname.trim_end_matches(".json"));
+            let display = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| {
+                    v.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| template_display_name(fname.trim_end_matches(".json")));
             let sidecar = dir.join(format!("{fname}.remote"));
             let type_label = if sidecar.exists() {
                 let current = std::fs::read_to_string(&path).unwrap_or_default();
@@ -533,7 +541,11 @@ fn backend_save_template(config: serde_json::Value, filename: String) -> Result<
 }
 
 #[tauri::command]
-fn backend_rename_template(from: String, to: String) -> Result<String, String> {
+fn backend_rename_template(
+    from: String,
+    to: String,
+    display_name: Option<String>,
+) -> Result<String, String> {
     let from_rel = validate_template_path(&from)?;
     let to_rel = validate_template_path(&to)?;
     if from_rel == to_rel {
@@ -557,6 +569,19 @@ fn backend_rename_template(from: String, to: String) -> Result<String, String> {
     }
 
     std::fs::rename(&from_path, &to_path).map_err(|e| format!("Failed to rename template: {e}"))?;
+
+    if let Some(label) = display_name {
+        if let Ok(content) = std::fs::read_to_string(&to_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = json.as_object_mut() {
+                    obj.insert("name".to_string(), serde_json::Value::String(label));
+                    if let Ok(updated) = serde_json::to_string(&json) {
+                        std::fs::write(&to_path, updated).ok();
+                    }
+                }
+            }
+        }
+    }
 
     let from_base = from_rel.trim_end_matches(".json");
     let to_base = to_rel.trim_end_matches(".json");
@@ -1874,7 +1899,8 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(None)) as SharedDemoCache)
         .manage(recent_gpx_state)
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_shell::init());
 
     #[cfg(not(debug_assertions))]
     {

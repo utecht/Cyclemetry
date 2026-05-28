@@ -114,53 +114,28 @@
     },
     {
       "color": "$primary",
-      "fill_opacity": 0.2,
-      "height": 140,
-      "id": "rect-4",
-      "radius": 20,
-      "type": "rect",
-      "width": 1620,
-      "x": 30,
-      "y": 1990
-    },
-    {
-      "font_size": 120,
-      "id": "value-1",
-      "type": "value",
-      "value": "heartrate",
-      "x": 1380,
-      "y": 2105
-    },
-    {
-      "background": "$primary",
-      "background_opacity": 0,
-      "border_color": "#000",
-      "border_width": 10,
-      "color": "#ff40ff",
-      "direction": "right",
-      "font_size": 1,
-      "gradient": [
-        "#fffb00",
-        "#ff2600"
-      ],
-      "height": 100,
-      "id": "meter-0",
-      "max": 192,
-      "min": 150,
-      "type": "meter",
-      "value": "heartrate",
-      "width": 1200,
-      "x": 50,
-      "y": 2010
-    },
-    {
-      "color": "$primary",
-      "font_size": 70,
-      "id": "label-1",
-      "text": "BPM",
-      "type": "label",
-      "x": 1530,
-      "y": 2105
+      "fill": {
+        "opacity": 0
+      },
+      "height": 1000,
+      "id": "plot-0",
+      "line": {
+        "width": 8
+      },
+      "margin": 0.1,
+      "opacity": 0.5,
+      "rotation": 90,
+      "type": "plot",
+      "value": "course",
+      "width": 600,
+      "x": 2538,
+      "y": 1314,
+      "point": {
+        "color": "#ffda01",
+        "edge_color": "#710e0b",
+        "edge_width": 8,
+        "weight": 1000
+      }
     },
     {
       "color": "$primary",
@@ -213,31 +188,6 @@
       "y": 1860
     },
     {
-      "color": "$primary",
-      "fill": {
-        "opacity": 0
-      },
-      "height": 1000,
-      "id": "plot-0",
-      "line": {
-        "width": 8
-      },
-      "margin": 0.1,
-      "opacity": 0.5,
-      "rotation": 90,
-      "type": "plot",
-      "value": "course",
-      "width": 600,
-      "x": 2538,
-      "y": 1314,
-      "point": {
-        "color": "#ffda01",
-        "edge_color": "#710e0b",
-        "edge_width": 8,
-        "weight": 1000
-      }
-    },
-    {
       "file": "bolt.svg",
       "height": 124,
       "id": "image-0",
@@ -245,6 +195,56 @@
       "width": 100,
       "x": 1272,
       "y": 1847
+    },
+    {
+      "color": "$primary",
+      "fill_opacity": 0.2,
+      "height": 140,
+      "id": "rect-4",
+      "radius": 20,
+      "type": "rect",
+      "width": 1620,
+      "x": 30,
+      "y": 1990
+    },
+    {
+      "font_size": 120,
+      "id": "value-1",
+      "type": "value",
+      "value": "heartrate",
+      "x": 1380,
+      "y": 2105
+    },
+    {
+      "background": "$primary",
+      "background_opacity": 0,
+      "border_color": "#000",
+      "border_width": 10,
+      "color": "#ff40ff",
+      "direction": "right",
+      "font_size": 1,
+      "gradient": [
+        "#fffb00",
+        "#ff2600"
+      ],
+      "height": 100,
+      "id": "meter-0",
+      "max": 192,
+      "min": 150,
+      "type": "meter",
+      "value": "heartrate",
+      "width": 1200,
+      "x": 50,
+      "y": 2010
+    },
+    {
+      "color": "$primary",
+      "font_size": 70,
+      "id": "label-1",
+      "text": "BPM",
+      "type": "label",
+      "x": 1530,
+      "y": 2105
     },
     {
       "file": "white_heart.png",
@@ -256,6 +256,15 @@
       "y": 2000
     },
     {
+      "file": "red_heart.png",
+      "height": 94,
+      "id": "image-3",
+      "type": "image",
+      "width": 100,
+      "x": 1275,
+      "y": 2015
+    },
+    {
       "file": "checkered_flag.webp",
       "height": 100,
       "id": "image-2",
@@ -264,15 +273,6 @@
       "width": 100,
       "x": 3417,
       "y": 48
-    },
-    {
-      "file": "red_heart.png",
-      "height": 94,
-      "id": "image-3",
-      "type": "image",
-      "width": 100,
-      "x": 1275,
-      "y": 2015
     }
   ],
   "scene": {
@@ -298,21 +298,21 @@
         },
         {
           "element_ids": [
+            "rect-2",
+            "value-2",
+            "label-4"
+          ],
+          "id": "group-2",
+          "name": "speed [MPH]"
+        },
+        {
+          "element_ids": [
             "rect-0",
             "value-5",
             "label-2"
           ],
           "id": "group-1",
           "name": "cadence [RPM]"
-        },
-        {
-          "element_ids": [
-            "label-4",
-            "value-2",
-            "rect-2"
-          ],
-          "id": "group-2",
-          "name": "speed [MPH]"
         },
         {
           "element_ids": [
@@ -324,26 +324,26 @@
         },
         {
           "element_ids": [
+            "rect-5",
+            "label-0",
+            "value-3",
+            "meter-1",
+            "image-0"
+          ],
+          "id": "group-5",
+          "name": "power fill"
+        },
+        {
+          "element_ids": [
             "rect-4",
-            "label-1",
-            "meter-0",
             "value-1",
+            "meter-0",
+            "label-1",
             "image-1",
             "image-3"
           ],
           "id": "group-4",
           "name": "heartrate fill"
-        },
-        {
-          "element_ids": [
-            "meter-1",
-            "value-3",
-            "label-0",
-            "rect-5",
-            "image-0"
-          ],
-          "id": "group-5",
-          "name": "power fill"
         }
       ],
       "locked": [

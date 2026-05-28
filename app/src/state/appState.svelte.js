@@ -755,6 +755,16 @@ export function createAppState() {
     if (selectedGroupId === groupId) selectOnly(null)
   }
 
+  function reorderGroupElements(groupId, newFrontToBack) {
+    if (!config?.scene?.groups) return
+    const groups = config.scene.groups.map((g) =>
+      g.id === groupId
+        ? { ...g, element_ids: [...newFrontToBack].reverse() }
+        : g,
+    )
+    commitConfig({ ...config, scene: { ...config.scene, groups } })
+  }
+
   function renameGroup(groupId, name) {
     if (!config?.scene?.groups) return
     const groups = config.scene.groups.map((g) =>
@@ -963,20 +973,20 @@ export function createAppState() {
     const filename = toFilename(name)
     if (!filename || filename === loadedTemplateFilename) return
     try {
-      await backend.renameTemplate(loadedTemplateFilename, filename)
+      await backend.renameTemplate(loadedTemplateFilename, filename, name)
     } catch (e) {
       const message = e?.message ?? String(e)
       if (!message.includes('Template not found')) throw e
       if (!config) throw e
-      await backend.saveTemplate(
-        filename,
-        stripDefaults(toEditorFormat(config)),
-      )
+      await backend.saveTemplate(filename, {
+        ...stripDefaults(toEditorFormat(config)),
+        name,
+      })
       markPristine()
     }
     loadedTemplateFilename = filename
     await fetchTemplates()
-    showSuccess(`Renamed to "${templateDisplayName(filename)}"`)
+    showSuccess(`Renamed to "${name}"`)
   }
 
   async function fetchTemplates() {
@@ -1238,6 +1248,7 @@ export function createAppState() {
     createGroup,
     deleteGroup,
     renameGroup,
+    reorderGroupElements,
     removeElementFromGroups,
     removeFromGroupAndReorder,
     addElementToGroup,

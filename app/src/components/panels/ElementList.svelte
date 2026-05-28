@@ -301,6 +301,7 @@
       }
     }
     app.setElementLayerOrder(newOrder)
+    app.reorderGroupElements(groupId, newGroupElsFrontToBack)
   }
 
   function commitPointerDrop() {

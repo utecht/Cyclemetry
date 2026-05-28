@@ -102,8 +102,8 @@ export const saveTemplate = (filename, config) =>
  * @param {string} to
  * @returns {Promise<void>}
  */
-export const renameTemplate = (from, to) =>
-  invoke('backend_rename_template', { from, to })
+export const renameTemplate = (from, to, displayName) =>
+  invoke('backend_rename_template', { from, to, displayName })
 
 /**
  * @param {string} path

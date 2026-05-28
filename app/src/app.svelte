@@ -1,6 +1,7 @@
 <script>
   import { setContext, onMount } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
+  import { getCurrentWindow } from '@tauri-apps/api/window'
   import { createAppState } from './state/appState.svelte.js'
   import * as backend from './api/backend.js'
   import loadGpx from './api/gpxUtils.js'
@@ -67,6 +68,12 @@
     )
     return preset ? preset.label : `${app.outputWidth}×${app.outputHeight}`
   })
+
+  function onHeaderMousedown(e) {
+    if (e.button !== 0) return
+    if (e.target.closest('button, input, a, select, [role="button"]')) return
+    getCurrentWindow().startDragging()
+  }
 
   function videoBasename(path) {
     if (!path) return ''
@@ -520,8 +527,9 @@
   {/if}
 
   <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
-    data-tauri-drag-region
+    onmousedown={onHeaderMousedown}
     class="h-14 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 pr-4 pl-[96px] z-50"
   >
     {#if import.meta.env.DEV}

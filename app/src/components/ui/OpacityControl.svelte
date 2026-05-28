@@ -27,7 +27,8 @@
     return Math.max(0, Math.min(100, ((currentValue - min) / span) * 100))
   })
 
-  function emit(value) {
+  function emit(raw) {
+    const value = Math.max(min, Math.min(max, parseFloat(raw) || 0))
     currentValue = value
     oninput?.({ target: { value } })
   }
