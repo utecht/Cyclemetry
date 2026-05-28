@@ -61,6 +61,12 @@
       if (liveResize?.id === id) return liveResize.bounds
       if (draggingIds.has(id)) return dragBase.baseElements.get(id) ?? null
       if (movedIds.has(id)) return null
+      if (dragOffsets.has(id)) {
+        const { dx, dy } = dragOffsets.get(id)
+        const base = stickyMeasured.get(id)
+        if (base) return { id, x: base.x + dx, y: base.y + dy, w: base.w, h: base.h }
+        return null
+      }
       return measured.get(id) ?? stickyMeasured.get(id) ?? null
     }
 
@@ -140,6 +146,12 @@
   // bounds for them until the next rendered frame arrives.
   let movedIds = $state(new Set())
 
+  // Drag-offset cache: after a drop, stickyMeasured bounds are shifted by
+  // (dx, dy) so text/metric elements keep their precise measured shape instead
+  // of flashing to the approximate config-derived fallback.  Cleared when a
+  // fresh render frame arrives (same effect that clears movedIds).
+  const dragOffsets = new SvelteMap() // id → { dx, dy } in output px
+
   // Cropped pixels of the dragged element(s), floated under the cursor so the
   // real graphic moves during a drag (the box alone feels dead).
   // id → { url, baseX, baseY, x, y, w, h } — all output px.
@@ -153,6 +165,7 @@
     void measuredElements
     untrack(() => {
       if (movedIds.size > 0) movedIds = new Set()
+      if (dragOffsets.size > 0) dragOffsets.clear()
       if (dragSnaps.size > 0) dragSnaps.clear()
     })
   })
@@ -279,12 +292,9 @@
     const ids = isGroupDrag(id) ? [...selectedSet] : [id]
     const moves = ids.map(sid => moveFor(sid, dx, dy)).filter(Boolean)
 
-    // Mark moved elements so the derived skips their stale measured bounds.
-    if (moves.length > 0) {
-      const next = new SvelteSet(movedIds)
-      for (const m of moves) next.add(m.id)
-      movedIds = next
-    }
+    // Record the drag offset so boundsFor can return stickyMeasured+offset
+    // (precise shape at new position) instead of the approximate config fallback.
+    for (const m of moves) dragOffsets.set(m.id, { dx, dy })
 
     // Freeze the snapshot at the drop point; it stays until the fresh frame
     // arrives (cleared by the measuredElements effect), so no blank gap.

@@ -898,6 +898,16 @@ impl OverlayElement for GaugeConfig {
                 arc_paint.set_alpha(255);
                 canvas.draw_arc(oval, 0.0, progress_sweep, false, &arc_paint);
                 arc_paint.set_shader(None);
+                // The Cap::Round at the arc start bleeds ~0.5° backward. Skia's
+                // sweep gradient normalises angles to [0,360), so -ε° becomes ~360°,
+                // which sits past the gradient end and clamps to the last colour.
+                // Cover it with a filled dot in colors[0] at the arc start point
+                // (local 0° = East = cx+r, cy while the canvas is still rotated).
+                let mut start_cap_paint = Paint::default();
+                start_cap_paint.set_anti_alias(true);
+                start_cap_paint.set_style(skia_safe::paint::Style::Fill);
+                start_cap_paint.set_color(colors[0]);
+                canvas.draw_circle((cx + r, cy), arc_w / 2.0, &start_cap_paint);
                 canvas.restore();
             } else if let Some(pc) = self.progress_color.as_deref() {
                 arc_paint.set_color(self.argb(Some(pc), self.opacity));
