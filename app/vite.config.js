@@ -10,10 +10,6 @@ const __dirname = path.dirname(__filename)
 export default defineConfig({
   base: './',
   plugins: [svelte(), tailwindcss()],
-  server: {
-    port: 5173,
-    strictPort: true,
-  },
   build: {
     target: 'es2020',
     modulePreload: { polyfill: false },

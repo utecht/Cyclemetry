@@ -4,7 +4,7 @@
   "version": "0.1.3",
   "type": "module",
   "scripts": {
-    "dev": "sh -c 'cd .. && CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri dev'",
+    "dev": "node ../scripts/dev.mjs",
     "build": "sh -c 'cd .. && CYCLEMETRY_BUILD_STAMP=$(date +%s) app/node_modules/.bin/tauri build'",
     "vite": "vite",
     "vite-build": "vite build",

@@ -933,6 +933,14 @@ fn backend_open_video(filename: String) -> Result<String, String> {
     Ok(r#"{"message":"Video opened"}"#.to_string())
 }
 
+#[tauri::command]
+fn backend_file_size(path: String) -> Result<String, String> {
+    let bytes = std::fs::metadata(&path)
+        .map_err(|e| format!("Could not read file metadata: {e}"))?
+        .len();
+    Ok(serde_json::json!({ "bytes": bytes }).to_string())
+}
+
 fn open_render_result(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -1896,6 +1904,7 @@ pub fn run() {
             backend_open_activities,
             backend_open_downloads,
             backend_open_video,
+            backend_file_size,
             backend_load_gpx,
             backend_list_activities,
             backend_load_saved_activity,
@@ -2048,22 +2057,43 @@ pub fn run() {
                     Submenu::with_items(app, "Open Recent", true, &refs)?
                 };
 
-                let file_sep1 = PredefinedMenuItem::separator(app)?;
-                let show_dl = MenuItem::with_id(
+                let add_video =
+                    MenuItem::with_id(app, "add_video", "Add Video…", true, None::<&str>)?;
+                let file_submenu =
+                    Submenu::with_items(app, "File", true, &[&open_gpx, &open_recent, &add_video])?;
+
+                // ── Exports menu ──────────────────────────────────────────
+                let open_exports = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Show Render Output Folder",
+                    "Open Exports Folder",
+                    true,
+                    Some("CmdOrCtrl+Shift+E"),
+                )?;
+                let choose_exports_folder = MenuItem::with_id(
+                    app,
+                    "choose_output_folder",
+                    "Choose Exports Folder…",
                     true,
                     None::<&str>,
                 )?;
-
-                let add_video =
-                    MenuItem::with_id(app, "add_video", "Add Video…", true, None::<&str>)?;
-                let file_submenu = Submenu::with_items(
+                let reset_exports_folder = MenuItem::with_id(
                     app,
-                    "File",
+                    "reset_output_folder",
+                    "Use Default Exports Folder",
                     true,
-                    &[&open_gpx, &open_recent, &add_video, &file_sep1, &show_dl],
+                    None::<&str>,
+                )?;
+                let exports_submenu = Submenu::with_items(
+                    app,
+                    "Exports",
+                    true,
+                    &[
+                        &open_exports,
+                        &PredefinedMenuItem::separator(app)?,
+                        &choose_exports_folder,
+                        &reset_exports_folder,
+                    ],
                 )?;
 
                 // ── Activities menu ───────────────────────────────────────
@@ -2191,6 +2221,7 @@ pub fn run() {
                         &file_submenu,
                         &edit_submenu,
                         &templates_submenu,
+                        &exports_submenu,
                         &activities_submenu,
                         &help_submenu,
                     ],
@@ -2248,6 +2279,12 @@ pub fn run() {
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
                         }
+                        "choose_output_folder" => {
+                            app_handle.emit("menu_choose_output_folder", ()).ok();
+                        }
+                        "reset_output_folder" => {
+                            app_handle.emit("menu_reset_output_folder", ()).ok();
+                        }
                         "show_templates" => {
                             app_handle.emit("menu_show_templates", ()).ok();
                         }
@@ -2287,13 +2324,6 @@ pub fn run() {
                     MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
                 let open_gpx =
                     MenuItem::with_id(app, "open_gpx", "Open GPX...", true, Some("CmdOrCtrl+O"))?;
-                let show_dl = MenuItem::with_id(
-                    app,
-                    "show_downloads",
-                    "Show Render Output Folder",
-                    true,
-                    None::<&str>,
-                )?;
                 let add_video =
                     MenuItem::with_id(app, "add_video", "Add Video...", true, None::<&str>)?;
                 let file_submenu = Submenu::with_items(
@@ -2305,9 +2335,41 @@ pub fn run() {
                         &PredefinedMenuItem::separator(app)?,
                         &open_gpx,
                         &add_video,
-                        &show_dl,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::quit(app, None)?,
+                    ],
+                )?;
+
+                let open_exports = MenuItem::with_id(
+                    app,
+                    "show_downloads",
+                    "Open Exports Folder",
+                    true,
+                    Some("CmdOrCtrl+Shift+E"),
+                )?;
+                let choose_exports_folder = MenuItem::with_id(
+                    app,
+                    "choose_output_folder",
+                    "Choose Exports Folder...",
+                    true,
+                    None::<&str>,
+                )?;
+                let reset_exports_folder = MenuItem::with_id(
+                    app,
+                    "reset_output_folder",
+                    "Use Default Exports Folder",
+                    true,
+                    None::<&str>,
+                )?;
+                let exports_submenu = Submenu::with_items(
+                    app,
+                    "Exports",
+                    true,
+                    &[
+                        &open_exports,
+                        &PredefinedMenuItem::separator(app)?,
+                        &choose_exports_folder,
+                        &reset_exports_folder,
                     ],
                 )?;
 
@@ -2433,6 +2495,7 @@ pub fn run() {
                         &file_submenu,
                         &edit_submenu,
                         &templates_submenu,
+                        &exports_submenu,
                         &activities_submenu,
                         &help_submenu,
                     ],
@@ -2486,6 +2549,12 @@ pub fn run() {
                         }
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
+                        }
+                        "choose_output_folder" => {
+                            app_handle.emit("menu_choose_output_folder", ()).ok();
+                        }
+                        "reset_output_folder" => {
+                            app_handle.emit("menu_reset_output_folder", ()).ok();
                         }
                         "show_templates" => {
                             app_handle.emit("menu_show_templates", ()).ok();

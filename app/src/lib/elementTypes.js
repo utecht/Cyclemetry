@@ -147,7 +147,7 @@
  * @property {LineConfig} [line]
  * @property {FillConfig} [fill]
  * @property {number} [margin]
- * @property {PointConfig[]} [points]
+ * @property {PointConfig} [point]
  * @property {CourseMarkerConfig[]} [markers]
  * @property {PointLabelConfig} [point_label]
  * @property {number} [rotation]

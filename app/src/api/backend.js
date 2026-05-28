@@ -152,6 +152,12 @@ export const defaultOutputDir = () => invoke('backend_default_output_dir')
 export const openVideo = (filename) =>
   invoke('backend_open_video', { filename })
 
+/**
+ * @param {string} path
+ * @returns {Promise<{bytes: number}>}
+ */
+export const fileSize = (path) => invoke('backend_file_size', { path })
+
 // ─── GPX ─────────────────────────────────────────────────────────────────────
 
 /**

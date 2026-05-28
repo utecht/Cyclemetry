@@ -1,4 +1,5 @@
 import * as backend from './backend.js'
+import { exportBitsPerPixelSecond } from '../lib/utils.js'
 
 const ETA_REANCHOR_MS = 30_000
 const ETA_MIN_SAMPLE_SECONDS = 5
@@ -123,6 +124,20 @@ export default async function renderVideo(state) {
         }
       }, 200)
     })
+
+    try {
+      const info = await backend.fileSize(outputPath)
+      const bitsPerPixelSecond = exportBitsPerPixelSecond(
+        info.bytes,
+        outputWidth,
+        outputHeight,
+        fps,
+        end - start,
+      )
+      state.recordExportSizeEstimate(bitsPerPixelSecond)
+    } catch {
+      /* file-size calibration is best-effort */
+    }
 
     try {
       await backend.openVideo(outputPath)

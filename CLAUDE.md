@@ -41,7 +41,7 @@ Tauri Runtime (src-tauri/ — Rust)
   └── FFmpeg for final video encoding
 ```
 
-Vite dev server runs on port 5173. All logic lives in Rust — no sidecar process.
+The dev launcher picks an available localhost port for Vite and passes the same URL to Tauri. All logic lives in Rust — no sidecar process.
 
 ## Key Files
 

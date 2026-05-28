@@ -15,6 +15,23 @@ if (import.meta.env.DEV && sessionStorage.getItem('dev_reset') === '1') {
   localStorage.clear()
 }
 
+// ProRes 4444 bitrate varies wildly with overlay density, so calibration is
+// keyed by template. The empty-string slot is the cross-template fallback used
+// before a given template has been rendered.
+function loadExportSizeCalibration() {
+  const empty = { templates: {} }
+  const stored = parseLocalStorage('exportSizeCalibration')
+  if (stored && typeof stored === 'object' && stored.templates) return stored
+
+  // Migrate the pre-per-template single-value key, if present.
+  const legacy = parseFloat(
+    localStorage.getItem('exportSizeBitsPerPixelSecond') ?? '',
+  )
+  localStorage.removeItem('exportSizeBitsPerPixelSecond')
+  if (legacy > 0) return { templates: { '': { bps: legacy, n: 1 } } }
+  return empty
+}
+
 export function createAppState() {
   const storedActivityName = (value) => {
     if (!value || value === 'null' || value === 'undefined') return null
@@ -84,6 +101,7 @@ export function createAppState() {
   let lastRenderFps = $state(
     parseFloat(localStorage.getItem('lastRenderFps') ?? '') || null,
   )
+  let exportSizeCalibration = $state(loadExportSizeCalibration())
   let renderingVideo = $state(false)
   let currentPreviewImage = $state(null) // data:image/png;base64,... from latest preview frame
   let errorMessage = $state(null)
@@ -149,6 +167,12 @@ export function createAppState() {
   })
   $effect(() => {
     localStorage.setItem('previewFps', String(previewFps))
+  })
+  $effect(() => {
+    localStorage.setItem(
+      'exportSizeCalibration',
+      JSON.stringify(exportSizeCalibration),
+    )
   })
 
   function templateSnapshot(value) {
@@ -268,6 +292,64 @@ export function createAppState() {
     } catch {
       defaultOutputDir = null
     }
+  }
+
+  async function pickOutputDir() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: outputDir ?? defaultOutputDir ?? undefined,
+      title: 'Choose exports folder',
+    })
+    if (!selected) return false
+    outputDir = selected
+    showSuccess('Exports folder updated')
+    return true
+  }
+
+  function resetOutputDir() {
+    outputDir = null
+    showSuccess('Using default exports folder')
+  }
+
+  // ProRes 4444 lives roughly in [0.1, 8] bits/pixel/second. Anything outside
+  // [0.05, 10] is almost certainly a partial/corrupt file, not real signal.
+  const MIN_VALID_BPS = 0.05
+  const MAX_VALID_BPS = 10
+  // Once we have enough samples, cap the new-sample weight so a single odd
+  // render can't whiplash the calibration; below the cap, equal-weight running
+  // mean (α = 1/n) gives the cleanest convergence.
+  const MIN_SAMPLE_WEIGHT = 0.15
+
+  function blendCalibration(prev, sample) {
+    const nextN = (prev?.n ?? 0) + 1
+    if (!prev?.bps || !(prev.n > 0)) return { bps: sample, n: 1 }
+    const alpha = Math.max(MIN_SAMPLE_WEIGHT, 1 / nextN)
+    return { bps: prev.bps * (1 - alpha) + sample * alpha, n: nextN }
+  }
+
+  function recordExportSizeEstimate(actualBitsPerPixelSecond) {
+    if (!(actualBitsPerPixelSecond >= MIN_VALID_BPS)) return
+    if (!(actualBitsPerPixelSecond <= MAX_VALID_BPS)) return
+    const key = loadedTemplateFilename ?? ''
+    const templates = exportSizeCalibration.templates ?? {}
+    exportSizeCalibration = {
+      templates: {
+        ...templates,
+        [key]: blendCalibration(templates[key], actualBitsPerPixelSecond),
+        // The empty-key slot doubles as the cross-template fallback used for
+        // never-rendered templates.
+        ...(key === ''
+          ? {}
+          : { '': blendCalibration(templates[''], actualBitsPerPixelSecond) }),
+      },
+    }
+  }
+
+  function currentExportSizeCalibration() {
+    const templates = exportSizeCalibration.templates ?? {}
+    const key = loadedTemplateFilename ?? ''
+    return templates[key] ?? templates[''] ?? null
   }
 
   function resolvePendingDiscard(ok) {
@@ -1069,6 +1151,11 @@ export function createAppState() {
     get defaultOutputDir() {
       return defaultOutputDir
     },
+    get effectiveOutputDir() {
+      return outputDir ?? defaultOutputDir ?? ''
+    },
+    pickOutputDir,
+    resetOutputDir,
     get outputWidth() {
       return outputWidth
     },
@@ -1198,6 +1285,10 @@ export function createAppState() {
     set lastRenderFps(v) {
       lastRenderFps = v
     },
+    get exportSizeCalibration() {
+      return currentExportSizeCalibration()
+    },
+    recordExportSizeEstimate,
     get benchmarking() {
       return benchmarking
     },

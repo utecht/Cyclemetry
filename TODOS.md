@@ -2,7 +2,7 @@
 
 ## Later
 
-- [ ] **Overlay trim ears.** Add draggable left/right handles on the bottom timeline bar to set `scene.start` and `scene.end` without typing in the sidebar. The ears bracket the overlay window within the full activity range, similar to the distance-reference dot. Left ear → `scene.start`, right ear → `scene.end`; dragging either should keep the sidebar inputs in sync.
+- [ ] **Move overlay trim ears to the bottom timeline.** The left sidebar already has draggable handles for `scene.start` / `scene.end`; move or duplicate that interaction on the bottom playback timeline so users can trim the overlay window where they scrub. The ears should bracket the overlay window within the full activity range, similar to the distance-reference dot, and keep the sidebar inputs in sync.
 
 - [ ] **Aspect-ratio template variants.** Non-16:9 output now retargets the
   canvas and uniformly height-scales the authored template, so elements
@@ -17,21 +17,6 @@
   - **Implementation:** add `composite: true` (or `composite_type: "speed" | "custom"`) flag inside `scene.editor.groups[n]`; editor renders a compact composite panel instead of individual element rows
   - Bundled templates are already halfway there — aaron's `speed_group`, jeff's `power_group` etc. are existing groups that just need the flag
   - **Synergy with color variables:** composite panel can expose `scene.vars` as its "color scheme" controls
-
-- [ ] **Scene-level color variables.** Templates often use the same 2–4 colors everywhere. Color variables let you define named colors once and reference them in any element color field.
-  - **Proposed schema:**
-    ```json
-    { "scene": { "vars": { "accent": "#eed105", "text": "#ffffff", "bg": "#00000088" } },
-      "elements": [{ "color": "$accent", "line": { "color": "$text" } }] }
-    ```
-  - **Resolution:** Rust pre-pass substitutes `"$varname"` strings before any rendering logic runs — zero cost to individual element renderers
-  - **Editor:** color pickers on elements show the var name + resolved swatch; vars panel lives in scene settings (not per-element); editing a var propagates live
-  - **Design decisions to make:**
-    - Syntax: `"$accent"` vs `"var(--accent)"` vs `{ "$ref": "accent" }` — `"$accent"` is simplest for JSON readability
-    - Fallback: undefined var → transparent/default color, or render error?
-    - Scope: scene-level only, no element-level overrides — keep it simple
-
-- [ ] **Collapse `points:[{...}]` to `point:{...}`.** Every template uses a single-element `points` array on plot elements. Unless multi-point becomes a planned feature, this is nesting noise. Rename the field to `point` and make it an object, not an array. Needs: Rust schema change (`PlotConfig.points: Vec<PointConfig>` → `point: PointConfig`), `migrateConfig` to handle old `points[0]` on load, bundled template updates, and `stripDefaults` / `toEditorFormat` awareness.
 
 - [ ] **Drop `natural_width`/`natural_height` from image elements.** These are captured at insert time and persisted, but are derivable from the image file at load time. Remove from the schema and resolve dimensions lazily in the Rust renderer via `imagesize` or equivalent. Currently present in aaron (1 image) and jeff (4 images).
 

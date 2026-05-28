@@ -42,6 +42,16 @@
   let dragOrigin = { mx: 0, my: 0 }
   let dragDelta = $state({ dx: 0, dy: 0 })
 
+  // Pointer-move threshold (in screen pixels) below which a pointerdown→up is
+  // treated as a plain click rather than a drag/resize/rotate. Without this,
+  // selecting an element fires an ondragend with zero delta, which causes a
+  // spurious config commit + movedIds entry in the parent and makes the
+  // bounding box flash to its synthetic fallback for one frame cycle.
+  const CLICK_PX = 3
+  function pastClickThreshold(e, origin) {
+    return Math.abs(e.clientX - origin.mx) > CLICK_PX || Math.abs(e.clientY - origin.my) > CLICK_PX
+  }
+
   // Display position: base bounds + live drag offset
   let d = $derived.by(() => ({
     x: bounds.x + dragDelta.dx + groupOffset.dx,
@@ -84,10 +94,10 @@
     ondrag?.(dragDelta.dx, dragDelta.dy)
   }
 
-  function onpointerup() {
+  function onpointerup(e) {
     if (!dragging) return
     dragging = false
-    ondragend?.(dragDelta.dx, dragDelta.dy)
+    if (pastClickThreshold(e, dragOrigin)) ondragend?.(dragDelta.dx, dragDelta.dy)
     dragDelta = { dx: 0, dy: 0 }
   }
 
@@ -95,6 +105,7 @@
   let rotating = $state(false)
   let rotateStartAngle = 0
   let rotateStartValue = 0
+  let rotateOrigin = { mx: 0, my: 0 }
 
   function sceneAngle(svg, mx, my) {
     const ctm = svg.getScreenCTM()
@@ -109,6 +120,7 @@
     rotating = true
     rotateStartValue = rotation
     rotateStartAngle = sceneAngle(e.currentTarget.ownerSVGElement, e.clientX, e.clientY)
+    rotateOrigin = { mx: e.clientX, my: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -121,6 +133,7 @@
   function rotatePointerUp(e) {
     if (!rotating) return
     rotating = false
+    if (!pastClickThreshold(e, rotateOrigin)) return
     const a = sceneAngle(e.currentTarget.ownerSVGElement, e.clientX, e.clientY)
     onrotateend?.(rotateStartValue + (a - rotateStartAngle))
   }
@@ -148,7 +161,8 @@
 
   function cornerPointerUp(e) {
     if (!resizingCorner) return
-    onresizeend?.(resizingCorner, resizeDelta.dx, resizeDelta.dy, e.shiftKey)
+    if (pastClickThreshold(e, resizeOrigin))
+      onresizeend?.(resizingCorner, resizeDelta.dx, resizeDelta.dy, e.shiftKey)
     resizingCorner = null
     resizeDelta = { dx: 0, dy: 0 }
   }

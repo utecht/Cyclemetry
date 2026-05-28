@@ -33,6 +33,15 @@
     return app.config?.elements?.find((e) => e.id === id) ?? null
   }
 
+  // Sticky measurement cache: a new frame's measuredElements may omit an
+  // element briefly (e.g. while the post-edit re-render is in flight). Reusing
+  // the last-known measurement keeps the selection box the size of the text
+  // instead of falling back to an oversized synthetic estimate.
+  const stickyMeasured = new SvelteMap()
+  $effect(() => {
+    for (const m of measuredElements) stickyMeasured.set(m.id, m)
+  })
+
   let elements = $derived.by(() => {
     if (!app.config?.elements) return []
     const measured = new Map(measuredElements.map(e => [e.id, e]))
@@ -45,12 +54,14 @@
     // Pick the best bounds source for a given element:
     //  • Dragging → use the pre-drag snapshot so dragDelta isn't double-counted.
     //  • Recently moved (stale measured) → skip measured, use config-derived.
-    //  • Otherwise → prefer pixel-perfect measured, fall back to config-derived.
+    //  • Otherwise → prefer pixel-perfect measured (sticky, so a missing
+    //    current-frame measurement falls through to the last-known one rather
+    //    than the loose synthetic estimate).
     function boundsFor(id) {
       if (liveResize?.id === id) return liveResize.bounds
       if (draggingIds.has(id)) return dragBase.baseElements.get(id) ?? null
       if (movedIds.has(id)) return null
-      return measured.get(id) ?? null
+      return measured.get(id) ?? stickyMeasured.get(id) ?? null
     }
 
     for (const el of app.config.elements) {
@@ -67,11 +78,13 @@
         })
       } else if (el.type === 'value') {
         const fs = el.font_size ?? 48
+        // ~3.5 chars at 0.58em average — covers typical metric values like
+        // "120", "25.4", "1:42". Real bounds replace this on the next frame.
         byId[id] = boundsFor(id) ?? fb({
           id,
           x: el.x ?? 100,
           y: (el.y ?? 200) - fs * 0.8,
-          w: fs * 3.5,
+          w: fs * 2,
           h: fs,
         })
       } else if (el.type === 'plot' || el.type === 'meter' || el.type === 'gauge') {

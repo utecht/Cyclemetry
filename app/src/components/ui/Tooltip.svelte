@@ -24,7 +24,7 @@
     <span
       role="tooltip"
       class={cn(
-        'absolute z-50 w-max max-w-[200px] rounded-[6px] border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-foreground shadow-lg',
+        'absolute z-50 w-max max-w-[220px] rounded-[6px] border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-foreground shadow-lg whitespace-pre-line',
         'pointer-events-none',
         side === 'top' && 'bottom-full mb-1.5',
         side === 'bottom' && 'top-full mt-1.5',

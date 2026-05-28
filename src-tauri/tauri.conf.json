@@ -4,8 +4,8 @@
   "identifier": "com.cyclemetry",
   "build": {
     "frontendDist": "../app/dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm -C app vite",
+    "devUrl": null,
+    "beforeDevCommand": null,
     "beforeBuildCommand": "pnpm -C app vite-build"
   },
   "app": {
