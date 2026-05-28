@@ -1992,6 +1992,8 @@ pub fn run() {
                 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
                 // ── Cyclemetry (app) menu ─────────────────────────────────
+                let about =
+                    MenuItem::with_id(app, "about", "About Cyclemetry", true, None::<&str>)?;
                 let settings =
                     MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
                 let check_updates = MenuItem::with_id(
@@ -2006,7 +2008,7 @@ pub fn run() {
                     "Cyclemetry",
                     true,
                     &[
-                        &PredefinedMenuItem::about(app, None, None)?,
+                        &about,
                         &PredefinedMenuItem::separator(app)?,
                         &settings,
                         &PredefinedMenuItem::separator(app)?,
@@ -2023,9 +2025,6 @@ pub fn run() {
                 )?;
 
                 // ── File menu ─────────────────────────────────────────────
-                let open_gpx =
-                    MenuItem::with_id(app, "open_gpx", "Open GPX...", true, Some("CmdOrCtrl+O"))?;
-
                 // "Open Recent" submenu — items built from list stored on disk
                 let no_recent_item =
                     MenuItem::with_id(app, "no_recent", "No Recent Files", false, None::<&str>)?;
@@ -2059,40 +2058,31 @@ pub fn run() {
 
                 let add_video =
                     MenuItem::with_id(app, "add_video", "Add Video…", true, None::<&str>)?;
-                let file_submenu =
-                    Submenu::with_items(app, "File", true, &[&open_gpx, &open_recent, &add_video])?;
+                let file_submenu = Submenu::with_items(app, "File", true, &[&add_video])?;
 
-                // ── Exports menu ──────────────────────────────────────────
+                // ── Overlays menu ─────────────────────────────────────────
                 let open_exports = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Open Exports Folder",
+                    "Open Overlays Folder",
                     true,
                     Some("CmdOrCtrl+Shift+E"),
                 )?;
-                let choose_exports_folder = MenuItem::with_id(
+                let overlays_save_path = MenuItem::with_id(
                     app,
-                    "choose_output_folder",
-                    "Choose Exports Folder…",
-                    true,
-                    None::<&str>,
-                )?;
-                let reset_exports_folder = MenuItem::with_id(
-                    app,
-                    "reset_output_folder",
-                    "Use Default Exports Folder",
+                    "overlays_save_path",
+                    "Choose Default Save Path…",
                     true,
                     None::<&str>,
                 )?;
                 let exports_submenu = Submenu::with_items(
                     app,
-                    "Exports",
+                    "Overlays",
                     true,
                     &[
                         &open_exports,
                         &PredefinedMenuItem::separator(app)?,
-                        &choose_exports_folder,
-                        &reset_exports_folder,
+                        &overlays_save_path,
                     ],
                 )?;
 
@@ -2100,7 +2090,7 @@ pub fn run() {
                 let act_open = MenuItem::with_id(
                     app,
                     "activities_open_gpx",
-                    "Open Activity (GPX)…",
+                    "Select Activity…",
                     true,
                     None::<&str>,
                 )?;
@@ -2116,7 +2106,13 @@ pub fn run() {
                     app,
                     "Activities",
                     true,
-                    &[&act_open, &act_sep, &act_show_folder],
+                    &[
+                        &act_open,
+                        &act_sep,
+                        &open_recent,
+                        &PredefinedMenuItem::separator(app)?,
+                        &act_show_folder,
+                    ],
                 )?;
 
                 // ── Help menu ─────────────────────────────────────────────
@@ -2158,17 +2154,10 @@ pub fn run() {
                     true,
                     Some("CmdOrCtrl+S"),
                 )?;
-                let save_tpl_as = MenuItem::with_id(
+                let select_template = MenuItem::with_id(
                     app,
-                    "save_template_as",
-                    "Save Template As...",
-                    true,
-                    Some("CmdOrCtrl+Shift+S"),
-                )?;
-                let rename_tpl = MenuItem::with_id(
-                    app,
-                    "rename_template",
-                    "Rename Template...",
+                    "select_template",
+                    "Select Template…",
                     true,
                     None::<&str>,
                 )?;
@@ -2181,14 +2170,6 @@ pub fn run() {
                     None::<&str>,
                 )?;
                 let tpl_sep2 = PredefinedMenuItem::separator(app)?;
-                let browse_community = MenuItem::with_id(
-                    app,
-                    "browse_community_templates",
-                    "Browse Community Templates…",
-                    true,
-                    None::<&str>,
-                )?;
-                let tpl_sep3 = PredefinedMenuItem::separator(app)?;
                 let add_custom_font = MenuItem::with_id(
                     app,
                     "add_custom_font",
@@ -2201,15 +2182,13 @@ pub fn run() {
                     "Templates",
                     true,
                     &[
+                        &select_template,
+                        &tpl_sep1,
                         &new_tpl,
                         &save_tpl,
-                        &save_tpl_as,
-                        &rename_tpl,
-                        &tpl_sep1,
-                        &show_tpl_dir,
                         &tpl_sep2,
-                        &browse_community,
-                        &tpl_sep3,
+                        &show_tpl_dir,
+                        &PredefinedMenuItem::separator(app)?,
                         &add_custom_font,
                     ],
                 )?;
@@ -2221,8 +2200,8 @@ pub fn run() {
                         &file_submenu,
                         &edit_submenu,
                         &templates_submenu,
-                        &exports_submenu,
                         &activities_submenu,
+                        &exports_submenu,
                         &help_submenu,
                     ],
                 )?)?;
@@ -2243,13 +2222,16 @@ pub fn run() {
                         "edit_paste" => {
                             app_handle.emit("menu_paste", ()).ok();
                         }
+                        "about" => {
+                            app_handle.emit("menu_about", ()).ok();
+                        }
                         "settings" => {
                             app_handle.emit("menu_settings", ()).ok();
                         }
                         "check_updates" => {
                             app_handle.emit("check_for_updates", ()).ok();
                         }
-                        "open_gpx" | "activities_open_gpx" => {
+                        "activities_open_gpx" => {
                             app_handle.emit("menu_open_gpx", ()).ok();
                         }
                         "add_video" => {
@@ -2261,17 +2243,11 @@ pub fn run() {
                         "save_template" => {
                             app_handle.emit("menu_save_template", ()).ok();
                         }
-                        "save_template_as" => {
-                            app_handle.emit("menu_save_template_as", ()).ok();
-                        }
-                        "rename_template" => {
-                            app_handle.emit("menu_rename_template", ()).ok();
-                        }
                         "new_template" => {
                             app_handle.emit("menu_new_template", ()).ok();
                         }
-                        "browse_community_templates" => {
-                            app_handle.emit("menu_browse_community_templates", ()).ok();
+                        "select_template" => {
+                            app_handle.emit("menu_show_template_dialog", ()).ok();
                         }
                         "add_custom_font" => {
                             app_handle.emit("menu_add_custom_font", ()).ok();
@@ -2279,14 +2255,11 @@ pub fn run() {
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
                         }
-                        "choose_output_folder" => {
-                            app_handle.emit("menu_choose_output_folder", ()).ok();
-                        }
-                        "reset_output_folder" => {
-                            app_handle.emit("menu_reset_output_folder", ()).ok();
+                        "overlays_save_path" => {
+                            app_handle.emit("menu_settings", ()).ok();
                         }
                         "show_templates" => {
-                            app_handle.emit("menu_show_templates", ()).ok();
+                            app_handle.emit("menu_open_templates_folder", ()).ok();
                         }
                         "clear_recent" => {
                             app_handle
@@ -2322,8 +2295,6 @@ pub fn run() {
 
                 let settings =
                     MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
-                let open_gpx =
-                    MenuItem::with_id(app, "open_gpx", "Open GPX...", true, Some("CmdOrCtrl+O"))?;
                 let add_video =
                     MenuItem::with_id(app, "add_video", "Add Video...", true, None::<&str>)?;
                 let file_submenu = Submenu::with_items(
@@ -2333,7 +2304,6 @@ pub fn run() {
                     &[
                         &settings,
                         &PredefinedMenuItem::separator(app)?,
-                        &open_gpx,
                         &add_video,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::quit(app, None)?,
@@ -2343,33 +2313,25 @@ pub fn run() {
                 let open_exports = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Open Exports Folder",
+                    "Open Overlays Folder",
                     true,
                     Some("CmdOrCtrl+Shift+E"),
                 )?;
-                let choose_exports_folder = MenuItem::with_id(
+                let overlays_save_path = MenuItem::with_id(
                     app,
-                    "choose_output_folder",
-                    "Choose Exports Folder...",
-                    true,
-                    None::<&str>,
-                )?;
-                let reset_exports_folder = MenuItem::with_id(
-                    app,
-                    "reset_output_folder",
-                    "Use Default Exports Folder",
+                    "overlays_save_path",
+                    "Choose Default Save Path…",
                     true,
                     None::<&str>,
                 )?;
                 let exports_submenu = Submenu::with_items(
                     app,
-                    "Exports",
+                    "Overlays",
                     true,
                     &[
                         &open_exports,
                         &PredefinedMenuItem::separator(app)?,
-                        &choose_exports_folder,
-                        &reset_exports_folder,
+                        &overlays_save_path,
                     ],
                 )?;
 
@@ -2403,17 +2365,10 @@ pub fn run() {
                     true,
                     Some("CmdOrCtrl+S"),
                 )?;
-                let save_tpl_as = MenuItem::with_id(
+                let select_template = MenuItem::with_id(
                     app,
-                    "save_template_as",
-                    "Save Template As...",
-                    true,
-                    Some("CmdOrCtrl+Shift+S"),
-                )?;
-                let rename_tpl = MenuItem::with_id(
-                    app,
-                    "rename_template",
-                    "Rename Template...",
+                    "select_template",
+                    "Select Template…",
                     true,
                     None::<&str>,
                 )?;
@@ -2421,13 +2376,6 @@ pub fn run() {
                     app,
                     "show_templates",
                     "Show Templates Folder",
-                    true,
-                    None::<&str>,
-                )?;
-                let browse_community = MenuItem::with_id(
-                    app,
-                    "browse_community_templates",
-                    "Browse Community Templates...",
                     true,
                     None::<&str>,
                 )?;
@@ -2443,19 +2391,24 @@ pub fn run() {
                     "Templates",
                     true,
                     &[
+                        &select_template,
+                        &PredefinedMenuItem::separator(app)?,
                         &new_tpl,
                         &save_tpl,
-                        &save_tpl_as,
-                        &rename_tpl,
                         &PredefinedMenuItem::separator(app)?,
                         &show_tpl_dir,
-                        &PredefinedMenuItem::separator(app)?,
-                        &browse_community,
                         &PredefinedMenuItem::separator(app)?,
                         &add_custom_font,
                     ],
                 )?;
 
+                let act_open = MenuItem::with_id(
+                    app,
+                    "activities_open_gpx",
+                    "Select Activity…",
+                    true,
+                    None::<&str>,
+                )?;
                 let act_show_folder = MenuItem::with_id(
                     app,
                     "activities_show_folder",
@@ -2463,8 +2416,16 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
-                let activities_submenu =
-                    Submenu::with_items(app, "Activities", true, &[&act_show_folder])?;
+                let activities_submenu = Submenu::with_items(
+                    app,
+                    "Activities",
+                    true,
+                    &[
+                        &act_open,
+                        &PredefinedMenuItem::separator(app)?,
+                        &act_show_folder,
+                    ],
+                )?;
 
                 let help_docs =
                     MenuItem::with_id(app, "help_docs", "Documentation", true, None::<&str>)?;
@@ -2495,8 +2456,8 @@ pub fn run() {
                         &file_submenu,
                         &edit_submenu,
                         &templates_submenu,
-                        &exports_submenu,
                         &activities_submenu,
+                        &exports_submenu,
                         &help_submenu,
                     ],
                 )?)?;
@@ -2517,10 +2478,13 @@ pub fn run() {
                         "edit_paste" => {
                             app_handle.emit("menu_paste", ()).ok();
                         }
+                        "about" => {
+                            app_handle.emit("menu_about", ()).ok();
+                        }
                         "settings" => {
                             app_handle.emit("menu_settings", ()).ok();
                         }
-                        "open_gpx" => {
+                        "activities_open_gpx" => {
                             app_handle.emit("menu_open_gpx", ()).ok();
                         }
                         "add_video" => {
@@ -2532,17 +2496,11 @@ pub fn run() {
                         "save_template" => {
                             app_handle.emit("menu_save_template", ()).ok();
                         }
-                        "save_template_as" => {
-                            app_handle.emit("menu_save_template_as", ()).ok();
-                        }
-                        "rename_template" => {
-                            app_handle.emit("menu_rename_template", ()).ok();
-                        }
                         "new_template" => {
                             app_handle.emit("menu_new_template", ()).ok();
                         }
-                        "browse_community_templates" => {
-                            app_handle.emit("menu_browse_community_templates", ()).ok();
+                        "select_template" => {
+                            app_handle.emit("menu_show_template_dialog", ()).ok();
                         }
                         "add_custom_font" => {
                             app_handle.emit("menu_add_custom_font", ()).ok();
@@ -2550,14 +2508,11 @@ pub fn run() {
                         "show_downloads" => {
                             app_handle.emit("menu_show_downloads", ()).ok();
                         }
-                        "choose_output_folder" => {
-                            app_handle.emit("menu_choose_output_folder", ()).ok();
-                        }
-                        "reset_output_folder" => {
-                            app_handle.emit("menu_reset_output_folder", ()).ok();
+                        "overlays_save_path" => {
+                            app_handle.emit("menu_settings", ()).ok();
                         }
                         "show_templates" => {
-                            app_handle.emit("menu_show_templates", ()).ok();
+                            app_handle.emit("menu_open_templates_folder", ()).ok();
                         }
                         "check_updates" => {
                             app_handle.emit("check_for_updates", ()).ok();

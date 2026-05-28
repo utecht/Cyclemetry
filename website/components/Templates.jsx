@@ -17,8 +17,7 @@ export function Templates() {
         <p className="showcase-hero-desc">
           Discover beautiful layouts created by the Cyclemetry community.
           Browse, customize, and install these templates directly from the
-          in-app browser via{" "}
-          <strong>Templates → Browse Community Templates</strong>.
+          in-app browser via <strong>Templates → Select Template…</strong>.
         </p>
       </div>
 

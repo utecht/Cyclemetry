@@ -462,7 +462,7 @@
         onclick={() => (addMenuOpen = !addMenuOpen)}
         disabled={!app.config}
         aria-expanded={addMenuOpen}
-        class="inline-flex h-7 items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex h-7 items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         title="Add element"
       >
         <Plus size={12} />
@@ -702,7 +702,7 @@
         </div>
         <button
           onclick={() => (addMenuOpen = false)}
-          class="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          class="cursor-pointer rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
           title="Close"
         >
           <X size={15} />
@@ -714,7 +714,7 @@
           {@const Icon = ICONS[preset.icon]}
           <button
             onclick={() => addPreset(preset)}
-            class="group flex min-h-16 items-center gap-3 rounded-[8px] border border-zinc-800 bg-zinc-900/55 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800/75"
+            class="group flex min-h-16 cursor-pointer items-center gap-3 rounded-[8px] border border-zinc-800 bg-zinc-900/55 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800/75"
             title={preset.title}
           >
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[7px] border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors group-hover:border-zinc-600 group-hover:text-zinc-100">

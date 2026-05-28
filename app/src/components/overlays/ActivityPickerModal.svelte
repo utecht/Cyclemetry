@@ -3,6 +3,7 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import * as backend from '@/api/backend.js'
   import { X, Trash2, FolderOpen, Activity } from 'lucide-svelte'
+  import Tooltip from '@/components/ui/Tooltip.svelte'
 
   const app = getContext('app')
   let { onload, onclose } = $props()
@@ -88,7 +89,15 @@
       await onload({ savedFilename: filename })
       onclose()
     } catch (e) {
-      app.errorMessage = `Could not open ${filename}: ${e?.message ?? e}`
+      const msg = e?.message ?? String(e)
+      if (msg.includes('missing or its source moved')) {
+        // Broken symlink — remove it and tell the user why it vanished.
+        await backend.deleteActivity(filename).catch(() => {})
+        await refresh()
+        app.errorMessage = `"${filename}" can't be found — the original file may have been moved or deleted. Use the file picker to locate it again.`
+      } else {
+        app.errorMessage = `Could not open ${filename}: ${msg}`
+      }
     }
   }
 
@@ -136,14 +145,16 @@
           <Activity size={12} />
           Connect to Strava
         </button>
-        <button
-          onclick={handleChooseFromDisk}
-          disabled={opening}
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-primary/70 bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:border-primary hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <FolderOpen size={12} />
-          {opening ? 'Opening…' : 'Choose from disk'}
-        </button>
+        <Tooltip content="Choose a GPX, FIT, or TCX activity file" side="bottom">
+          <button
+            onclick={handleChooseFromDisk}
+            disabled={opening}
+            class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-primary/70 bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:border-primary hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FolderOpen size={12} />
+            {opening ? 'Opening…' : 'Choose from disk'}
+          </button>
+        </Tooltip>
         <button
           onclick={onclose}
           class="cursor-pointer text-zinc-500 hover:text-zinc-200 transition-colors rounded-md p-0.5"

@@ -1,5 +1,5 @@
 <script>
-  import { formatTime } from '@/lib/utils.js'
+  import { formatTime, TOOLTIP_DELAY } from '@/lib/utils.js'
   import { Play, Pause, SkipBack, SkipForward } from 'lucide-svelte'
   import Tooltip from '@/components/ui/Tooltip.svelte'
 
@@ -201,7 +201,7 @@
   <!-- Controls row -->
   <div class="relative flex items-center justify-center">
     <div class="flex items-center gap-2">
-      <Tooltip content="−1 second" side="top">
+      <Tooltip content="−1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepBack}
           class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
@@ -223,7 +223,7 @@
         {/if}
       </button>
 
-      <Tooltip content="+1 second" side="top">
+      <Tooltip content="+1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepForward}
           class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"

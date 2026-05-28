@@ -1005,7 +1005,9 @@ export function createAppState() {
     if (!selected) return null
     try {
       fonts = await backend.importFont(selected)
-      return selected.split(/[\\/]/).pop()
+      const filename = selected.split(/[\\/]/).pop()
+      updateScene({ font: filename })
+      return filename
     } catch (err) {
       errorMessage = `Could not add font: ${err?.message ?? err}`
       return null

@@ -1,6 +1,6 @@
 # Templates
 
-Community templates are browsable and installable directly from within Cyclemetry via **Templates → Browse Community Templates**.
+Community templates are browsable and installable directly from within Cyclemetry via **Templates → Select Template…**.
 
 ## Showcase
 

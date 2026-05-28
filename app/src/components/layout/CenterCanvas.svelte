@@ -100,10 +100,17 @@
         fetchError = null
         previewNotice = null
         if (stallTimer) { clearTimeout(stallTimer); stallTimer = null }
-        // Surface any backend warning (e.g. GPX not found) once per message.
+        // If the saved GPX file no longer exists, clear the stale state and
+        // open the activity picker so the user can reselect.
         if (data.warning && !shownWarnings.has(data.warning)) {
           shownWarnings.add(data.warning)
-          app.errorMessage = data.warning
+          if (data.warning.includes('not found')) {
+            app.gpxFilename = null
+            app.activityDuration = 0
+            onopenactivity?.()
+          } else {
+            app.errorMessage = data.warning
+          }
         }
         cache.set(frameIdx, data)
         // Evict oldest frames beyond MAX_CACHE

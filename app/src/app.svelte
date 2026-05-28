@@ -13,6 +13,7 @@
   import ErrorToast from './components/overlays/ErrorToast.svelte'
   import UpdateBanner from './components/overlays/UpdateBanner.svelte'
   import Settings from './components/overlays/Settings.svelte'
+  import AboutModal from './components/overlays/AboutModal.svelte'
   import TemplatePickerModal from './components/overlays/TemplatePickerModal.svelte'
   import ActivityPickerModal from './components/overlays/ActivityPickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
@@ -35,7 +36,7 @@
     Save,
     X,
   } from 'lucide-svelte'
-  import { formatTime, estimateProResFileSize } from './lib/utils.js'
+  import { formatTime, estimateProResFileSize, TOOLTIP_DELAY } from './lib/utils.js'
   import { wallClockApplicable } from './lib/videoAlignment.js'
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -128,6 +129,7 @@
 
   let rendering = $state(false)
   let showSettings = $state(false)
+  let showAbout = $state(false)
   let showNewTemplateDialog = $state(false)
   let showActivityPicker = $state(false)
   let showRevertConfirm = $state(false)
@@ -244,32 +246,23 @@
             app.errorMessage = e.message
           }),
         ),
-        listen('menu_save_template_as', () =>
-          app.saveTemplateAs().catch((e) => {
-            app.errorMessage = e.message
-          }),
-        ),
-        listen('menu_rename_template', () =>
-          app.renameTemplate().catch((e) => {
-            app.errorMessage = e.message
-          }),
-        ),
         listen('menu_new_template', () =>
           app.confirmIfModified(() => {
             showNewTemplateDialog = true
           }),
         ),
         listen('menu_show_downloads', () => handleOpenDownloads()),
-        listen('menu_choose_output_folder', () => handleChooseOutputFolder()),
-        listen('menu_reset_output_folder', () => app.resetOutputDir()),
         listen('menu_show_activities', () =>
           backend.openActivitiesFolder().catch(() => {}),
         ),
-        listen('menu_show_templates', () =>
+        listen('menu_open_templates_folder', () =>
           backend.openTemplatesFolder().catch(() => {}),
         ),
         listen('menu_settings', () => {
           showSettings = true
+        }),
+        listen('menu_about', () => {
+          showAbout = true
         }),
         listen('menu_undo', () => {
           if (app.canUndo) app.undo()
@@ -283,7 +276,7 @@
         listen('menu_paste', () => {
           if (app.copiedElement) app.pasteElement()
         }),
-        listen('menu_browse_community_templates', () => {
+        listen('menu_show_template_dialog', () => {
           app.showTemplatePicker = true
         }),
         listen('menu_add_custom_font', () =>
@@ -390,14 +383,6 @@
     }
   }
 
-  async function handleChooseOutputFolder() {
-    try {
-      await app.pickOutputDir()
-    } catch (e) {
-      app.errorMessage = `Could not choose output folder: ${e.message}`
-    }
-  }
-
   // Estimate render wall-clock time from the last recorded render FPS.
   // Re-evaluates whenever renderingVideo or config changes, so it picks up
   // the freshly-stored FPS right after a render finishes.
@@ -473,6 +458,9 @@
       }}
     />
   {/if}
+  {#if showAbout}
+    <AboutModal onclose={() => (showAbout = false)} />
+  {/if}
   {#if app.showTemplatePicker}
     <TemplatePickerModal
       onclose={() => {
@@ -533,15 +521,9 @@
 
   <!-- ── Header ─────────────────────────────────────────────────────────────── -->
   <header
-    class="h-12 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 px-4 z-50"
+    data-tauri-drag-region
+    class="h-14 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 pr-4 pl-[96px] z-50"
   >
-    <!-- Logo -->
-    <div class="flex items-center gap-2.5 mr-2">
-      <img src="/logo192.png" alt="" class="w-7 h-7 rounded-[6px]" />
-      <span class="text-sm font-semibold tracking-tight">Cyclemetry</span>
-    </div>
-
-    <div class="h-5 w-px bg-zinc-800"></div>
     {#if import.meta.env.DEV}
       <button
         onclick={() => {
@@ -588,58 +570,62 @@
         </form>
       {:else}
         <!-- Template picker -->
-        <button
-          onclick={() => {
-            app.showTemplatePicker = true
-          }}
-          title="Choose a template"
-          class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep ===
-          1
-            ? 'onboarding-glow'
-            : ''}"
-        >
-          <LayoutGrid size={12} class="text-zinc-500 shrink-0" />
-          <span
-            class="truncate {templateLabel ? 'text-zinc-200' : 'text-zinc-500'}"
+        <Tooltip content="Choose a template" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={() => {
+              app.showTemplatePicker = true
+            }}
+            class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep ===
+            1
+              ? 'onboarding-glow'
+              : ''}"
           >
-            {templateLabel ?? 'Templates…'}
-          </span>
-          {#if app.isTemplateModified}
-            <span class="text-amber-400 shrink-0" title="Unsaved changes"
-              >•</span
+            <LayoutGrid size={12} class="text-zinc-500 shrink-0" />
+            <span
+              class="truncate {templateLabel ? 'text-zinc-200' : 'text-zinc-500'}"
             >
-          {/if}
-        </button>
+              {templateLabel ?? 'Templates…'}
+            </span>
+            {#if app.isTemplateModified}
+              <span class="text-amber-400 shrink-0" title="Unsaved changes"
+                >•</span
+              >
+            {/if}
+          </button>
+        </Tooltip>
 
         <!-- Rename -->
         {#if app.loadedTemplateFilename}
-          <button
-            onclick={startRename}
-            title="Rename template"
-            class="hdr-btn hdr-btn-icon shrink-0"><Pencil size={12} /></button
-          >
+          <Tooltip content="Rename template" side="bottom" delay={TOOLTIP_DELAY}>
+            <button
+              onclick={startRename}
+              class="hdr-btn hdr-btn-icon shrink-0"><Pencil size={12} /></button
+            >
+          </Tooltip>
         {/if}
 
         <!-- Save — amber when modified -->
         {#if app.isTemplateModified}
-          <button
-            onclick={() =>
-              app.saveTemplate().catch((e) => {
-                app.errorMessage = e?.message ?? String(e)
-              })}
-            title="Save template"
-            class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
-                   hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
-            ><Save size={12} /></button
-          >
+          <Tooltip content="Save template" side="bottom" delay={TOOLTIP_DELAY}>
+            <button
+              onclick={() =>
+                app.saveTemplate().catch((e) => {
+                  app.errorMessage = e?.message ?? String(e)
+                })}
+              class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
+                     hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+              ><Save size={12} /></button
+            >
+          </Tooltip>
 
           <!-- Revert to last saved -->
-          <button
-            onclick={handleRevertClick}
-            title="Revert to last saved"
-            class="hdr-btn hdr-btn-icon shrink-0"
-            ><RotateCcw size={12} /></button
-          >
+          <Tooltip content="Revert to last saved" side="bottom" delay={TOOLTIP_DELAY}>
+            <button
+              onclick={handleRevertClick}
+              class="hdr-btn hdr-btn-icon shrink-0"
+              ><RotateCcw size={12} /></button
+            >
+          </Tooltip>
         {/if}
       {/if}
     </div>
@@ -647,7 +633,7 @@
     <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
 
     <!-- Activity file picker -->
-    <Tooltip content="Choose a GPX, FIT, or TCX activity file" side="bottom">
+    <Tooltip content="Choose an activity" side="bottom" delay={TOOLTIP_DELAY}>
       <button
         onclick={handleOpenGpx}
         class="hdr-btn px-2.5 gap-1.5 max-w-[160px] {onboardingStep === 2
@@ -724,24 +710,25 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div class="relative shrink-0" onclick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onclick={() => {
-            showResolutionMenu = !showResolutionMenu
-          }}
-          class="hdr-btn px-2.5 gap-1.5 min-w-[112px] justify-between {showResolutionMenu
-            ? 'border-zinc-500 bg-zinc-800 text-zinc-200'
-            : ''}"
-          title="Choose output resolution"
-          aria-haspopup="menu"
-          aria-expanded={showResolutionMenu}
-        >
-          <span class="inline-flex items-center gap-1.5 min-w-0">
-            <Monitor size={12} class="text-zinc-500 shrink-0" />
-            <span class="truncate">{resolutionLabel}</span>
-          </span>
-          <ChevronDown size={12} class="text-zinc-600 shrink-0" />
-        </button>
+        <Tooltip content="Choose output resolution" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            type="button"
+            onclick={() => {
+              showResolutionMenu = !showResolutionMenu
+            }}
+            class="hdr-btn px-2.5 gap-1.5 min-w-[112px] justify-between {showResolutionMenu
+              ? 'border-zinc-500 bg-zinc-800 text-zinc-200'
+              : ''}"
+            aria-haspopup="menu"
+            aria-expanded={showResolutionMenu}
+          >
+            <span class="inline-flex items-center gap-1.5 min-w-0">
+              <Monitor size={12} class="text-zinc-500 shrink-0" />
+              <span class="truncate">{resolutionLabel}</span>
+            </span>
+            <ChevronDown size={12} class="text-zinc-600 shrink-0" />
+          </button>
+        </Tooltip>
 
         {#if showResolutionMenu}
           <div

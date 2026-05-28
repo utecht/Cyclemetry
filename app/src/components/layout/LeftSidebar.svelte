@@ -179,6 +179,14 @@
             type="text"
             value={secToTimecode(app.config.scene.start ?? 0)}
             placeholder="0:00"
+            onkeydown={(e) => {
+              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                const next = Math.min(Math.max(0, (app.config.scene.start ?? 0) + (e.key === 'ArrowUp' ? 1 : -1)), app.timelineDuration)
+                app.updateScene({ start: next })
+                e.target.value = secToTimecode(next)
+              }
+            }}
             onchange={(e) => {
               const v = timecodeToSec(e.target.value)
               if (!isNaN(v))
@@ -195,6 +203,14 @@
             type="text"
             value={secToTimecode(app.config.scene.end ?? app.timelineDuration)}
             placeholder={secToTimecode(app.timelineDuration)}
+            onkeydown={(e) => {
+              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                const next = Math.min(Math.max(0, (app.config.scene.end ?? app.timelineDuration) + (e.key === 'ArrowUp' ? 1 : -1)), app.timelineDuration)
+                app.updateScene({ end: next })
+                e.target.value = secToTimecode(next)
+              }
+            }}
             onchange={(e) => {
               if (e.target.value.trim().toLowerCase() === 'end') {
                 app.updateScene({ end: app.timelineDuration })
@@ -253,7 +269,7 @@
               app.updateScene({ vars })
             }}
             title="Add color variable"
-            class="h-5 w-5 rounded flex items-center justify-center text-zinc-500
+            class="h-5 w-5 rounded flex items-center justify-center text-zinc-500 cursor-pointer
                    hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
           >
             <Plus size={12} />
@@ -301,7 +317,7 @@
                 app.updateScene({ vars })
               }}
               title="Remove variable"
-              class="h-5 w-5 shrink-0 rounded flex items-center justify-center text-zinc-600
+              class="h-5 w-5 shrink-0 rounded flex items-center justify-center text-zinc-600 cursor-pointer
                      hover:text-zinc-300 hover:bg-zinc-700 transition-colors"
             >
               <X size={11} />

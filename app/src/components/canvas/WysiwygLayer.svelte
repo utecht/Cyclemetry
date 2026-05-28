@@ -407,10 +407,13 @@
   let marqueeMoved = false
 
   function clientToScene(svg, cx, cy) {
-    const ctm = svg.getScreenCTM()
-    if (!ctm) return { x: 0, y: 0 }
-    const p = new DOMPoint(cx, cy).matrixTransform(ctm.inverse())
-    return { x: p.x, y: p.y }
+    const rect = svg.getBoundingClientRect()
+    if (!rect.width || !rect.height) return { x: 0, y: 0 }
+    const vb = svg.viewBox.baseVal
+    return {
+      x: (cx - rect.left) * (vb.width / rect.width),
+      y: (cy - rect.top) * (vb.height / rect.height),
+    }
   }
 
   function bgPointerDown(e) {

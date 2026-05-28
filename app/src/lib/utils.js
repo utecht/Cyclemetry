@@ -64,6 +64,8 @@ export function estimateProResFileSize(
   return `~${formatFileSize((pixelsPerExport * bps) / 8)}`
 }
 
+export const TOOLTIP_DELAY = 300
+
 export function parseLocalStorage(key, fallback = null) {
   try {
     const v = localStorage.getItem(key)

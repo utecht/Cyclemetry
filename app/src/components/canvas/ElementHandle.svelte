@@ -24,9 +24,6 @@
     selected = false,
     rotation = 0,
     groupOffset = { dx: 0, dy: 0 },  // live offset when another group member is dragging
-    // WebKit's getScreenCTM() omits CSS ancestor transforms, so we correct
-    // the delta manually by dividing out the stage zoom.
-    zoom = 1,
     resizable = false,
     locked = false,
     onselect,      // (event) — event carries shiftKey for multi-select
@@ -66,14 +63,15 @@
   const ROTATE_HANDLE_OFFSET = 32
 
   function screenToOverlayDelta(svg, mx0, my0, mx1, my1) {
-    const ctm = svg.getScreenCTM()
-    if (!ctm) return { dx: 0, dy: 0 }
-    const inv = ctm.inverse()
-    const p0 = new DOMPoint(mx0, my0).matrixTransform(inv)
-    const p1 = new DOMPoint(mx1, my1).matrixTransform(inv)
-    // Divide by zoom: WebKit's getScreenCTM() doesn't include CSS ancestor
-    // transforms, so without this the delta is zoom× too large when zoomed in.
-    return { dx: (p1.x - p0.x) / zoom, dy: (p1.y - p0.y) / zoom }
+    // Use getBoundingClientRect() instead of getScreenCTM(): the rect already
+    // accounts for CSS ancestor transforms (incl. the stage zoom), whereas
+    // WebKit's getScreenCTM() on SVG children omits them inconsistently.
+    const rect = svg.getBoundingClientRect()
+    if (!rect.width || !rect.height) return { dx: 0, dy: 0 }
+    const vb = svg.viewBox.baseVal
+    const scaleX = vb.width / rect.width
+    const scaleY = vb.height / rect.height
+    return { dx: (mx1 - mx0) * scaleX, dy: (my1 - my0) * scaleY }
   }
 
   function onpointerdown(e) {
@@ -108,11 +106,12 @@
   let rotateOrigin = { mx: 0, my: 0 }
 
   function sceneAngle(svg, mx, my) {
-    const ctm = svg.getScreenCTM()
-    if (!ctm) return 0
-    const p = new DOMPoint(mx, my).matrixTransform(ctm.inverse())
-    // atan2 from center, measured clockwise from top (matching CSS/SVG rotate)
-    return Math.atan2(p.x - cx, -(p.y - cy)) * (180 / Math.PI)
+    const rect = svg.getBoundingClientRect()
+    if (!rect.width || !rect.height) return 0
+    const vb = svg.viewBox.baseVal
+    const px = (mx - rect.left) * (vb.width / rect.width)
+    const py = (my - rect.top) * (vb.height / rect.height)
+    return Math.atan2(px - cx, -(py - cy)) * (180 / Math.PI)
   }
 
   function rotatePointerDown(e) {
