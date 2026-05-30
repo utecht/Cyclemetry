@@ -7,20 +7,17 @@ on:
       - 'website/**'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Only allow one deployment at a time; cancel in-progress runs
 concurrency:
-  group: github-pages
+  group: vercel-website
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build
+  deploy:
+    name: Deploy to Vercel
     runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,27 +32,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: website/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel
+
+      - name: Pull Vercel project settings and env vars
         working-directory: website
-        run: pnpm install --frozen-lockfile
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build
         working-directory: website
-        run: pnpm build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: website/out
-
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Deploy
+        working-directory: website
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

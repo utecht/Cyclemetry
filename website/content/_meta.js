@@ -14,6 +14,9 @@ export default {
   install: {
     title: 'Install',
   },
+  fund: {
+    title: 'Fund the App',
+  },
   faq: {
     title: 'FAQ',
   },

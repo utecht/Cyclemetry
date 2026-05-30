@@ -14,7 +14,8 @@
     "nextra": "^4.3.1",
     "nextra-theme-docs": "^4.3.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "stripe": "^22.2.0"
   },
   "packageManager": "pnpm@10.25.0",
   "pnpm": {

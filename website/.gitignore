@@ -1,4 +1,6 @@
 .next/
 .pnpm-store/
+.vercel/
 node_modules/
 out/
+.env.local
