@@ -52,7 +52,7 @@ Built-in templates give you a starting point. Drag elements, adjust colors and t
   </tr>
 </table>
 
-## Showcase
+## Videos
 
 Videos made with Cyclemetry. Click any thumbnail to watch on YouTube.
 
@@ -83,7 +83,7 @@ Videos made with Cyclemetry. Click any thumbnail to watch on YouTube.
   </tr>
 </table>
 
-→ **[cyclemetry.walkersutton.com/showcase](https://cyclemetry.walkersutton.com/showcase)** · submit your own video
+→ **[cyclemetry.walkersutton.com/videos](https://cyclemetry.walkersutton.com/videos)** · submit your own video
 
 ## Built with
 

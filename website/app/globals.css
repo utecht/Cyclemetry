@@ -377,6 +377,7 @@ kbd {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   color: var(--color-text);
+  cursor: pointer;
   display: inline-flex;
   gap: 0.5rem;
   font-size: 0.9rem;
@@ -417,6 +418,23 @@ kbd {
 .showcase-button svg {
   color: var(--color-accent);
   flex: 0 0 auto;
+}
+
+.fund-heart path {
+  fill: none;
+  transition: fill 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fund-cta:not(.fund-cta-disabled):hover .fund-heart path {
+    fill: currentColor;
+  }
+}
+
+/* After initial ride-in animation completes, smooth-transition cyclist on amount change */
+.fund-cyclist-live {
+  animation: none;
+  transition: left 400ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* Showcase hero */
@@ -609,8 +627,47 @@ kbd {
   }
 }
 
+/* Preview overlay: shows what their selected amount would add */
+.fund-track-preview {
+  background: linear-gradient(
+    90deg,
+    rgba(220, 20, 60, 0.22),
+    rgba(220, 20, 60, 0.42)
+  );
+  border-radius: 0 999px 999px 0;
+  height: 100%;
+  left: var(--fund-fill);
+  position: absolute;
+  top: 0;
+  transition: width 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  width: calc(var(--fund-preview) - var(--fund-fill));
+}
+
+/* Donation contribution segment (thank-you bar grow animation) */
+.fund-track-donation {
+  animation: fund-donation-grow 900ms 700ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  background: linear-gradient(90deg, var(--color-accent), rgba(220, 20, 60, 0.65));
+  border-radius: 0 999px 999px 0;
+  box-shadow: 0 0 10px rgba(220, 20, 60, 0.45);
+  height: 100%;
+  left: var(--fund-before);
+  position: absolute;
+  top: 0;
+  width: var(--fund-donation-width);
+}
+
+@keyframes fund-donation-grow {
+  from {
+    width: 0;
+  }
+  to {
+    width: var(--fund-donation-width);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fund-track-fill,
+  .fund-track-donation,
   .fund-cyclist {
     animation: none;
   }
@@ -624,6 +681,10 @@ kbd {
 
 .fund-meta strong {
   color: var(--color-text);
+}
+
+.fund-meta-preview strong {
+  color: var(--color-accent);
 }
 
 .fund-meta-funded {
@@ -724,6 +785,11 @@ kbd {
   color: var(--color-text);
 }
 
+.fund-preset-goal {
+  border-color: rgba(220, 20, 60, 0.35);
+  color: var(--color-accent);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .fund-preset:not(.fund-preset-active):hover {
     background-color: var(--color-surface-2);
@@ -807,18 +873,30 @@ kbd {
 /* Post-donation thank-you banner */
 .fund-thanks {
   align-items: flex-start;
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.25);
-  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.07);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 12px;
   display: flex;
-  font-size: 0.95rem;
-  gap: 0.75rem;
+  font-size: 1rem;
+  gap: 1rem;
   margin-bottom: 2rem;
-  padding: 1rem 1.25rem;
+  padding: 1.25rem 1.5rem;
 }
 
 .fund-thanks strong {
   color: var(--color-success);
+}
+
+.fund-thanks-emoji {
+  flex: 0 0 auto;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.fund-thanks-impact {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin-top: 0.35rem;
 }
 
 .showcase-content code {

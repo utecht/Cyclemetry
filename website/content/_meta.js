@@ -1,32 +1,33 @@
 export default {
   index: {
-    title: 'Home',
-  },
-  comparison: {
-    title: 'Comparison',
-  },
-  showcase: {
-    title: 'Showcase',
-  },
-  templates: {
-    title: 'Templates',
+    title: "Home",
   },
   install: {
-    title: 'Install',
+    title: "Install",
   },
-  fund: {
-    title: 'Fund the App',
+  templates: {
+    title: "Templates",
   },
-  faq: {
-    title: 'FAQ',
+  videos: {
+    title: "Videos",
+  },
+  comparison: {
+    title: "Comparison",
   },
   changelog: {
-    title: 'Changelog',
-  },
-  developing: {
-    title: 'Developing',
+    title: "Changelog",
   },
   blog: {
-    title: 'Blog',
+    title: "Blog",
   },
-}
+  faq: {
+    title: "FAQ",
+  },
+  contributing: {
+    title: "Contributing",
+  },
+  fund: {
+    title: "Fund the App",
+    display: "hidden",
+  },
+};
