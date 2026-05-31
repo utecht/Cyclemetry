@@ -9,11 +9,11 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "^15.3.1",
-    "nextra": "^4.3.1",
-    "nextra-theme-docs": "^4.3.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "next": "^16.2.6",
+    "nextra": "^4.6.1",
+    "nextra-theme-docs": "^4.6.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "stripe": "^22.2.0"
   },
   "packageManager": "pnpm@10.25.0",
