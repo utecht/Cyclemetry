@@ -6,7 +6,7 @@ export PATH="$HOME/.asdf/shims:$HOME/.asdf/bin:$HOME/.nvm/versions/node/$(ls $HO
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-echo "pre-commit: updating templates README showcase..."
+echo "pre-commit: updating templates README videos..."
 node "$REPO_ROOT/scripts/update-templates-readme.mjs" || fail "Failed to update templates/README.md"
 if git diff --name-only | grep -q "templates/README.md"; then
   echo "pre-commit: templates/README.md was out of date. Staging updated version..."

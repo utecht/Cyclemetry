@@ -2,8 +2,6 @@
 
 Community templates are browsable and installable directly from within Cyclemetry via **Templates → Select Template…**.
 
-## Showcase
-
 <!-- SHOWCASE_START -->
 
 | Template | Preview |

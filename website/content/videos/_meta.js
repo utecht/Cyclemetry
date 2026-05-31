@@ -1,4 +1,4 @@
 export default {
-  index: 'Showcase',
+  index: 'Videos',
   submit: 'Submit Your Video',
 }
