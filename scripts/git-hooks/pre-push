@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+fail() {
+  echo ""
+  echo "pre-push: $1"
+  exit 1
+}
+
+echo "pre-push: regenerating templates outputs..."
+node "$REPO_ROOT/scripts/update-templates-readme.mjs" >/dev/null
+
+if [ -n "$(cd "$REPO_ROOT" && git diff --name-only -- templates/README.md website/content/templates.json)" ]; then
+  fail "templates/README.md or website/content/templates.json is stale — commit the updated files before pushing"
+fi
+
+echo "pre-push: all checks passed."

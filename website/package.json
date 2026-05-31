@@ -5,7 +5,6 @@
   "scripts": {
     "predev": "node ../scripts/update-templates-readme.mjs",
     "dev": "next",
-    "prebuild": "node ../scripts/update-templates-readme.mjs",
     "build": "next build",
     "start": "next start"
   },
