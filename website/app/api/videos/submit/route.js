@@ -5,6 +5,21 @@ const FILE_PATH = "website/content/videos/videos.json";
 const BASE_BRANCH = "main";
 const GITHUB_API = "https://api.github.com";
 
+const RATE_LIMIT = 3;
+const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+// ip -> array of timestamps
+const ipLog = new Map();
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const cutoff = now - RATE_WINDOW_MS;
+  const hits = (ipLog.get(ip) ?? []).filter((t) => t > cutoff);
+  if (hits.length >= RATE_LIMIT) return false;
+  ipLog.set(ip, [...hits, now]);
+  return true;
+}
+
 function extractYouTubeId(url) {
   try {
     const u = new URL(url);
@@ -37,6 +52,16 @@ function ghFetch(path, options = {}) {
 }
 
 export async function POST(request) {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json(
+      { error: "Too many submissions. Try again in an hour." },
+      { status: 429 },
+    );
+  }
+
   const { youtubeUrl, title, author } = await request.json();
 
   if (!youtubeUrl || !title || !author) {
