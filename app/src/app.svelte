@@ -139,8 +139,27 @@
   let showAbout = $state(false)
   let showNewTemplateDialog = $state(false)
   let showActivityPicker = $state(false)
+
+  function openTemplatePicker() {
+    showActivityPicker = false
+    showSettings = false
+    showAbout = false
+    showNewTemplateDialog = false
+    app.showTemplatePicker = true
+  }
+
+  // Enforce mutual exclusion: any code path that sets showTemplatePicker = true
+  // (including child components that bypass openTemplatePicker) must close other dialogs.
+  $effect(() => {
+    if (app.showTemplatePicker) {
+      showActivityPicker = false
+      showSettings = false
+      showAbout = false
+      showNewTemplateDialog = false
+    }
+  })
+
   let showRevertConfirm = $state(false)
-  let buildInfo = $state('')
 
   const REVERT_SKIP_KEY = 'confirm_skip_revert_template'
   const RENDERED_ONCE_KEY = 'has_rendered_once'
@@ -236,14 +255,6 @@
     app.fetchFonts()
     app.fetchDefaultOutputDir()
     app.verifyVideo()
-    if (import.meta.env.DEV)
-      backend
-        .appBuildInfo()
-        .then((s) => {
-          buildInfo = s
-        })
-        .catch(() => {})
-
     if (typeof window.__TAURI__ !== 'undefined') {
       const unlisteners = [
         listen('menu_open_gpx', () => handleOpenGpx()),
@@ -284,7 +295,7 @@
           if (app.copiedElement) app.pasteElement()
         }),
         listen('menu_show_template_dialog', () => {
-          app.showTemplatePicker = true
+          openTemplatePicker()
         }),
         listen('menu_add_custom_font', () =>
           app.addCustomFont().catch((e) => {
@@ -296,6 +307,10 @@
             app.errorMessage = e.message
           }),
         ),
+        listen('menu_dev_reset', () => {
+          sessionStorage.setItem('dev_reset', '1')
+          window.location.reload()
+        }),
       ]
       return () => unlisteners.forEach((p) => p.then((fn) => fn()))
     }
@@ -532,22 +547,6 @@
     onmousedown={onHeaderMousedown}
     class="h-14 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 pr-4 pl-[96px] z-50"
   >
-    {#if import.meta.env.DEV}
-      <button
-        onclick={() => {
-          sessionStorage.setItem('dev_reset', '1')
-          window.location.reload()
-        }}
-        title="Dev only — clear all state and reload (simulates fresh install)"
-        class="h-5 px-1.5 rounded text-[10px] font-mono border border-orange-500/40 text-orange-400/60
-               hover:border-orange-400/80 hover:text-orange-300 transition-colors shrink-0"
-        >↺ reset</button
-      >
-    {/if}
-    {#if buildInfo}<span class="text-[10px] text-zinc-600 font-mono"
-        >{buildInfo}</span
-      >{/if}
-
     <!-- ── Template toolbar ─────────────────────────────────────────────────── -->
     <div class="flex items-center gap-1 shrink-0">
       {#if renaming}
@@ -581,7 +580,7 @@
         <Tooltip content="Choose a template" side="bottom" delay={TOOLTIP_DELAY}>
           <button
             onclick={() => {
-              app.showTemplatePicker = true
+              openTemplatePicker()
             }}
             class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep ===
             1

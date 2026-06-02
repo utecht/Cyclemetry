@@ -1093,6 +1093,16 @@ export function createAppState() {
     await loadTemplate(loadedTemplateFilename)
   }
 
+  function clearTemplate() {
+    config = null
+    loadedTemplateFilename = null
+    pristineConfig = null
+    localStorage.removeItem('loadedTemplateFilename')
+    localStorage.removeItem('editorConfig')
+    selectOnly(null)
+    resetHistory()
+  }
+
   return {
     get config() {
       return config
@@ -1308,6 +1318,7 @@ export function createAppState() {
     selectedElementLabel,
     fetchTemplates,
     loadTemplate,
+    clearTemplate,
     saveTemplate,
     saveTemplateAs,
     newTemplate,

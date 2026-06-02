@@ -77,16 +77,20 @@
     })
   }
 
-  async function handleInstall(id) {
-    installing = [...installing, id]
-    try {
-      await backend.installCommunityTemplate(id)
-      await app.fetchTemplates()
-    } catch (e) {
-      app.errorMessage = `Install failed: ${e?.message ?? e}`
-    } finally {
-      installing = installing.filter((x) => x !== id)
-    }
+  async function handleCommunityClick(id) {
+    app.confirmIfModified(async () => {
+      installing = [...installing, id]
+      try {
+        await backend.installCommunityTemplate(id)
+        await app.loadTemplate(id)
+        onclose()
+        app.fetchTemplates()
+      } catch (e) {
+        app.errorMessage = `Failed to install: ${e?.message ?? e}`
+      } finally {
+        installing = installing.filter((x) => x !== id)
+      }
+    })
   }
 
   async function handleDelete(id) {
@@ -94,7 +98,7 @@
     deleting = [...deleting, id]
     try {
       await backend.deleteTemplate(id)
-      if (app.loadedTemplateFilename === id) app.loadedTemplateFilename = null
+      if (app.loadedTemplateFilename === id) app.clearTemplate()
       await app.fetchTemplates()
     } catch (e) {
       app.errorMessage = `Delete failed: ${e?.message ?? e}`
@@ -275,9 +279,9 @@
         </div>
       {/if}
 
-      <!-- Community templates available to install -->
+      <!-- Community templates -->
       <div>
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Available from Community</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Community</p>
 
         {#if communityLoading}
           <div class="grid grid-cols-3 gap-3">
@@ -296,9 +300,13 @@
           <div class="grid grid-cols-3 gap-3">
             {#each available as tpl (tpl.id)}
               {@const busy = installing.includes(tpl.id)}
-              <div class="rounded-lg border border-zinc-700 bg-zinc-800/40 overflow-hidden">
+              <button
+                onclick={() => handleCommunityClick(tpl.id)}
+                disabled={busy}
+                class="w-full rounded-lg border border-zinc-700 bg-zinc-800/40 overflow-hidden text-left cursor-pointer hover:border-zinc-500 hover:bg-zinc-800/80 transition-colors disabled:cursor-not-allowed"
+              >
                 <!-- Preview -->
-                <div class="aspect-video bg-zinc-800 flex items-center justify-center overflow-hidden">
+                <div class="aspect-video bg-zinc-800 relative flex items-center justify-center overflow-hidden">
                   {#if tpl.preview_url && !previewFailed(tpl.id)}
                     <img
                       src={tpl.preview_url}
@@ -309,21 +317,17 @@
                   {:else}
                     <span class="text-[10px] text-zinc-600 font-mono">{tpl.id}</span>
                   {/if}
+                  {#if busy}
+                    <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                      <span class="text-[11px] text-zinc-300">Installing…</span>
+                    </div>
+                  {/if}
                 </div>
-                <!-- Info + install -->
-                <div class="px-2.5 py-2 flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-zinc-100 truncate">{tpl.name}</span>
-                  <button
-                    onclick={() => handleInstall(tpl.id)}
-                    disabled={busy}
-                    class="shrink-0 cursor-pointer text-[10px] px-2 py-1 rounded border border-zinc-600 text-zinc-300
-                           hover:border-zinc-400 hover:text-zinc-100 transition-colors
-                           disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {busy ? '…' : 'Install'}
-                  </button>
+                <!-- Name -->
+                <div class="px-2.5 py-2">
+                  <span class="text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
                 </div>
-              </div>
+              </button>
             {/each}
           </div>
         {/if}

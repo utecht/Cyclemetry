@@ -319,11 +319,11 @@ fn assets_search_dirs_vec() -> Vec<String> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(root) = exe
             .ancestors()
-            .find(|p| p.join("templates").join("assets").is_dir())
+            .find(|p| p.join("templates").join("_assets").is_dir())
         {
             dirs.push(
                 root.join("templates")
-                    .join("assets")
+                    .join("_assets")
                     .to_string_lossy()
                     .to_string(),
             );
@@ -1305,6 +1305,11 @@ const GITHUB_API_TEMPLATES: &str =
 #[cfg(not(debug_assertions))]
 const GITHUB_RAW_TEMPLATES: &str =
     "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates";
+#[cfg(not(debug_assertions))]
+const COMMUNITY_TEMPLATES_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+#[cfg(not(debug_assertions))]
+static COMMUNITY_TEMPLATES_CACHE: OnceLock<Mutex<Option<(std::time::Instant, String)>>> =
+    OnceLock::new();
 
 /// In dev: scan local templates/ folder. In production: walk GitHub Contents API.
 #[tauri::command]
@@ -1373,6 +1378,16 @@ fn community_templates_from_disk() -> Result<String, String> {
 
 #[cfg(not(debug_assertions))]
 async fn community_templates_from_github() -> Result<String, String> {
+    let cache = COMMUNITY_TEMPLATES_CACHE.get_or_init(|| Mutex::new(None));
+    {
+        let guard = cache.lock().unwrap();
+        if let Some((fetched_at, cached)) = guard.as_ref() {
+            if fetched_at.elapsed() < COMMUNITY_TEMPLATES_TTL {
+                return Ok(cached.clone());
+            }
+        }
+    }
+
     let client = reqwest::Client::builder()
         .user_agent("cyclemetry-app")
         .build()
@@ -1389,23 +1404,52 @@ async fn community_templates_from_github() -> Result<String, String> {
 
     let entries = root.as_array().ok_or("Expected array from GitHub API")?;
 
-    // Each template is a subdirectory named with lowercase snake_case.
-    // Inside: {name}/{name}.json + preview.jpg
-    let mut templates: Vec<serde_json::Value> = Vec::new();
+    // Collect template metadata first, then fetch all preview images concurrently.
+    let mut metas: Vec<(String, String)> = Vec::new(); // (name, display)
     for entry in entries {
         let name = entry["name"].as_str().unwrap_or("");
         if entry["type"] == "dir" && is_template_dir_name(name) {
-            let display = template_display_name(name);
-            let preview_url = format!("{GITHUB_RAW_TEMPLATES}/{name}/preview.jpg");
-            templates.push(serde_json::json!({
-                "id": format!("{name}.json"),
-                "name": display,
-                "preview_url": preview_url,
-            }));
+            metas.push((name.to_string(), template_display_name(name)));
         }
     }
 
-    serde_json::to_string(&templates).map_err(|e| e.to_string())
+    let mut set = tokio::task::JoinSet::new();
+    for (name, display) in metas {
+        let client = client.clone();
+        set.spawn(async move {
+            let jpg_url = format!("{GITHUB_RAW_TEMPLATES}/{name}/preview.jpg");
+            let preview_url = match client.get(&jpg_url).send().await {
+                Ok(resp) => match resp.bytes().await {
+                    Ok(bytes) => format!(
+                        "data:image/jpeg;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(&bytes)
+                    ),
+                    Err(_) => jpg_url,
+                },
+                Err(_) => jpg_url,
+            };
+            serde_json::json!({
+                "id": format!("{name}.json"),
+                "name": display,
+                "preview_url": preview_url,
+            })
+        });
+    }
+
+    let mut templates: Vec<serde_json::Value> = Vec::new();
+    while let Some(Ok(entry)) = set.join_next().await {
+        templates.push(entry);
+    }
+    templates.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+
+    let result = serde_json::to_string(&templates).map_err(|e| e.to_string())?;
+    *cache.lock().unwrap() = Some((std::time::Instant::now(), result.clone()));
+    Ok(result)
 }
 
 #[tauri::command]
@@ -2219,7 +2263,45 @@ pub fn run() {
                     ],
                 )?;
 
-                app.set_menu(Menu::with_items(
+                #[cfg(debug_assertions)]
+                let dev_reset =
+                    MenuItem::with_id(app, "dev_reset", "Reset App State", true, None::<&str>)?;
+                #[cfg(debug_assertions)]
+                let dev_build_label = MenuItem::with_id(
+                    app,
+                    "dev_build_info",
+                    app_build_info(),
+                    false,
+                    None::<&str>,
+                )?;
+                #[cfg(debug_assertions)]
+                let dev_submenu = Submenu::with_items(
+                    app,
+                    "Developer",
+                    true,
+                    &[
+                        &dev_reset,
+                        &PredefinedMenuItem::separator(app)?,
+                        &dev_build_label,
+                    ],
+                )?;
+
+                #[cfg(debug_assertions)]
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &app_submenu,
+                        &file_submenu,
+                        &edit_submenu,
+                        &templates_submenu,
+                        &activities_submenu,
+                        &exports_submenu,
+                        &help_submenu,
+                        &dev_submenu,
+                    ],
+                )?;
+                #[cfg(not(debug_assertions))]
+                let menu = Menu::with_items(
                     app,
                     &[
                         &app_submenu,
@@ -2230,7 +2312,8 @@ pub fn run() {
                         &exports_submenu,
                         &help_submenu,
                     ],
-                )?)?;
+                )?;
+                app.set_menu(menu)?;
 
                 app.on_menu_event(|app_handle, event| {
                     use tauri::Emitter;
@@ -2287,6 +2370,9 @@ pub fn run() {
                         "show_templates" => {
                             app_handle.emit("menu_open_templates_folder", ()).ok();
                         }
+                        "dev_reset" => {
+                            app_handle.emit("menu_dev_reset", ()).ok();
+                        }
                         "clear_recent" => {
                             app_handle
                                 .state::<SharedRecentGpx>()
@@ -2296,7 +2382,7 @@ pub fn run() {
                             recent::clear();
                         }
                         "help_docs" => {
-                            open_url("https://github.com/walkersutton/cyclemetry#readme");
+                            open_url("https://cyclemetry.walkersutton.com/?ref=app-help");
                         }
                         "help_issues" => {
                             open_url("https://github.com/walkersutton/cyclemetry/issues/new");
@@ -2476,7 +2562,44 @@ pub fn run() {
                     ],
                 )?;
 
-                app.set_menu(Menu::with_items(
+                #[cfg(debug_assertions)]
+                let dev_reset =
+                    MenuItem::with_id(app, "dev_reset", "Reset App State", true, None::<&str>)?;
+                #[cfg(debug_assertions)]
+                let dev_build_label = MenuItem::with_id(
+                    app,
+                    "dev_build_info",
+                    app_build_info(),
+                    false,
+                    None::<&str>,
+                )?;
+                #[cfg(debug_assertions)]
+                let dev_submenu = Submenu::with_items(
+                    app,
+                    "Developer",
+                    true,
+                    &[
+                        &dev_reset,
+                        &PredefinedMenuItem::separator(app)?,
+                        &dev_build_label,
+                    ],
+                )?;
+
+                #[cfg(debug_assertions)]
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &file_submenu,
+                        &edit_submenu,
+                        &templates_submenu,
+                        &activities_submenu,
+                        &exports_submenu,
+                        &help_submenu,
+                        &dev_submenu,
+                    ],
+                )?;
+                #[cfg(not(debug_assertions))]
+                let menu = Menu::with_items(
                     app,
                     &[
                         &file_submenu,
@@ -2486,7 +2609,8 @@ pub fn run() {
                         &exports_submenu,
                         &help_submenu,
                     ],
-                )?)?;
+                )?;
+                app.set_menu(menu)?;
 
                 app.on_menu_event(|app_handle, event| {
                     use tauri::Emitter;
@@ -2544,7 +2668,7 @@ pub fn run() {
                             app_handle.emit("check_for_updates", ()).ok();
                         }
                         "help_docs" => {
-                            open_url("https://github.com/walkersutton/cyclemetry#readme");
+                            open_url("https://cyclemetry.walkersutton.com/?ref=app-help");
                         }
                         "help_issues" => {
                             open_url("https://github.com/walkersutton/cyclemetry/issues/new");
