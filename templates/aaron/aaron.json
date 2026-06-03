@@ -114,7 +114,11 @@
       "color": "$primary",
       "direction": "right",
       "fill_opacity": 1,
-      "gradient": ["#00d000", "#fffb00", "#ff2600"],
+      "gradient": [
+        "#00d000",
+        "#fffb00",
+        "#ff2600"
+      ],
       "height": 80,
       "id": "meter-0",
       "max": 1500,
@@ -139,17 +143,26 @@
     "editor": {
       "groups": [
         {
-          "element_ids": ["gauge-0", "value-0"],
+          "element_ids": [
+            "gauge-0",
+            "value-0"
+          ],
           "id": "group-0",
           "name": "speed group"
         },
         {
-          "element_ids": ["value-3", "meter-0"],
+          "element_ids": [
+            "value-3",
+            "meter-0"
+          ],
           "id": "group-1",
           "name": "power group"
         },
         {
-          "element_ids": ["image-0", "value-1"],
+          "element_ids": [
+            "image-0",
+            "value-1"
+          ],
           "id": "group-2",
           "name": "heartrate group"
         }

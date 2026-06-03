@@ -150,7 +150,10 @@
       "color": "#ff40ff",
       "direction": "right",
       "font_size": 1,
-      "gradient": ["#050ef7", "#bc23ff"],
+      "gradient": [
+        "#050ef7",
+        "#bc23ff"
+      ],
       "height": 100,
       "id": "meter-1",
       "max": "max",
@@ -197,7 +200,10 @@
       "color": "#ff40ff",
       "direction": "right",
       "font_size": 1,
-      "gradient": ["#fffb00", "#ff2600"],
+      "gradient": [
+        "#fffb00",
+        "#ff2600"
+      ],
       "height": 100,
       "id": "meter-0",
       "max": "max",
@@ -266,32 +272,60 @@
     "editor": {
       "groups": [
         {
-          "element_ids": ["rect-1", "label-3", "value-4"],
+          "element_ids": [
+            "rect-1",
+            "label-3",
+            "value-4"
+          ],
           "id": "group-0",
           "name": "speed [KPH]"
         },
         {
-          "element_ids": ["rect-2", "value-2", "label-4"],
+          "element_ids": [
+            "rect-2",
+            "value-2",
+            "label-4"
+          ],
           "id": "group-2",
           "name": "speed [MPH]"
         },
         {
-          "element_ids": ["rect-0", "value-5", "label-2"],
+          "element_ids": [
+            "rect-0",
+            "value-5",
+            "label-2"
+          ],
           "id": "group-1",
           "name": "cadence [RPM]"
         },
         {
-          "element_ids": ["rect-3", "value-6", "image-2"],
+          "element_ids": [
+            "rect-3",
+            "value-6",
+            "image-2"
+          ],
           "id": "group-3",
           "name": "distance to finish"
         },
         {
-          "element_ids": ["rect-5", "label-0", "value-3", "meter-1", "image-0"],
+          "element_ids": [
+            "rect-5",
+            "label-0",
+            "value-3",
+            "meter-1",
+            "image-0"
+          ],
           "id": "group-5",
           "name": "power fill"
         },
         {
-          "element_ids": ["rect-4", "value-1", "meter-0", "label-1", "image-3"],
+          "element_ids": [
+            "rect-4",
+            "value-1",
+            "meter-0",
+            "label-1",
+            "image-3"
+          ],
           "id": "group-4",
           "name": "heartrate fill"
         }

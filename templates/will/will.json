@@ -37,7 +37,10 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": ["#b1dd8c", "#74a7fe"],
+      "gradient": [
+        "#b1dd8c",
+        "#74a7fe"
+      ],
       "height": 54,
       "id": "meter-1",
       "max": "max",
@@ -102,7 +105,10 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": ["#53d5fd", "#d357fe"],
+      "gradient": [
+        "#53d5fd",
+        "#d357fe"
+      ],
       "height": 54,
       "id": "meter-0",
       "max": "max",
@@ -192,27 +198,47 @@
           "name": "heartrate fill"
         },
         {
-          "element_ids": ["rect-0", "meter-0", "value-0", "label-0", "image-0"],
+          "element_ids": [
+            "rect-0",
+            "meter-0",
+            "value-0",
+            "label-0",
+            "image-0"
+          ],
           "id": "group-0",
           "name": "heartrate group"
         },
         {
-          "element_ids": ["label-1", "rect-1", "value-1", "meter-1"],
+          "element_ids": [
+            "label-1",
+            "rect-1",
+            "value-1",
+            "meter-1"
+          ],
           "id": "group-1",
           "name": "power group"
         },
         {
-          "element_ids": ["gauge-0", "value-3", "label-3"],
+          "element_ids": [
+            "gauge-0",
+            "value-3",
+            "label-3"
+          ],
           "id": "group-2",
           "name": "speed group"
         },
         {
-          "element_ids": ["label-2", "value-2"],
+          "element_ids": [
+            "label-2",
+            "value-2"
+          ],
           "id": "group-3",
           "name": "distance group"
         }
       ],
-      "locked": ["gauge-0"]
+      "locked": [
+        "gauge-0"
+      ]
     },
     "font": "rajdhani-bold.ttf",
     "height": 2160,
