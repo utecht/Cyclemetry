@@ -98,9 +98,20 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'min', 'max', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
-    const value = numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
+    const rangeBoundFields = ['min', 'max']
+    const value = rangeBoundFields.includes(field)
+      ? parseRangeBound(raw)
+      : numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
     app.updateElement(s.id, { [field]: value })
+  }
+
+  function parseRangeBound(raw) {
+    const trimmed = String(raw ?? '').trim().toLowerCase()
+    if (trimmed === '') return undefined
+    if (trimmed === 'min' || trimmed === 'max') return trimmed
+    const value = Number(trimmed)
+    return Number.isFinite(value) ? value : undefined
   }
 
   // Switch the distance unit, converting distance_target to the equivalent
@@ -263,6 +274,10 @@
     return item[field] ?? ''
   }
 
+  function numericBound(value, fallback) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  }
+
   function updateImageSize(field, raw) {
     const s = selected()
     if (!s || s.type !== 'image') return
@@ -378,8 +393,10 @@
   function addScaleLabel() {
     const s = selected(); if (!s) return
     const cur = scaleLabels() ?? []
-    const mid = (s.item.min + s.item.max) / 2
-    app.updateElement(s.id, { scale_labels: [...cur, cur.length === 0 ? s.item.min : mid] })
+    const min = numericBound(s.item.min, 0)
+    const max = numericBound(s.item.max, 1)
+    const mid = (min + max) / 2
+    app.updateElement(s.id, { scale_labels: [...cur, cur.length === 0 ? min : mid] })
   }
   function updateScaleLabel(i, raw) {
     const s = selected(); if (!s) return
@@ -396,55 +413,17 @@
   // weights, so detailed/structural controls hide behind "Advanced".
   let showAdvanced = $state(false)
   let showAssetPicker = $state(false)
-  let applyingMeterRange = $state(false)
-  let applyingGaugeRange = $state(false)
 
-  async function applyMeterActivityRange() {
+  function applyMeterActivityRange() {
     const s = selected()
-    if (!s || s.type !== 'meter' || !app.gpxFilename || !app.config?.scene) return
-    applyingMeterRange = true
-    try {
-      const metric = s.item.value ?? 'speed'
-      const unit = s.item.unit ?? undefined
-      const start = app.config.scene.start ?? 0
-      const end = app.config.scene.end ?? app.timelineDuration
-      const range = await backend.getActivityMetricRange(
-        app.gpxFilename,
-        metric,
-        unit,
-        start,
-        end,
-      )
-      app.updateElement(s.id, { min: range.min, max: range.max })
-    } catch (err) {
-      app.errorMessage = `Could not set meter range: ${err?.message ?? err}`
-    } finally {
-      applyingMeterRange = false
-    }
+    if (!s || s.type !== 'meter') return
+    app.updateElement(s.id, { min: 'min', max: 'max' })
   }
 
-  async function applyGaugeActivityRange() {
+  function applyGaugeActivityRange() {
     const s = selected()
-    if (!s || s.type !== 'gauge' || !app.gpxFilename || !app.config?.scene) return
-    applyingGaugeRange = true
-    try {
-      const metric = s.item.value ?? 'speed'
-      const unit = s.item.unit ?? undefined
-      const start = app.config.scene.start ?? 0
-      const end = app.config.scene.end ?? app.timelineDuration
-      const range = await backend.getActivityMetricRange(
-        app.gpxFilename,
-        metric,
-        unit,
-        start,
-        end,
-      )
-      app.updateElement(s.id, { min: range.min, max: range.max })
-    } catch (err) {
-      app.errorMessage = `Could not set gauge range: ${err?.message ?? err}`
-    } finally {
-      applyingGaugeRange = false
-    }
+    if (!s || s.type !== 'gauge') return
+    app.updateElement(s.id, { min: 'min', max: 'max' })
   }
 </script>
 
@@ -736,21 +715,20 @@
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Min</span>
-            <Input type="number" value={numVal(item, 'min')} oninput={(e) => update('min', e.target.value)} />
+            <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Max</span>
-            <Input type="number" value={numVal(item, 'max')} oninput={(e) => update('max', e.target.value)} />
+            <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
           </label>
         </div>
         {#if showAdvanced}
         <button
           type="button"
           onclick={applyMeterActivityRange}
-          disabled={applyingMeterRange || !app.gpxFilename}
-          class="w-full rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
         >
-          {applyingMeterRange ? 'Setting range…' : 'Set min/max from overlay'}
+          Set min/max
         </button>
         {/if}
         <label class="space-y-1 block">
@@ -992,21 +970,20 @@
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Min</span>
-            <Input type="number" value={numVal(item, 'min')} oninput={(e) => update('min', e.target.value)} />
+            <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Max</span>
-            <Input type="number" value={numVal(item, 'max')} oninput={(e) => update('max', e.target.value)} />
+            <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
           </label>
         </div>
         {#if showAdvanced}
         <button
           type="button"
           onclick={applyGaugeActivityRange}
-          disabled={applyingGaugeRange || !app.gpxFilename}
-          class="w-full rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
         >
-          {applyingGaugeRange ? 'Setting range…' : 'Set min/max from overlay'}
+          Set min/max
         </button>
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">

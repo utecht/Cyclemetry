@@ -162,8 +162,8 @@
  * @property {number} y
  * @property {number} width
  * @property {number} height
- * @property {number} min
- * @property {number} max
+ * @property {number|'min'|'max'} min
+ * @property {number|'min'|'max'} max
  * @property {'up'|'down'|'left'|'right'} [direction]
  * @property {string} [unit]
  * @property {string} [color]
@@ -199,8 +199,8 @@
  * @property {number} y
  * @property {number} width
  * @property {number} height
- * @property {number} min
- * @property {number} max
+ * @property {number|'min'|'max'} min
+ * @property {number|'min'|'max'} max
  * @property {string} [unit]
  * @property {number} [start_angle]
  * @property {number} [sweep_angle]

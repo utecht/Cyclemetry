@@ -10,12 +10,45 @@ use crate::render::activity::{ATTR_DISTANCE, ATTR_GEAR, Activity, decode_gear};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
-    Element, GaugeConfig, ImageConfig, LabelConfig, MeterConfig, PlotConfig, RectConfig,
-    SceneConfig, Template, ValueConfig,
+    Element, GaugeConfig, ImageConfig, LabelConfig, MeterConfig, PlotConfig, RangeBound,
+    RangeKeyword, RectConfig, SceneConfig, Template, ValueConfig,
 };
 use crate::render::units;
 
 const ITALIC_SKEW_X: f32 = -0.25;
+
+fn activity_metric_range(
+    activity: &Activity,
+    metric: &str,
+    unit: Option<&str>,
+) -> Option<(f64, f64)> {
+    if !activity.valid_attributes.contains(&metric.to_string()) {
+        return None;
+    }
+    let (conversion, _) = units::resolve(metric, unit);
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for idx in 0..activity.data_len() {
+        let value = conversion.apply(activity.get_scalar(metric, idx));
+        if value.is_finite() {
+            min = min.min(value);
+            max = max.max(value);
+        }
+    }
+    if min.is_finite() && max.is_finite() {
+        Some((min, max))
+    } else {
+        None
+    }
+}
+
+fn resolve_range_bound(bound: &RangeBound, range: Option<(f64, f64)>, fallback: f64) -> f64 {
+    match bound {
+        RangeBound::Number(v) => *v,
+        RangeBound::Keyword(RangeKeyword::Min) => range.map(|(min, _)| min).unwrap_or(fallback),
+        RangeBound::Keyword(RangeKeyword::Max) => range.map(|(_, max)| max).unwrap_or(fallback),
+    }
+}
 
 /// Pixel-perfect bounding box for a single overlay element in overlay coordinates.
 #[derive(Debug, Clone, Serialize)]
@@ -320,6 +353,14 @@ impl OverlayElement for PlotConfig {
 // ─── Meter ─────────────────────────────────────────────────────────────────
 
 impl MeterConfig {
+    fn range(&self, activity: &Activity) -> (f64, f64) {
+        let dynamic_range = activity_metric_range(activity, &self.value, self.unit.as_deref());
+        (
+            resolve_range_bound(&self.min, dynamic_range, 0.0),
+            resolve_range_bound(&self.max, dynamic_range, 1.0),
+        )
+    }
+
     fn scale_font_name<'a>(&'a self, scene: &'a SceneConfig) -> &'a str {
         self.scale_font
             .as_deref()
@@ -336,11 +377,12 @@ impl MeterConfig {
         let raw = activity.get_scalar(&self.value, frame_idx);
         let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
         let v = conv.apply(raw);
-        let span = self.max - self.min;
+        let (min, max) = self.range(activity);
+        let span = max - min;
         if span.abs() < f64::EPSILON {
             return 0.0;
         }
-        (((v - self.min) / span) as f32).clamp(0.0, 1.0)
+        (((v - min) / span) as f32).clamp(0.0, 1.0)
     }
 
     fn rect(&self) -> Rect {
@@ -444,6 +486,7 @@ impl MeterConfig {
         let tick_w = self.scale_tick_width.unwrap_or(1.0);
         let offset = self.scale_offset.unwrap_or(8.0);
         let suffix = self.scale_suffix.as_deref().unwrap_or("");
+        let (min, max) = self.range(ctx.activity);
 
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -487,13 +530,13 @@ impl MeterConfig {
             // ── Mid labeled tick lines (no extension, go under fill) ─────────
             if has_labels && tick_w > 0.0 {
                 let labels = self.scale_labels.as_ref().unwrap();
-                let mid = (self.min + self.max) / 2.0;
+                let mid = (min + max) / 2.0;
                 let values: Vec<f64> = if labels.is_empty() {
-                    vec![self.min, mid, self.max]
+                    vec![min, mid, max]
                 } else {
                     labels.clone()
                 };
-                let span = (self.max - self.min) as f32;
+                let span = (max - min) as f32;
                 let n = values.len();
                 paint.set_style(skia_safe::paint::Style::Stroke);
                 paint.set_stroke_width(tick_w);
@@ -504,7 +547,7 @@ impl MeterConfig {
                     let t = if span.abs() < f32::EPSILON {
                         0.0_f32
                     } else {
-                        ((v - self.min) as f32 / span).clamp(0.0, 1.0)
+                        ((v - min) as f32 / span).clamp(0.0, 1.0)
                     };
                     if matches!(dir, "up" | "down") {
                         let ref_y = if dir == "down" {
@@ -529,9 +572,9 @@ impl MeterConfig {
                 return;
             }
             let labels = self.scale_labels.as_ref().unwrap();
-            let mid = (self.min + self.max) / 2.0;
+            let mid = (min + max) / 2.0;
             let values: Vec<f64> = if labels.is_empty() {
-                vec![self.min, mid, self.max]
+                vec![min, mid, max]
             } else {
                 labels.clone()
             };
@@ -548,7 +591,7 @@ impl MeterConfig {
                 None => return,
             };
 
-            let span = (self.max - self.min) as f32;
+            let span = (max - min) as f32;
             let (_, metrics) = font.metrics();
             let cap_h = metrics.cap_height.abs();
             let n = values.len();
@@ -557,7 +600,7 @@ impl MeterConfig {
                 let t = if span.abs() < f32::EPSILON {
                     0.0_f32
                 } else {
-                    ((v - self.min) as f32 / span).clamp(0.0, 1.0)
+                    ((v - min) as f32 / span).clamp(0.0, 1.0)
                 };
                 let is_end = idx == 0 || idx == n - 1;
                 let ext = if is_end { end_ext } else { 0.0 };
@@ -777,6 +820,14 @@ impl OverlayElement for MeterConfig {
 // ─── Gauge ─────────────────────────────────────────────────────────────────
 
 impl GaugeConfig {
+    fn range(&self, activity: &Activity) -> (f64, f64) {
+        let dynamic_range = activity_metric_range(activity, &self.value, self.unit.as_deref());
+        (
+            resolve_range_bound(&self.min, dynamic_range, 0.0),
+            resolve_range_bound(&self.max, dynamic_range, 1.0),
+        )
+    }
+
     fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
@@ -784,11 +835,12 @@ impl GaugeConfig {
         let raw = activity.get_scalar(&self.value, frame_idx);
         let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
         let v = conv.apply(raw);
-        let span = self.max - self.min;
+        let (min, max) = self.range(activity);
+        let span = max - min;
         if span.abs() < f64::EPSILON {
             return 0.0;
         }
-        (((v - self.min) / span) as f32).clamp(0.0, 1.0)
+        (((v - min) / span) as f32).clamp(0.0, 1.0)
     }
 
     fn argb(&self, specific: Option<&str>, opacity: Option<f32>) -> Color {

@@ -306,6 +306,20 @@ pub struct PointLabelConfig {
     pub decimal_rounding: Option<i32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RangeBound {
+    Number(f64),
+    Keyword(RangeKeyword),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RangeKeyword {
+    Min,
+    Max,
+}
+
 /// A bar that fills proportionally to the current value of a metric, mapped
 /// linearly between `min` and `max` (both in the element's display `unit`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,8 +330,8 @@ pub struct MeterConfig {
     pub y: i32,
     pub width: u32,
     pub height: u32,
-    pub min: f64,
-    pub max: f64,
+    pub min: RangeBound,
+    pub max: RangeBound,
     /// Fill growth direction: "up" (default), "down", "left", "right".
     pub direction: Option<String>,
     pub unit: Option<String>,
@@ -383,8 +397,8 @@ pub struct GaugeConfig {
     pub y: i32,
     pub width: u32,
     pub height: u32,
-    pub min: f64,
-    pub max: f64,
+    pub min: RangeBound,
+    pub max: RangeBound,
     pub unit: Option<String>,
     /// Needle angle at `min`. Default 135° (lower-left).
     pub start_angle: Option<f32>,
