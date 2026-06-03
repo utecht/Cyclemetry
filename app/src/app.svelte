@@ -628,16 +628,16 @@
       </Tooltip>
     {:else if app.video.missing}
       <div class="flex items-center gap-1 shrink-0">
-        <AlertTriangle size={12} class="text-red-400 shrink-0" />
-        <span
-          class="text-xs font-mono text-red-300 truncate max-w-[100px]"
-          title={app.video.path}>{videoBasename(app.video.path)}</span
-        >
-        <button
-          onclick={() => app.pickAndLoadVideo()}
-          class="hdr-btn px-2.5 border-red-800/60 text-red-300 hover:border-red-600/60 hover:bg-red-900/30 hover:text-red-200"
-          >Locate…</button
-        >
+        <Tooltip content="Locate replacement video" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={() => app.pickAndLoadVideo()}
+            class="hdr-btn px-2.5 gap-1.5 max-w-[160px] border-red-800/60 text-red-300 hover:border-red-600/60 hover:bg-red-900/30 hover:text-red-200"
+            title={app.video.path}
+          >
+            <AlertTriangle size={12} class="text-red-400 shrink-0" />
+            <span class="truncate">{videoBasename(app.video.path)}</span>
+          </button>
+        </Tooltip>
         <button
           onclick={() => app.clearVideo()}
           class="hdr-btn hdr-btn-icon shrink-0"><X size={12} /></button
@@ -645,11 +645,16 @@
       </div>
     {:else}
       <div class="flex items-center gap-1 shrink-0">
-        <Film size={12} class="text-zinc-500 shrink-0" />
-        <span
-          class="text-xs font-mono text-zinc-300 truncate max-w-[130px]"
-          title={app.video.path}>{videoBasename(app.video.path)}</span
-        >
+        <Tooltip content="Replace video" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={() => app.pickAndLoadVideo()}
+            class="hdr-btn px-2.5 gap-1.5 max-w-[170px]"
+            title={app.video.path}
+          >
+            <Film size={12} class="text-zinc-500 shrink-0" />
+            <span class="truncate text-zinc-200">{videoBasename(app.video.path)}</span>
+          </button>
+        </Tooltip>
         {#if canUseRecordingTime}
           <button
             onclick={moveVideoToRecordingTime}
@@ -657,9 +662,6 @@
             class="hdr-btn hdr-btn-icon shrink-0"><Clock size={12} /></button
           >
         {/if}
-        <button onclick={() => app.pickAndLoadVideo()} class="hdr-btn px-2.5"
-          >Replace…</button
-        >
         <button
           onclick={() => app.clearVideo()}
           class="hdr-btn hdr-btn-icon shrink-0"><X size={12} /></button
