@@ -1,60 +1,259 @@
 {
-  "scene": {
-    "width": 3840,
-    "height": 2160,
-    "start": 0,
-    "color": "#ffffff",
-    "opacity": 1,
-    "vars": {
-      "primary": "#ffffff",
-      "accent": "#e86520",
-      "gold": "#c8a800"
-    }
-  },
   "elements": [
     {
-      "type": "gauge",
-      "id": "gauge-speed",
-      "value": "speed",
-      "x": 1570,
-      "y": 730,
-      "width": 700,
-      "height": 700,
-      "min": 0,
-      "max": 35,
-      "unit": "mph",
-      "gradient": ["#cc2e1a", "$accent", "$gold"],
-      "progress_color": "$accent",
       "arc_color": "#ffffff20",
-      "arc_width": 36,
-      "cap_color": "$primary",
-      "cap_radius": 18,
-      "needle_width": 0,
+      "arc_width": 65,
       "background_color": "#1c1c1c",
-      "background_opacity": 0.45,
-      "background_margin": 30
-    },
-    {
-      "type": "value",
-      "id": "value-speed",
-      "value": "speed",
-      "x": 1920,
-      "y": 1120,
-      "font_size": 160,
-      "color": "$primary",
+      "background_margin": 35,
+      "background_opacity": 0.5,
+      "cap_color": "$primary",
+      "cap_radius": 24,
+      "gradient": [
+        "#ff3a50",
+        "#fa8754",
+        "#ffe767"
+      ],
+      "height": 700,
+      "id": "gauge-speed",
+      "max": "max",
+      "min": "min",
+      "needle_width": 0,
+      "progress_color": "$accent",
+      "type": "gauge",
       "unit": "mph",
-      "text_align": "center",
-      "decimal_rounding": 0
+      "value": "speed",
+      "width": 700,
+      "x": 3080,
+      "y": 1401
     },
     {
-      "type": "label",
+      "color": "$primary",
+      "decimal_rounding": 0,
+      "font_size": 260,
+      "id": "value-speed",
+      "text_align": "center",
+      "type": "value",
+      "unit": "mph",
+      "value": "speed",
+      "x": 3439,
+      "y": 1828
+    },
+    {
+      "color": "$gold",
+      "font_size": 60,
       "id": "label-mph",
       "text": "mph",
-      "x": 1920,
-      "y": 1215,
-      "font_size": 55,
-      "color": "$gold",
-      "text_align": "center"
+      "text_align": "center",
+      "type": "label",
+      "x": 3439,
+      "y": 1901
+    },
+    {
+      "color": "#000000",
+      "fill_opacity": 0.5,
+      "height": 250,
+      "id": "rect-power-fill",
+      "type": "rect",
+      "width": 630,
+      "x": 691,
+      "y": 1880
+    },
+    {
+      "background": "$primary",
+      "background_opacity": 0.2,
+      "color": "$primary",
+      "direction": "right",
+      "fill_opacity": 1,
+      "gap": 10,
+      "gradient": [
+        "#b1dd8c",
+        "#74a7fe"
+      ],
+      "height": 54,
+      "id": "meter-power",
+      "max": "max",
+      "min": "min",
+      "segments": 21,
+      "type": "meter",
+      "value": "power",
+      "width": 600,
+      "x": 708,
+      "y": 1895
+    },
+    {
+      "font_size": 110,
+      "id": "value-power",
+      "type": "value",
+      "value": "power",
+      "x": 708,
+      "y": 2060
+    },
+    {
+      "color": "$primary",
+      "font_size": 40,
+      "id": "label-watts",
+      "text": "WATTS",
+      "type": "label",
+      "x": 888,
+      "y": 2035
+    },
+    {
+      "color": "#000000",
+      "fill_opacity": 0.5,
+      "height": 250,
+      "id": "rect-heartrate-fill",
+      "type": "rect",
+      "width": 630,
+      "x": 30,
+      "y": 1880
+    },
+    {
+      "background": "$primary",
+      "background_opacity": 0.2,
+      "color": "$primary",
+      "direction": "right",
+      "fill_opacity": 1,
+      "gap": 10,
+      "gradient": [
+        "#53d5fd",
+        "#d357fe"
+      ],
+      "height": 54,
+      "id": "meter-heartrate",
+      "max": "max",
+      "min": "min",
+      "segments": 21,
+      "type": "meter",
+      "value": "heartrate",
+      "width": 600,
+      "x": 45,
+      "y": 1895
+    },
+    {
+      "font_size": 110,
+      "id": "value-heartrate",
+      "type": "value",
+      "value": "heartrate",
+      "x": 45,
+      "y": 2060
+    },
+    {
+      "color": "$primary",
+      "font_size": 40,
+      "id": "label-bpm",
+      "text": "BPM",
+      "type": "label",
+      "x": 200,
+      "y": 2040
+    },
+    {
+      "color": "#8a8a8a",
+      "fill_opacity": 1,
+      "height": 150,
+      "id": "rect-distance-to-go",
+      "radius": 30,
+      "type": "rect",
+      "width": 500,
+      "x": 3310,
+      "y": 30
+    },
+    {
+      "color": "$primary",
+      "distance_reference": "overlay_end",
+      "font_size": 100,
+      "id": "value-distance-to-go",
+      "suffix": " m",
+      "text_align": "right",
+      "type": "value",
+      "unit": "m",
+      "value": "distance",
+      "x": 3790,
+      "y": 140
+    },
+    {
+      "file": "checkered_flag.webp",
+      "height": 100,
+      "id": "image-distance-to-go",
+      "rotation": 333,
+      "type": "image",
+      "width": 100,
+      "x": 3317,
+      "y": 48
+    },
+    {
+      "color": "#ffffff",
+      "font_size": 28,
+      "id": "label-0",
+      "opacity": 0.5,
+      "text": "HR",
+      "type": "label",
+      "x": 47,
+      "y": 2108
+    },
+    {
+      "color": "#ffffff",
+      "font_size": 28,
+      "id": "label-1",
+      "opacity": 0.5,
+      "text": "POWER",
+      "type": "label",
+      "x": 710,
+      "y": 2107
     }
-  ]
+  ],
+  "scene": {
+    "color": "#ffffff",
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [
+            "gauge-speed",
+            "label-mph",
+            "value-speed"
+          ],
+          "id": "group-0",
+          "name": "speed group"
+        },
+        {
+          "element_ids": [
+            "rect-power-fill",
+            "meter-power",
+            "value-power",
+            "label-watts"
+          ],
+          "id": "group-1",
+          "name": "power fill"
+        },
+        {
+          "element_ids": [
+            "rect-heartrate-fill",
+            "meter-heartrate",
+            "value-heartrate",
+            "label-bpm",
+            "label-0"
+          ],
+          "id": "group-2",
+          "name": "heartrate fill"
+        },
+        {
+          "element_ids": [
+            "rect-distance-to-go",
+            "value-distance-to-go",
+            "image-distance-to-go"
+          ],
+          "id": "group-3",
+          "name": "distance to go"
+        }
+      ]
+    },
+    "font": "rajdhani-bold.ttf",
+    "height": 2160,
+    "opacity": 1,
+    "vars": {
+      "accent": "#e86520",
+      "gold": "#cecf6e",
+      "primary": "#ffffff"
+    },
+    "width": 3840
+  }
 }
