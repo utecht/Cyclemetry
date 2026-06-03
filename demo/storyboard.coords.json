@@ -1,0 +1,69 @@
+{
+  "actions": [
+    {
+      "type": "click",
+      "wx": 454,
+      "wy": 417
+    },
+    {
+      "type": "click",
+      "wx": 638,
+      "wy": 319
+    },
+    {
+      "type": "click",
+      "wx": 650,
+      "wy": 418
+    },
+    {
+      "type": "click",
+      "wx": 484,
+      "wy": 413
+    },
+    {
+      "type": "drag_start",
+      "wx": 17,
+      "wy": 128
+    },
+    {
+      "type": "drag_end",
+      "wx": 85,
+      "wy": 128
+    },
+    {
+      "type": "drag_start",
+      "wx": 255,
+      "wy": 128
+    },
+    {
+      "type": "drag_end",
+      "wx": 94,
+      "wy": 127
+    },
+    {
+      "type": "click",
+      "wx": 461,
+      "wy": 28
+    },
+    {
+      "type": "click",
+      "wx": 516,
+      "wy": 213
+    },
+    {
+      "type": "click",
+      "wx": 1024,
+      "wy": 664
+    },
+    {
+      "type": "click",
+      "wx": 648,
+      "wy": 707
+    },
+    {
+      "type": "click",
+      "wx": 1222,
+      "wy": 28
+    }
+  ]
+}

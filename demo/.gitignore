@@ -1,0 +1,4 @@
+out/
+public/shots/
+public/*.mov
+__pycache__/
