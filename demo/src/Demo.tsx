@@ -19,10 +19,8 @@ import {
   startFromAt,
 } from "./timeline";
 
-// ── Main composition ──────────────────────────────────────────────────────────
-// Plays the real screen recording (with the system cursor), time-remapped via a
-// per-frame startFrom so it runs fast through the boring parts and real-time at
-// each click/hover/drag.
+// Plays the real screen recording, time-remapped through `timeline.ts`, then
+// reveals the final rendered video as the outro.
 export const Demo: React.FC = () => {
   const frame = useCurrentFrame();
   const mainFrame = Math.min(frame, MAIN_DURATION_IN_FRAMES - 1);
@@ -31,16 +29,11 @@ export const Demo: React.FC = () => {
   const outroProgress =
     outroFrame < 0
       ? 0
-      : interpolate(
-          outroFrame,
-          [0, OUTRO_REVEAL_IN_FRAMES],
-          [0, 1],
-          {
-            easing: Easing.bezier(0.23, 1, 0.32, 1),
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          },
-        );
+      : interpolate(outroFrame, [0, OUTRO_REVEAL_IN_FRAMES], [0, 1], {
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
   const outroScale = interpolate(outroProgress, [0, 1], [0.985, 1]);
   const outroBlur = interpolate(outroProgress, [0, 1], [8, 0]);
   const appDim = interpolate(outroProgress, [0, 1], [0, 0.72]);
