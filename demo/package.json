@@ -4,7 +4,8 @@
   "scripts": {
     "start": "remotion studio",
     "render": "remotion render Demo out/demo.mp4 --codec=h264",
-    "render:gif": "remotion render Demo out/demo.gif"
+    "render:gif": "remotion render Demo out/demo.gif",
+    "probe": "python3 probe.py"
   },
   "dependencies": {
     "@remotion/media-utils": "4.0.290",

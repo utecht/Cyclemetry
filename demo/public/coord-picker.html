@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Demo Coord Picker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: #09090b;
+      color: #e4e4e7;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ────────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    label { font-size: 12px; color: #71717a; }
+    select, input[type="text"] {
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      color: #e4e4e7;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    select:focus, input[type="text"]:focus { border-color: #dc143c; }
+    input[type="text"] { width: 160px; }
+
+    .hint {
+      margin-left: auto;
+      font-size: 11px;
+      color: #52525b;
+    }
+
+    /* ── Main area ──────────────────────────────────────────────────── */
+    .main {
+      display: flex;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Canvas wrapper ─────────────────────────────────────────────── */
+    .canvas-wrap {
+      flex-shrink: 0;
+      position: relative;
+      /* display area — scaled via CSS transform */
+    }
+    .canvas-inner {
+      width: 1280px;
+      height: 720px;
+      position: relative;
+      overflow: hidden;
+      cursor: crosshair;
+      transform-origin: top left;
+    }
+    .canvas-inner img {
+      width: 1280px;
+      height: auto;
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* ── Dot markers ────────────────────────────────────────────────── */
+    .dot {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #dc143c;
+      border: 2px solid #fff;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .dot:hover { transform: translate(-50%, -50%) scale(1.4); }
+    .dot-label {
+      position: absolute;
+      font-size: 10px;
+      color: #fff;
+      background: rgba(0,0,0,0.75);
+      padding: 1px 4px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: none;
+      transform: translate(8px, -50%);
+    }
+
+    /* ── Points panel ───────────────────────────────────────────────── */
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .panel-title { font-size: 12px; color: #71717a; }
+
+    button {
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      color: #a1a1aa;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.1s, color 0.1s;
+    }
+    button:hover { border-color: #dc143c; color: #e4e4e7; }
+    .btn-danger:hover { border-color: #dc143c; color: #dc143c; }
+
+    .points-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .point-row {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .point-row:hover { border-color: #3f3f46; }
+    .point-info { flex: 1; min-width: 0; }
+    .point-name {
+      font-size: 12px;
+      color: #dc143c;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+    .point-coords {
+      font-size: 11px;
+      color: #71717a;
+      line-height: 1.6;
+    }
+    .point-code {
+      font-size: 11px;
+      color: #a1a1aa;
+      background: #09090b;
+      border-radius: 4px;
+      padding: 4px 6px;
+      margin-top: 4px;
+      word-break: break-all;
+    }
+    .point-actions { display: flex; flex-direction: column; gap: 4px; }
+
+    .copy-all-wrap {
+      flex-shrink: 0;
+    }
+    .copy-all-wrap textarea {
+      width: 100%;
+      height: 110px;
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      color: #a1a1aa;
+      font-size: 11px;
+      font-family: inherit;
+      padding: 8px;
+      resize: none;
+      outline: none;
+    }
+    .copy-all-wrap textarea:focus { border-color: #3f3f46; }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      color: #e4e4e7;
+      font-size: 12px;
+      padding: 6px 16px;
+      border-radius: 8px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <label>Shot:</label>
+  <select id="shotSelect">
+    <option value="shots/01_idle.png">01 idle</option>
+    <option value="shots/02_hover_template.png">02 hover_template</option>
+    <option value="shots/03_picker_open.png">03 picker_open</option>
+    <option value="shots/04_hover_safa_install.png">04 hover_safa_install</option>
+    <option value="shots/05_safa_installed.png">05 safa_installed</option>
+    <option value="shots/06_safa_loaded.png">06 safa_loaded</option>
+    <option value="shots/07_hover_activity.png">07 hover_activity</option>
+    <option value="shots/08_activity_picker.png">08 activity_picker</option>
+    <option value="shots/09_gpx_loaded.png">09 gpx_loaded</option>
+    <option value="shots/10_hover_render.png">10 hover_render</option>
+  </select>
+
+  <label>Label:</label>
+  <input type="text" id="labelInput" placeholder="e.g. TEMPLATE" />
+
+  <label>Scale:</label>
+  <select id="scaleSelect">
+    <option value="0.55">55%</option>
+    <option value="0.65" selected>65%</option>
+    <option value="0.75">75%</option>
+    <option value="0.85">85%</option>
+    <option value="1.0">100%</option>
+  </select>
+
+  <span class="hint">Click on image to place a labeled point · Click dot to remove</span>
+</div>
+
+<div class="main">
+  <!-- Canvas -->
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="canvas-inner" id="canvas">
+      <img id="shotImg" src="shots/01_idle.png" alt="shot" draggable="false" />
+      <!-- dots injected here -->
+    </div>
+  </div>
+
+  <!-- Points panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Points (<span id="pointCount">0</span>)</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="copyAll()">Copy All</button>
+        <button class="btn-danger" onclick="clearAll()">Clear All</button>
+      </div>
+    </div>
+
+    <div class="points-list" id="pointsList"></div>
+
+    <div class="copy-all-wrap">
+      <textarea id="codeOutput" placeholder="// const declarations will appear here…" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+  // ── Constants matching Demo.tsx ──────────────────────────────────────
+  const CANVAS_W = 1280;
+  const CANVAS_H = 720;
+  const WIN_W    = 1448;
+  // S = CANVAS_W / WIN_W  →  canvas = wc(wx, wy) = { x: wx*S, y: wy*S }
+  // Inverse: wx = cx * WIN_W / CANVAS_W,  wy = cy * WIN_W / CANVAS_W
+
+  // ── State ────────────────────────────────────────────────────────────
+  let points = [];  // { id, name, cx, cy }
+
+  // ── Elements ─────────────────────────────────────────────────────────
+  const canvas      = document.getElementById('canvas');
+  const canvasWrap  = document.getElementById('canvasWrap');
+  const shotImg     = document.getElementById('shotImg');
+  const shotSelect  = document.getElementById('shotSelect');
+  const scaleSelect = document.getElementById('scaleSelect');
+  const labelInput  = document.getElementById('labelInput');
+  const pointsList  = document.getElementById('pointsList');
+  const pointCount  = document.getElementById('pointCount');
+  const codeOutput  = document.getElementById('codeOutput');
+  const toast       = document.getElementById('toast');
+
+  // ── Scale ────────────────────────────────────────────────────────────
+  function applyScale() {
+    const s = parseFloat(scaleSelect.value);
+    canvas.style.transform = `scale(${s})`;
+    canvasWrap.style.width  = `${CANVAS_W * s}px`;
+    canvasWrap.style.height = `${CANVAS_H * s}px`;
+  }
+  scaleSelect.addEventListener('change', applyScale);
+  applyScale();
+
+  // ── Shot picker ──────────────────────────────────────────────────────
+  shotSelect.addEventListener('change', () => {
+    shotImg.src = shotSelect.value;
+  });
+
+  // ── Click to place point ─────────────────────────────────────────────
+  canvas.addEventListener('click', e => {
+    // offsetX/Y are in canvas (1280×720) space regardless of CSS scale
+    const cx = Math.round(e.offsetX);
+    const cy = Math.round(e.offsetY);
+
+    // If click is on a dot, handled by dot's own listener
+    if (e.target.classList.contains('dot')) return;
+
+    const name = labelInput.value.trim().toUpperCase() || `PT_${points.length + 1}`;
+    addPoint(name, cx, cy);
+    labelInput.value = '';
+    labelInput.focus();
+  });
+
+  // ── Add point ────────────────────────────────────────────────────────
+  function addPoint(name, cx, cy) {
+    const id = Date.now();
+    points.push({ id, name, cx, cy });
+    renderDot(id, name, cx, cy);
+    renderList();
+    updateCodeOutput();
+  }
+
+  function renderDot(id, name, cx, cy) {
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.dataset.id = id;
+    dot.style.left = cx + 'px';
+    dot.style.top  = cy + 'px';
+    dot.title = name;
+    dot.addEventListener('click', e => {
+      e.stopPropagation();
+      removePoint(id);
+    });
+    canvas.appendChild(dot);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'dot-label';
+    lbl.dataset.id = id;
+    lbl.style.left = cx + 'px';
+    lbl.style.top  = cy + 'px';
+    lbl.textContent = name;
+    canvas.appendChild(lbl);
+  }
+
+  function removePoint(id) {
+    points = points.filter(p => p.id !== id);
+    canvas.querySelectorAll(`[data-id="${id}"]`).forEach(el => el.remove());
+    renderList();
+    updateCodeOutput();
+  }
+
+  function clearAll() {
+    points = [];
+    canvas.querySelectorAll('.dot, .dot-label').forEach(el => el.remove());
+    renderList();
+    updateCodeOutput();
+  }
+
+  // ── Coordinate helpers ───────────────────────────────────────────────
+  function toWc(cx, cy) {
+    const wx = Math.round(cx * WIN_W / CANVAS_W);
+    const wy = Math.round(cy * WIN_W / CANVAS_W);
+    return { wx, wy };
+  }
+
+  function pointToCode(p) {
+    const { wx, wy } = toWc(p.cx, p.cy);
+    return `const ${p.name.padEnd(16)} = wc(${wx}, ${wy});`;
+  }
+
+  // ── Render sidebar list ──────────────────────────────────────────────
+  function renderList() {
+    pointCount.textContent = points.length;
+    pointsList.innerHTML = '';
+    points.forEach(p => {
+      const { wx, wy } = toWc(p.cx, p.cy);
+      const row = document.createElement('div');
+      row.className = 'point-row';
+      row.innerHTML = `
+        <div class="point-info">
+          <div class="point-name">${escHtml(p.name)}</div>
+          <div class="point-coords">canvas: (${p.cx}, ${p.cy})  ·  win: (${wx}, ${wy})</div>
+          <div class="point-code">${escHtml(pointToCode(p))}</div>
+        </div>
+        <div class="point-actions">
+          <button onclick="copyOne(${p.id})">Copy</button>
+          <button class="btn-danger" onclick="removePoint(${p.id})">×</button>
+        </div>
+      `;
+      pointsList.appendChild(row);
+    });
+  }
+
+  // ── Code output textarea ─────────────────────────────────────────────
+  function updateCodeOutput() {
+    codeOutput.value = points.map(pointToCode).join('\n');
+  }
+
+  function copyOne(id) {
+    const p = points.find(pt => pt.id === id);
+    if (!p) return;
+    navigator.clipboard.writeText(pointToCode(p)).then(showToast);
+  }
+
+  function copyAll() {
+    const code = points.map(pointToCode).join('\n');
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(showToast);
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast() {
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────
+  labelInput.focus();
+</script>
+</body>
+</html>
