@@ -16,6 +16,8 @@
   // Writable $derived: tracks the `value` prop but can be reassigned locally
   // for in-flight slider/number-input edits before `oninput` is committed.
   let currentValue = $derived(value ?? 1)
+  let inputDraft = $state(String(value ?? 1))
+  let editingInput = $state(false)
 
   // Filled-track percentage. Drives a CSS variable on the input so the
   // custom track gradient knows where to switch from crimson → zinc, giving
@@ -28,9 +30,37 @@
   })
 
   function emit(raw) {
-    const value = Math.max(min, Math.min(max, parseFloat(raw) || 0))
-    currentValue = value
-    oninput?.({ target: { value } })
+    const nextValue = Math.max(min, Math.min(max, parseFloat(raw) || 0))
+    currentValue = nextValue
+    if (!editingInput) inputDraft = String(nextValue)
+    oninput?.({ target: { value: nextValue } })
+  }
+
+  function onTextInput(raw) {
+    const sanitized = raw
+      .replace(/[^\d.]/g, '')
+      .replace(/(\..*)\./g, '$1')
+    inputDraft = sanitized
+    if (sanitized === '' || sanitized === '.') return
+    const parsed = parseFloat(sanitized)
+    if (!Number.isFinite(parsed)) return
+    emit(sanitized)
+  }
+
+  function onTextKeydown(e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (
+      e.key === 'Backspace' ||
+      e.key === 'Delete' ||
+      e.key === 'Tab' ||
+      e.key === 'Enter' ||
+      e.key === 'Escape' ||
+      e.key.startsWith('Arrow') ||
+      e.key === 'Home' ||
+      e.key === 'End'
+    ) return
+    if (/^\d$/.test(e.key) || e.key === '.') return
+    e.preventDefault()
   }
 
   function beginRangeEdit() {
@@ -40,6 +70,21 @@
   function endRangeEdit() {
     app?.endEditBatch?.()
   }
+
+  function beginTextEdit() {
+    editingInput = true
+    app?.beginEditBatch?.()
+  }
+
+  function endTextEdit() {
+    editingInput = false
+    inputDraft = String(currentValue)
+    app?.endEditBatch?.()
+  }
+
+  $effect(() => {
+    if (!editingInput) inputDraft = String(currentValue)
+  })
 </script>
 
 <div class={cn('flex items-center gap-2', className)}>
@@ -61,12 +106,13 @@
     class="opacity-slider h-7 min-w-0 flex-1"
   />
   <Input
-    type="number"
-    value={currentValue}
-    {min}
-    {max}
-    {step}
-    oninput={(e) => emit(e.target.value)}
+    type="text"
+    inputmode="decimal"
+    value={inputDraft}
+    onfocus={beginTextEdit}
+    onblur={endTextEdit}
+    onkeydown={onTextKeydown}
+    oninput={(e) => onTextInput(e.target.value)}
     class="w-16 px-2 text-right tabular-nums"
   />
 </div>
