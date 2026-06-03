@@ -1,6 +1,30 @@
 {
   "elements": [
     {
+      "color": "$primary",
+      "fill": {
+        "opacity": 0
+      },
+      "height": 800,
+      "id": "plot-course",
+      "line": {
+        "width": 8
+      },
+      "margin": 0.1,
+      "opacity": 0.5,
+      "point": {
+        "color": "#ffda01",
+        "edge_color": "#710e0b",
+        "edge_width": 9,
+        "weight": 800
+      },
+      "type": "plot",
+      "value": "course",
+      "width": 600,
+      "x": 55,
+      "y": 56
+    },
+    {
       "arc_color": "#ffffff20",
       "arc_width": 65,
       "background_color": "#1c1c1c",
@@ -13,7 +37,7 @@
         "#fa8754",
         "#ffe767"
       ],
-      "height": 700,
+      "height": 600,
       "id": "gauge-speed",
       "max": "max",
       "min": "min",
@@ -22,9 +46,9 @@
       "type": "gauge",
       "unit": "mph",
       "value": "speed",
-      "width": 700,
-      "x": 3080,
-      "y": 1401
+      "width": 600,
+      "x": 3156,
+      "y": 1483
     },
     {
       "color": "$primary",
@@ -35,8 +59,8 @@
       "type": "value",
       "unit": "mph",
       "value": "speed",
-      "x": 3439,
-      "y": 1828
+      "x": 3463,
+      "y": 1848
     },
     {
       "color": "$gold",
@@ -45,8 +69,8 @@
       "text": "mph",
       "text_align": "center",
       "type": "label",
-      "x": 3439,
-      "y": 1901
+      "x": 3461,
+      "y": 1936
     },
     {
       "color": "#000000",
@@ -219,7 +243,8 @@
             "rect-power-fill",
             "meter-power",
             "value-power",
-            "label-watts"
+            "label-watts",
+            "label-1"
           ],
           "id": "group-1",
           "name": "power fill"
