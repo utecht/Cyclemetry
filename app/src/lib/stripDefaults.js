@@ -9,7 +9,6 @@ const SCALAR_DEFAULTS = {
   italic: false,
   remove_edge_color: false,
   hide_track: false,
-  text_align: 'left',
   // gauge
   start_angle: 135,
   sweep_angle: 270,

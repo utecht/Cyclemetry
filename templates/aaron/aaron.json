@@ -100,10 +100,11 @@
     {
       "font_size": 80,
       "id": "value-3",
+      "text_align": "center",
       "type": "value",
       "value": "power",
-      "x": 1855,
-      "y": 1858
+      "x": 1921,
+      "y": 1857
     },
     {
       "background": "$primary",

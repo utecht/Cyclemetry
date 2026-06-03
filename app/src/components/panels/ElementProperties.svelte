@@ -1385,7 +1385,7 @@
           <Select
             value={item.text_align ?? 'left'}
             options={[{value:'left',label:'Left'},{value:'center',label:'Center'},{value:'right',label:'Right'}]}
-            onchange={(v) => update('text_align', v === 'left' ? undefined : v)}
+            onchange={(v) => update('text_align', v)}
           />
         </label>
         {/if}
