@@ -4,15 +4,18 @@
    * All changes write directly into app.config via app.updateElement().
    */
   import { getContext } from 'svelte'
-  import { Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
+  import { SvelteMap } from 'svelte/reactivity'
+  import { AlertTriangle, Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
   import Input from '../ui/Input.svelte'
   import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
   import Switch from '../ui/Switch.svelte'
+  import Tooltip from '../ui/Tooltip.svelte'
   import ColorInput from '../ui/ColorInput.svelte'
   import AssetPicker from '../overlays/AssetPicker.svelte'
   import * as backend from '../../api/backend.js'
   import { elementTypeName } from '../../lib/elementTypes.js'
+  import { metricRangeIssues, metricValueIssue } from '../../lib/metricLimits.js'
 
   const app = getContext('app')
 
@@ -113,6 +116,103 @@
     const value = Number(trimmed)
     return Number.isFinite(value) ? value : undefined
   }
+
+  const rangeCache = new SvelteMap()
+
+  function metricRangeUnit(item) {
+    if (!item?.value) return null
+    return UNITS_BY_METRIC[item.value] ? displayUnit(item.value, item.unit) : item.unit
+  }
+
+  function rangeContext() {
+    if (!app.hasActivity || !app.gpxFilename || !app.config?.scene) return null
+    return {
+      gpx: app.gpxFilename,
+      start: app.config.scene.start ?? 0,
+      end: app.config.scene.end ?? app.timelineDuration,
+    }
+  }
+
+  function rangeKey(metric, unit, context = rangeContext()) {
+    if (!context || !metric) return null
+    return JSON.stringify([context.gpx, metric, unit ?? null, context.start, context.end])
+  }
+
+  function loadRange(metric, unit, context = rangeContext()) {
+    const key = rangeKey(metric, unit, context)
+    if (!key) return
+    const current = rangeCache.get(key)
+    if (current?.status === 'loading' || current?.status === 'ready') return
+
+    rangeCache.set(key, { status: 'loading' })
+    backend.getActivityMetricRange(context.gpx, metric, unit, context.start, context.end)
+      .then((range) => {
+        rangeCache.set(key, { status: 'ready', range })
+      })
+      .catch((err) => {
+        rangeCache.set(key, {
+          status: 'error',
+          error: err?.message ?? String(err),
+        })
+      })
+  }
+
+  function formatRangeValue(value) {
+    if (!Number.isFinite(value)) return 'unavailable'
+    const abs = Math.abs(value)
+    if (abs >= 1000) return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+    if (abs >= 100) return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    if (abs >= 10) return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
+    return value.toLocaleString(undefined, { maximumFractionDigits: 4 })
+  }
+
+  function rangeBoundTooltip(item, field) {
+    const bound = item?.[field]
+    if (bound !== 'min' && bound !== 'max') return ''
+    if (!app.hasActivity) return 'Load an activity'
+    const entry = rangeCache.get(rangeKey(item.value, metricRangeUnit(item)))
+    if (entry?.status === 'ready') {
+      const value = entry.range?.[bound]
+      const issue = metricValueIssue(item.value, metricRangeUnit(item), value)
+      if (issue) {
+        return `${formatRangeValue(value)}
+Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual ${field}.`
+      }
+      return formatRangeValue(value)
+    }
+    if (entry?.status === 'error') return entry.error
+    return 'Computing...'
+  }
+
+  function rangeWarning(item) {
+    if (!item) return null
+    const entry = rangeCache.get(rangeKey(item.value, metricRangeUnit(item)))
+    if (entry?.status !== 'ready') return null
+    const issues = metricRangeIssues(item.value, metricRangeUnit(item), entry.range)
+    const fields = ['min', 'max']
+    const field = fields.find((f) => {
+      const bound = item[f]
+      return (bound === 'min' || bound === 'max') && issues[bound]
+    })
+    const issue = field ? issues[item[field]] : null
+    if (!issue) return null
+    return `Computed ${field} ${formatRangeValue(issue.value)} looks unrealistic for ${item.value}. Enter a manual ${field}.`
+  }
+
+  $effect(() => {
+    const context = rangeContext()
+    if (!context) return
+
+    for (const metric of METER_METRICS) {
+      loadRange(metric, metricRangeUnit({ value: metric }), context)
+    }
+
+    const s = selected()
+    const item = s?.item
+    if (s?.type === 'meter' || s?.type === 'gauge') {
+      loadRange(item?.value, metricRangeUnit(item), context)
+    }
+  })
 
   // Switch the distance unit, converting distance_target to the equivalent
   // value in the new unit so the on-screen target stays the same real distance.
@@ -715,13 +815,23 @@
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Min</span>
-            <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
+            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
+            </Tooltip>
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Max</span>
-            <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
+            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
+            </Tooltip>
           </label>
         </div>
+        {#if rangeWarning(item)}
+          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
+            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
+            <span>{rangeWarning(item)}</span>
+          </div>
+        {/if}
         {#if showAdvanced}
         <button
           type="button"
@@ -970,13 +1080,23 @@
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Min</span>
-            <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
+            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
+            </Tooltip>
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Max</span>
-            <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
+            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
+            </Tooltip>
           </label>
         </div>
+        {#if rangeWarning(item)}
+          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
+            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
+            <span>{rangeWarning(item)}</span>
+          </div>
+        {/if}
         {#if showAdvanced}
         <button
           type="button"

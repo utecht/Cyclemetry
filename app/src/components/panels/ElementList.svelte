@@ -23,6 +23,7 @@
 
   import * as backend from '../../api/backend.js'
   import { ADD_PRESETS, elementMeta } from '../../lib/elementTypes.js'
+  import { metricRangeIssues } from '../../lib/metricLimits.js'
   import AssetPicker from '../overlays/AssetPicker.svelte'
 
   const app = getContext('app')
@@ -110,6 +111,8 @@
         start,
         end,
       )
+      const issues = metricRangeIssues(metric, defaults.unit, range)
+      if (issues.min || issues.max) return defaults
       return { ...defaults, min: range.min, max: range.max }
     } catch (err) {
       console.debug('Could not initialize meter range from activity:', err)
