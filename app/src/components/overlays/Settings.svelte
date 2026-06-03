@@ -57,10 +57,10 @@
         <p
           class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
         >
-          Output Folder
+          Export Folder
         </p>
         <p class="text-[11px] text-zinc-500">
-          Where generated overlays are saved.
+          Where exported overlays are saved.
         </p>
         <div
           class="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2"

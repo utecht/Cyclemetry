@@ -2152,7 +2152,7 @@ pub fn run() {
                 let open_exports = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Open Overlays Folder",
+                    "Open Exports Folder",
                     true,
                     Some("CmdOrCtrl+Shift+E"),
                 )?;
@@ -2165,7 +2165,7 @@ pub fn run() {
                 )?;
                 let exports_submenu = Submenu::with_items(
                     app,
-                    "Overlays",
+                    "Exports",
                     true,
                     &[
                         &open_exports,
@@ -2443,7 +2443,7 @@ pub fn run() {
                 let open_exports = MenuItem::with_id(
                     app,
                     "show_downloads",
-                    "Open Overlays Folder",
+                    "Open Exports Folder",
                     true,
                     Some("CmdOrCtrl+Shift+E"),
                 )?;
@@ -2456,7 +2456,7 @@ pub fn run() {
                 )?;
                 let exports_submenu = Submenu::with_items(
                     app,
-                    "Overlays",
+                    "Exports",
                     true,
                     &[
                         &open_exports,

@@ -14,6 +14,7 @@
   let deleting = $state([])
   let opening = $state(false)
   let showStravaDialog = $state(false)
+  let sortMode = $state('recent')
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown)
@@ -61,6 +62,24 @@
     // Strip the extension only; keep dots that are part of the name (e.g. "2024.05.20.gpx").
     return filename.replace(/\.[^.]+$/, '')
   }
+
+  let sortedSaved = $derived.by(() => {
+    const items = [...saved]
+    if (sortMode === 'name-asc') {
+      return items.sort((a, b) =>
+        displayName(a.filename).localeCompare(displayName(b.filename)),
+      )
+    }
+    if (sortMode === 'name-desc') {
+      return items.sort((a, b) =>
+        displayName(b.filename).localeCompare(displayName(a.filename)),
+      )
+    }
+    if (sortMode === 'oldest') {
+      return items.sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
+    }
+    return items.sort((a, b) => (b.start_ms ?? 0) - (a.start_ms ?? 0))
+  })
 
   async function handleChooseFromDisk() {
     opening = true
@@ -169,7 +188,22 @@
     <div class="overflow-y-auto flex-1 px-5 py-4 space-y-6">
 
       <div>
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Recent</p>
+        {#if saved.length >= 2}
+          <div class="mb-3 flex items-center justify-end">
+            <label class="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              Sort by
+              <select
+                bind:value={sortMode}
+                class="h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs normal-case tracking-normal text-zinc-200 outline-none transition-colors hover:border-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+              >
+                <option value="recent">Recent</option>
+                <option value="oldest">Oldest</option>
+                <option value="name-asc">Name A-Z</option>
+                <option value="name-desc">Name Z-A</option>
+              </select>
+            </label>
+          </div>
+        {/if}
 
         {#if loading}
           <div class="grid grid-cols-2 gap-2">
@@ -183,7 +217,7 @@
           <p class="text-xs text-zinc-500">No activities yet. Choose one from disk to get started.</p>
         {:else}
           <div class="grid grid-cols-2 gap-2">
-            {#each saved as a (a.filename)}
+            {#each sortedSaved as a (a.filename)}
               {@const active = isActive(a.filename)}
               {@const busy = deleting.includes(a.filename)}
               <div
@@ -204,7 +238,7 @@
                   onclick={() => handleDelete(a.filename)}
                   disabled={busy}
                   class="shrink-0 cursor-pointer p-2 mr-1 rounded text-zinc-500 hover:text-red-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Remove from list"
+                  title="Remove from disk"
                 >
                   {#if busy}
                     <span class="text-[10px]">…</span>

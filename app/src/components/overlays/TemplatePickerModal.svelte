@@ -13,22 +13,41 @@
   let communityError = $state(null)
   let installing = $state([])
   let deleting = $state([])
-  let confirmingDelete = $state(null)
   let failedPreviews = $state([])
   let creating = $state(false)
   let importing = $state(false)
   let showNameDialog = $state(false)
+  let viewportHeight = $state(window.innerHeight)
+  let resizeFrame = null
 
-  onMount(async () => {
+  onMount(() => {
     window.addEventListener('keydown', onKeydown)
-    try {
-      communityList = await backend.fetchCommunityTemplates()
-    } catch (e) {
-      communityError = e?.message ?? 'Failed to load'
-    } finally {
-      communityLoading = false
+
+    function onResize() {
+      if (resizeFrame) cancelAnimationFrame(resizeFrame)
+      resizeFrame = requestAnimationFrame(() => {
+        viewportHeight = window.innerHeight
+        resizeFrame = null
+      })
     }
-    return () => window.removeEventListener('keydown', onKeydown)
+
+    window.addEventListener('resize', onResize)
+
+    ;(async () => {
+      try {
+        communityList = await backend.fetchCommunityTemplates()
+      } catch (e) {
+        communityError = e?.message ?? 'Failed to load'
+      } finally {
+        communityLoading = false
+      }
+    })()
+
+    return () => {
+      window.removeEventListener('keydown', onKeydown)
+      window.removeEventListener('resize', onResize)
+      if (resizeFrame) cancelAnimationFrame(resizeFrame)
+    }
   })
 
   function onKeydown(e) {
@@ -42,6 +61,7 @@
   let available = $derived(
     communityList.filter((c) => !installed.some((i) => i.id === c.id))
   )
+  let communityIds = $derived(new Set(communityList.map((c) => c.id)))
 
   function isActive(id) {
     return app.loadedTemplateFilename === id
@@ -49,9 +69,16 @@
 
   function statusLabel(type) {
     if (type === 'community-modified') return 'Modified'
-    if (type === 'community') return 'Community'
     if (type === 'built-in') return 'Built-in'
     return null
+  }
+
+  function isCommunityTemplate(tpl) {
+    return (
+      tpl.type === 'community' ||
+      tpl.type === 'community-modified' ||
+      communityIds.has(tpl.id)
+    )
   }
 
   function previewFailed(id) {
@@ -94,7 +121,6 @@
   }
 
   async function handleDelete(id) {
-    confirmingDelete = null
     deleting = [...deleting, id]
     try {
       await backend.deleteTemplate(id)
@@ -167,7 +193,7 @@
     onclick={onclose}
   ></button>
 
-  <div class="relative z-10 w-[720px] max-h-[80vh] flex flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+  <div class="relative z-10 flex w-[720px] max-h-[80vh] flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
 
     <!-- Header -->
     <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
@@ -200,70 +226,65 @@
     </div>
 
     <!-- Scrollable body -->
-    <div class="overflow-y-auto flex-1 px-5 py-4 space-y-6">
+    {#key viewportHeight}
+      <div class="min-h-0 overflow-y-auto px-5 py-4 space-y-6">
 
-      <!-- Installed templates -->
-      {#if installed.length > 0}
-        <div>
-          <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Installed</p>
-          <div class="grid grid-cols-3 gap-3">
-            {#each installed as tpl (tpl.id)}
-              {@const active = isActive(tpl.id)}
-              {@const label = statusLabel(tpl.type)}
-              {@const busy = deleting.includes(tpl.id)}
-              <div
-                class="rounded-lg border overflow-hidden transition-colors
-                       {active
-                         ? 'border-primary bg-zinc-800'
-                         : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/80'}"
-              >
-                <!-- Preview (clickable) -->
-                <button
-                  onclick={() => handleLoad(tpl.id)}
-                  class="w-full text-left aspect-video bg-zinc-800 flex items-center justify-center overflow-hidden block cursor-pointer"
+        <!-- Installed templates -->
+        {#if installed.length > 0}
+          <div>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Installed</p>
+            <div class="grid grid-cols-3 gap-3">
+              {#each installed as tpl (tpl.id)}
+                {@const active = isActive(tpl.id)}
+                {@const label = statusLabel(tpl.type)}
+                {@const communityTemplate = isCommunityTemplate(tpl)}
+                {@const busy = deleting.includes(tpl.id)}
+                <div
+                  class="rounded-lg border overflow-hidden transition-colors
+                         {active
+                           ? 'border-primary bg-zinc-800'
+                           : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/80'}"
                 >
-                  {#if tpl.preview_url && !previewFailed(tpl.id)}
-                    <img
-                      src={tpl.preview_url}
-                      alt={tpl.name}
-                      class="w-full h-full object-cover"
-                      onerror={() => onImgError(tpl.id)}
-                    />
-                  {:else}
-                    <span class="text-[10px] text-zinc-600 font-mono">{tpl.id}</span>
-                  {/if}
-                </button>
-                <!-- Info row -->
-                <div class="px-2.5 py-2 flex items-center gap-1">
+                  <!-- Preview (clickable) -->
                   <button
                     onclick={() => handleLoad(tpl.id)}
-                    class="flex-1 min-w-0 text-left cursor-pointer"
+                    class="w-full text-left aspect-video bg-zinc-800 flex items-center justify-center overflow-hidden block cursor-pointer"
                   >
-                    <span class="text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
+                    {#if tpl.preview_url && !previewFailed(tpl.id)}
+                      <img
+                        src={tpl.preview_url}
+                        alt={tpl.name}
+                        class="w-full h-full object-cover"
+                        onerror={() => onImgError(tpl.id)}
+                      />
+                    {:else}
+                      <span class="text-[10px] text-zinc-600 font-mono">{tpl.id}</span>
+                    {/if}
                   </button>
-                  {#if label}
-                    <span class="shrink-0 text-[10px] text-zinc-500">{label}</span>
-                  {/if}
-                  {#if confirmingDelete === tpl.id}
+                  <!-- Info row -->
+                  <div class="px-2.5 py-2 flex items-center gap-1">
+                    <button
+                      onclick={() => handleLoad(tpl.id)}
+                      class="flex-1 min-w-0 text-left cursor-pointer flex items-center gap-1.5"
+                    >
+                      {#if communityTemplate}
+                        <img
+                          src="/logo192.png"
+                          alt=""
+                          title="Community template"
+                          class="h-3.5 w-3.5 shrink-0 rounded-[3px]"
+                        />
+                      {/if}
+                      <span class="min-w-0 text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
+                    </button>
+                    {#if label}
+                      <span class="shrink-0 text-[10px] text-zinc-500">{label}</span>
+                    {/if}
                     <button
                       onclick={() => handleDelete(tpl.id)}
                       disabled={busy}
-                      class="shrink-0 cursor-pointer text-[10px] text-red-400 hover:text-red-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ml-1"
-                    >
-                      {busy ? '…' : 'Delete'}
-                    </button>
-                    <button
-                      onclick={() => (confirmingDelete = null)}
-                      class="shrink-0 cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  {:else}
-                    <button
-                      onclick={() => (confirmingDelete = tpl.id)}
-                      disabled={busy}
                       class="shrink-0 cursor-pointer p-1 rounded text-zinc-500 hover:text-red-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ml-0.5"
-                      title="Delete template"
+                      title="Remove from disk"
                     >
                       {#if busy}
                         <span class="text-[10px]">…</span>
@@ -271,69 +292,75 @@
                         <Trash2 size={13} />
                       {/if}
                     </button>
-                  {/if}
+                  </div>
                 </div>
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      <!-- Community templates -->
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Community</p>
-
-        {#if communityLoading}
-          <div class="grid grid-cols-3 gap-3">
-            {#each [1, 2, 3] as i (i)}
-              <div class="rounded-lg border border-zinc-800 bg-zinc-800/30 animate-pulse">
-                <div class="aspect-video bg-zinc-800/60"></div>
-                <div class="px-2.5 py-2 h-8"></div>
-              </div>
-            {/each}
-          </div>
-        {:else if communityError}
-          <p class="text-xs text-red-400">{communityError}</p>
-        {:else if available.length === 0}
-          <p class="text-xs text-zinc-500">All community templates are installed.</p>
-        {:else}
-          <div class="grid grid-cols-3 gap-3">
-            {#each available as tpl (tpl.id)}
-              {@const busy = installing.includes(tpl.id)}
-              <button
-                onclick={() => handleCommunityClick(tpl.id)}
-                disabled={busy}
-                class="w-full rounded-lg border border-zinc-700 bg-zinc-800/40 overflow-hidden text-left cursor-pointer hover:border-zinc-500 hover:bg-zinc-800/80 transition-colors disabled:cursor-not-allowed"
-              >
-                <!-- Preview -->
-                <div class="aspect-video bg-zinc-800 relative flex items-center justify-center overflow-hidden">
-                  {#if tpl.preview_url && !previewFailed(tpl.id)}
-                    <img
-                      src={tpl.preview_url}
-                      alt={tpl.name}
-                      class="w-full h-full object-cover"
-                      onerror={() => onImgError(tpl.id)}
-                    />
-                  {:else}
-                    <span class="text-[10px] text-zinc-600 font-mono">{tpl.id}</span>
-                  {/if}
-                  {#if busy}
-                    <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <span class="text-[11px] text-zinc-300">Installing…</span>
-                    </div>
-                  {/if}
-                </div>
-                <!-- Name -->
-                <div class="px-2.5 py-2">
-                  <span class="text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
-                </div>
-              </button>
-            {/each}
+              {/each}
+            </div>
           </div>
         {/if}
-      </div>
 
-    </div>
+        <!-- Community templates -->
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-3">Community</p>
+
+          {#if communityLoading}
+            <div class="grid grid-cols-3 gap-3">
+              {#each [1, 2, 3, 4, 5, 6] as i (i)}
+                <div class="rounded-lg border border-zinc-800 bg-zinc-800/30 animate-pulse">
+                  <div class="aspect-video bg-zinc-800/60"></div>
+                  <div class="px-2.5 py-2 h-8"></div>
+                </div>
+              {/each}
+            </div>
+          {:else if communityError}
+            <p class="text-xs text-red-400">{communityError}</p>
+          {:else if available.length === 0}
+            <p class="text-xs text-zinc-500">All community templates are installed.</p>
+          {:else}
+            <div class="grid grid-cols-3 gap-3">
+              {#each available as tpl (tpl.id)}
+                {@const busy = installing.includes(tpl.id)}
+                <button
+                  onclick={() => handleCommunityClick(tpl.id)}
+                  disabled={busy}
+                  class="w-full rounded-lg border border-zinc-700 bg-zinc-800/40 overflow-hidden text-left cursor-pointer hover:border-zinc-500 hover:bg-zinc-800/80 transition-colors disabled:cursor-not-allowed"
+                >
+                  <!-- Preview -->
+                  <div class="aspect-video bg-zinc-800 relative flex items-center justify-center overflow-hidden">
+                    {#if tpl.preview_url && !previewFailed(tpl.id)}
+                      <img
+                        src={tpl.preview_url}
+                        alt={tpl.name}
+                        class="w-full h-full object-cover"
+                        onerror={() => onImgError(tpl.id)}
+                      />
+                    {:else}
+                      <span class="text-[10px] text-zinc-600 font-mono">{tpl.id}</span>
+                    {/if}
+                    {#if busy}
+                      <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span class="text-[11px] text-zinc-300">Installing…</span>
+                      </div>
+                    {/if}
+                  </div>
+                  <!-- Name -->
+                  <div class="px-2.5 py-2 flex items-center gap-1.5">
+                    <img
+                      src="/logo192.png"
+                      alt=""
+                      title="Cyclemetry template"
+                      class="h-3.5 w-3.5 shrink-0 rounded-[3px]"
+                    />
+                    <span class="min-w-0 text-xs font-medium text-zinc-100 truncate block">{tpl.name}</span>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+      </div>
+    {/key}
   </div>
 </div>
 

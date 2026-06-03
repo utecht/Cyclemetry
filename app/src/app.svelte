@@ -140,12 +140,37 @@
   let showNewTemplateDialog = $state(false)
   let showActivityPicker = $state(false)
 
-  function openTemplatePicker() {
+  function closeDialogs() {
     showActivityPicker = false
     showSettings = false
     showAbout = false
     showNewTemplateDialog = false
+    app.showTemplatePicker = false
+  }
+
+  function openTemplatePicker() {
+    closeDialogs()
     app.showTemplatePicker = true
+  }
+
+  function openActivityPicker() {
+    closeDialogs()
+    showActivityPicker = true
+  }
+
+  function openSettings() {
+    closeDialogs()
+    showSettings = true
+  }
+
+  function openAbout() {
+    closeDialogs()
+    showAbout = true
+  }
+
+  function openNewTemplateDialog() {
+    closeDialogs()
+    showNewTemplateDialog = true
   }
 
   // Enforce mutual exclusion: any code path that sets showTemplatePicker = true
@@ -266,7 +291,7 @@
         ),
         listen('menu_new_template', () =>
           app.confirmIfModified(() => {
-            showNewTemplateDialog = true
+            openNewTemplateDialog()
           }),
         ),
         listen('menu_show_downloads', () => handleOpenDownloads()),
@@ -277,10 +302,10 @@
           backend.openTemplatesFolder().catch(() => {}),
         ),
         listen('menu_settings', () => {
-          showSettings = true
+          openSettings()
         }),
         listen('menu_about', () => {
-          showAbout = true
+          openAbout()
         }),
         listen('menu_undo', () => {
           if (app.canUndo) app.undo()
@@ -322,9 +347,10 @@
   async function handleOpenGpx() {
     const inTauri = typeof window.__TAURI__ !== 'undefined'
     if (inTauri) {
-      showActivityPicker = true
+      openActivityPicker()
       return
     }
+    closeDialogs()
     try {
       const input = document.createElement('input')
       input.type = 'file'
@@ -657,7 +683,7 @@
     <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
     {#if !app.video}
       <Tooltip
-        content="Adding video is only for preview. The generated overlay will not include the video."
+        content="Adding video is only for preview. The exported overlay will not include the video."
         side="bottom"
         class="shrink-0"
       >
@@ -867,11 +893,11 @@
 
   <!-- ── Three-panel layout ─────────────────────────────────────────────────── -->
   <div class="flex-1 flex overflow-hidden min-h-0">
-    {#if app.config}
+    {#if app.config && app.hasActivity}
       <LeftSidebar />
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
-    {#if app.config}
+    {#if app.config && app.selectedElementId}
       <RightPanel />
     {/if}
   </div>
