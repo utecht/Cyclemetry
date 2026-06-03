@@ -75,7 +75,7 @@ pub fn resolve(attr: &str, unit: Option<&str>) -> (Conversion, String) {
 }
 
 /// Convert a display-unit distance target back to metres (used by the
-/// "custom" distance-reference mode). Inverse of the distance branch of
+/// "until_custom" distance-reference mode). Inverse of the distance branch of
 /// [`resolve`]; distance has no offset so this is a plain divide.
 pub fn distance_target_to_m(target: f64, unit: Option<&str>) -> f64 {
     let (conv, _) = resolve(ATTR_DISTANCE, unit);

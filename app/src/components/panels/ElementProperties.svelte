@@ -49,7 +49,7 @@
     { value: 'activity_start', label: 'Since activity start' },
     { value: 'overlay_end', label: 'Until overlay end' },
     { value: 'activity_end', label: 'Until activity end' },
-    { value: 'custom', label: 'Until custom point' },
+    { value: 'until_custom', label: 'Until custom point' },
     { value: 'since_custom', label: 'Since custom point' },
   ]
   // Per-metric explicit unit options. Metrics absent from this map (gradient,
@@ -1564,7 +1564,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             onchange={(v) => update('distance_reference', v)}
           />
         </label>
-        {#if item.distance_reference === 'custom' || item.distance_reference === 'since_custom'}
+        {#if item.distance_reference === 'until_custom' || item.distance_reference === 'since_custom'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Point ({displayUnit('distance', item.unit)})</span>
           {#if displayUnit('distance', item.unit) === 'm'}

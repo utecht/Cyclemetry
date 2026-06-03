@@ -290,7 +290,7 @@
   let quickStartStep2Complete = $derived(app.hasActivity)
 
   // ── Distance reference slider ─────────────────────────────────────────────────
-  // Show an amber dot on a second bar when a distance element with reference='custom' is selected.
+  // Show an amber dot on a second bar when a distance element with reference='until_custom' is selected.
   let selectedDistanceEl = $derived.by(() => {
     const id = app.selectedElementId
     const config = app.config
@@ -310,7 +310,7 @@
 
   let showDistanceBar = $derived(
     selectedDistanceEl?.value === 'distance' &&
-    (selectedDistanceEl?.distance_reference === 'custom' ||
+    (selectedDistanceEl?.distance_reference === 'until_custom' ||
      selectedDistanceEl?.distance_reference === 'since_custom')
   )
   let showCourseMarkerBar = $derived(!!selectedCourseMarker)

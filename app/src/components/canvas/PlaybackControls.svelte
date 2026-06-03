@@ -156,7 +156,7 @@
     />
   </div>
 
-  <!-- Distance reference bar — visible only when a distance element with reference='custom' is selected.
+  <!-- Distance reference bar — visible only when a distance element with reference='until_custom' is selected.
        Bar spans the overlay window's distance range; the whole bar IS the overlay. -->
   {#if distanceInfo && customDistanceM !== null}
     <div class="relative h-5 flex items-center">
