@@ -881,7 +881,7 @@
       <LeftSidebar />
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
-    {#if app.config}
+    {#if app.config && app.hasActivity}
       <RightPanel />
     {/if}
   </div>
