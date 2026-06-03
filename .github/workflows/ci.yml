@@ -45,9 +45,12 @@ jobs:
           node-version: '20'
 
       - name: Install pnpm
+        # Must match the project's packageManager (pnpm 10). pnpm 9 chokes on
+        # website/pnpm-workspace.yaml, which holds pnpm-10 settings
+        # (patchedDependencies) and no `packages:` field.
         uses: pnpm/action-setup@v2
         with:
-          version: 9
+          version: 10.25.0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
