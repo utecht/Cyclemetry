@@ -148,11 +148,11 @@ impl OverlayElement for LabelConfig {
             .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
             .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
         let (text_w, rect) = font.measure_str(&self.text, None);
-        let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
+        let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
             x: draw_x + rect.left,
-            y: self.y + rect.top,
+            y: self.y as f32 + rect.top,
             w: rect.width(),
             h: rect.height(),
         })
@@ -180,8 +180,8 @@ impl OverlayElement for LabelConfig {
             paint.set_anti_alias(true);
             paint.set_color(color);
             let text_w = font.measure_str(&self.text, Some(&paint)).0;
-            let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
-            canvas.draw_str(&self.text, (draw_x, self.y), &font, &paint);
+            let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+            canvas.draw_str(&self.text, (draw_x, self.y as f32), &font, &paint);
         }
     }
 }
@@ -235,11 +235,11 @@ impl OverlayElement for ValueConfig {
             .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
             .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
         let (text_w, rect) = font.measure_str(&text, None);
-        let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
+        let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
             x: draw_x + rect.left,
-            y: self.y + rect.top,
+            y: self.y as f32 + rect.top,
             w: rect.width(),
             h: rect.height(),
         })
@@ -269,8 +269,8 @@ impl OverlayElement for ValueConfig {
             paint.set_anti_alias(true);
             paint.set_color(color);
             let text_w = font.measure_str(&display, Some(&paint)).0;
-            let draw_x = align_x(self.x, text_w, self.text_align.as_deref());
-            canvas.draw_str(&display, (draw_x, self.y), &font, &paint);
+            let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+            canvas.draw_str(&display, (draw_x, self.y as f32), &font, &paint);
         }
     }
 }

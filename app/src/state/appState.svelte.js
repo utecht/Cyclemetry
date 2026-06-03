@@ -3,6 +3,7 @@ import * as backend from '../api/backend.js'
 import { parseLocalStorage } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 import { stripDefaults } from '../lib/stripDefaults.js'
+import { normalizeElementUpdates } from '../lib/templateSchema.js'
 import {
   offsetForVideoStart,
   wallClockApplicable,
@@ -485,7 +486,7 @@ export function createAppState() {
     const found = findElement(id)
     if (!found) return
     const elements = [...config.elements]
-    elements[found.idx] = { ...found.el, ...updates }
+    elements[found.idx] = { ...found.el, ...normalizeElementUpdates(updates) }
     commitConfig({ ...config, elements })
   }
 
@@ -540,7 +541,7 @@ export function createAppState() {
     const found = findElement(id)
     if (!found) return
     const elements = [...config.elements]
-    elements[found.idx] = { ...found.el, ...updates }
+    elements[found.idx] = { ...found.el, ...normalizeElementUpdates(updates) }
     config = { ...config, elements }
   }
 
@@ -554,7 +555,7 @@ export function createAppState() {
     const found = findElement(id)
     if (!found) return
     const elements = [...config.elements]
-    elements[found.idx] = { ...found.el, ...updates }
+    elements[found.idx] = { ...found.el, ...normalizeElementUpdates(updates) }
     config = { ...config, elements }
   }
 

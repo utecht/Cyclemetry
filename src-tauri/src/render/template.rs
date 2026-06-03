@@ -98,13 +98,13 @@ impl Element {
         let f32f = factor as f32;
         match self {
             Element::Label(c) => {
-                c.x *= f32f;
-                c.y *= f32f;
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
                 c.font_size = c.font_size.map(|v| v * f32f);
             }
             Element::Value(c) => {
-                c.x *= f32f;
-                c.y *= f32f;
+                c.x = (c.x as f64 * factor).round() as i32;
+                c.y = (c.y as f64 * factor).round() as i32;
                 c.font_size = c.font_size.map(|v| v * f32f);
             }
             Element::Plot(c) => {
@@ -182,8 +182,8 @@ impl Element {
 pub struct LabelConfig {
     pub id: String,
     pub text: String,
-    pub x: f32,
-    pub y: f32,
+    pub x: i32,
+    pub y: i32,
     pub font_size: Option<f32>,
     pub font: Option<String>,
     pub italic: Option<bool>,
@@ -198,8 +198,8 @@ pub struct LabelConfig {
 pub struct ValueConfig {
     pub id: String,
     pub value: String,
-    pub x: f32,
-    pub y: f32,
+    pub x: i32,
+    pub y: i32,
     pub font_size: Option<f32>,
     pub font: Option<String>,
     pub italic: Option<bool>,

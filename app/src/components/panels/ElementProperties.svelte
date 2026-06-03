@@ -16,6 +16,7 @@
   import * as backend from '../../api/backend.js'
   import { elementTypeName } from '../../lib/elementTypes.js'
   import { metricRangeIssues, metricValueIssue } from '../../lib/metricLimits.js'
+  import { normalizeElementField, normalizeTemplateIntegerField } from '../../lib/templateSchema.js'
 
   const app = getContext('app')
 
@@ -103,9 +104,10 @@
     if (!s) return
     const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
     const rangeBoundFields = ['min', 'max']
-    const value = rangeBoundFields.includes(field)
+    let value = rangeBoundFields.includes(field)
       ? parseRangeBound(raw)
       : numFields.includes(field) ? (raw === '' ? undefined : Number(raw)) : raw
+    value = normalizeElementField(field, value)
     app.updateElement(s.id, { [field]: value })
   }
 
@@ -346,11 +348,12 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
     const s = selected()
     if (!s) return
     const numFields = ['font_size', 'x_offset', 'y_offset', 'decimal_rounding']
-    const value = numFields.includes(field)
+    let value = numFields.includes(field)
       ? raw === ''
         ? undefined
         : Number(raw)
       : raw
+    value = normalizeTemplateIntegerField(field, value)
     const current = s.item.point_label ?? {}
     app.updateElement(s.id, {
       point_label: { ...current, [field]: value },
@@ -601,11 +604,11 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
       <div class="grid grid-cols-2 gap-2">
         <label class="space-y-1">
           <span class="text-xs text-zinc-500">X</span>
-          <Input type="number" value={numVal(item, 'x')} oninput={(e) => update('x', e.target.value)} />
+          <Input type="number" step="1" value={numVal(item, 'x')} oninput={(e) => update('x', e.target.value)} />
         </label>
         <label class="space-y-1">
           <span class="text-xs text-zinc-500">Y</span>
-          <Input type="number" value={numVal(item, 'y')} oninput={(e) => update('y', e.target.value)} />
+          <Input type="number" step="1" value={numVal(item, 'y')} oninput={(e) => update('y', e.target.value)} />
         </label>
       </div>
     </section>
@@ -617,11 +620,11 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Width</span>
-            <Input type="number" value={numVal(item, 'width')} oninput={(e) => type === 'image' ? updateImageSize('width', e.target.value) : update('width', e.target.value)} />
+            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => type === 'image' ? updateImageSize('width', e.target.value) : update('width', e.target.value)} />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-zinc-500">Height</span>
-            <Input type="number" value={numVal(item, 'height')} oninput={(e) => type === 'image' ? updateImageSize('height', e.target.value) : update('height', e.target.value)} />
+            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => type === 'image' ? updateImageSize('height', e.target.value) : update('height', e.target.value)} />
           </label>
         </div>
         {#if type === 'plot' || type === 'meter' || type === 'gauge'}
