@@ -23,7 +23,7 @@ const SCALAR_DEFAULTS = {
 }
 
 /** Array-valued fields where an empty array is equivalent to absent. */
-const EMPTY_ARRAY_DEFAULTS = new Set(['scale_labels'])
+const EMPTY_ARRAY_DEFAULTS = new Set()
 
 /**
  * Fields that are always stripped from the saved JSON regardless of value.
