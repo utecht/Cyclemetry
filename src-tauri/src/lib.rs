@@ -1384,6 +1384,8 @@ fn community_templates_from_disk() -> Result<String, String> {
 
 #[cfg(not(debug_assertions))]
 async fn community_templates_from_github() -> Result<String, String> {
+    use base64::Engine;
+
     let cache = COMMUNITY_TEMPLATES_CACHE.get_or_init(|| Mutex::new(None));
     {
         let guard = cache.lock().unwrap();
