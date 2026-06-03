@@ -1204,11 +1204,6 @@ impl SceneCache {
                     );
                     continue;
                 }
-                log::info!(
-                    "SceneCache: loading image asset '{}' for element '{}'",
-                    cfg.file,
-                    cfg.id
-                );
                 match load_asset_image(&cfg.file, assets_dirs) {
                     Some(img) => {
                         images.insert(cfg.id.clone(), img);
