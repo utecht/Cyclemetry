@@ -343,26 +343,10 @@
   })
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  // Open the picker (Tauri) or fall back to a browser file input (web preview).
+  // Open the activity picker. The picker owns native file selection and saved
+  // activity selection, so every app UI path should go through it.
   async function handleOpenGpx() {
-    const inTauri = typeof window.__TAURI__ !== 'undefined'
-    if (inTauri) {
-      openActivityPicker()
-      return
-    }
-    closeDialogs()
-    try {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = '.gpx,.fit,.tcx'
-      input.onchange = async (e) => {
-        const file = e.target.files?.[0]
-        if (file) await loadGpx(file, app)
-      }
-      input.click()
-    } catch (err) {
-      app.errorMessage = `Activity load failed: ${errorText(err)}`
-    }
+    openActivityPicker()
   }
 
   /**

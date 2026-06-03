@@ -81,10 +81,10 @@ export function createAppState() {
   let outputDir = $state(localStorage.getItem('outputDir') ?? null)
   let defaultOutputDir = $state(null)
   let outputWidth = $state(
-    parseInt(localStorage.getItem('outputWidth') ?? '1920'),
+    parseInt(localStorage.getItem('outputWidth') ?? '3840'),
   )
   let outputHeight = $state(
-    parseInt(localStorage.getItem('outputHeight') ?? '1080'),
+    parseInt(localStorage.getItem('outputHeight') ?? '2160'),
   )
   // Snapshot of `config` as it was last loaded/saved. Used to detect unsaved
   // template edits. Output resolution lives outside `config`, so switching a

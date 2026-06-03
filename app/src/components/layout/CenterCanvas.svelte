@@ -592,9 +592,8 @@
           <!-- Step 2 — Load an Activity -->
           <button
             type="button"
-            disabled={quickStartStep !== 2}
             onclick={() => onopenactivity?.()}
-            class="onboarding-card {quickStartStep === 2 ? 'onboarding-card--active bg-zinc-900 cursor-pointer hover:bg-zinc-800/80' : quickStartStep2Complete ? 'onboarding-card--complete bg-zinc-900/60 cursor-default' : 'onboarding-card--dim border-zinc-800 bg-zinc-900/40 opacity-40 cursor-default'} w-44 rounded-xl border
+            class="onboarding-card {quickStartStep === 2 ? 'onboarding-card--active bg-zinc-900 cursor-pointer hover:bg-zinc-800/80' : quickStartStep2Complete ? 'onboarding-card--complete bg-zinc-900/60 cursor-pointer hover:bg-zinc-800/80' : 'onboarding-card--dim border-zinc-800 bg-zinc-900/40 opacity-70 cursor-pointer hover:bg-zinc-800/80'} w-44 rounded-xl border
                       p-5 flex flex-col items-center gap-3 text-center transition-colors duration-200">
             <span class="onboarding-step-badge {quickStartStep === 2 ? 'onboarding-step-badge--active' : quickStartStep2Complete ? 'onboarding-step-badge--complete' : 'border border-zinc-700 bg-zinc-800 text-zinc-500'} w-7 h-7 rounded-full
                          flex items-center justify-center text-xs font-bold">
