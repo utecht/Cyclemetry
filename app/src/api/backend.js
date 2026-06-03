@@ -268,6 +268,14 @@ export const deleteTemplate = (filename) =>
   invoke('backend_delete_template', { filename })
 
 /**
+ * Dev only: overwrite the repo's community template JSON with the current user copy.
+ * @param {string} filename
+ * @returns {Promise<void>}
+ */
+export const overwriteCommunityTemplate = (filename) =>
+  invoke('backend_overwrite_community_template', { filename })
+
+/**
  * @param {string} filename
  * @param {string} imageDataUrl
  * @returns {Promise<void>}

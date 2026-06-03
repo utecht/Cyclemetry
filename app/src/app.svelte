@@ -41,6 +41,16 @@
   // ── State ──────────────────────────────────────────────────────────────────
   const app = createAppState()
   setContext('app', app)
+  const isDev = import.meta.env.DEV
+
+  async function overwriteRepoTemplate() {
+    try {
+      await backend.overwriteCommunityTemplate(app.loadedTemplateFilename)
+      await app.fetchTemplates()
+    } catch (e) {
+      app.errorMessage = e?.message ?? String(e)
+    }
+  }
 
   // ── Scene toolbar helpers ──────────────────────────────────────────────────
   const RES_PRESETS = [
@@ -591,6 +601,16 @@
             class="hdr-btn hdr-btn-icon shrink-0"
             ><RotateCcw size={12} /></button
           >
+        </Tooltip>
+      {/if}
+
+      {#if isDev && app.templates.find((t) => t.id === app.loadedTemplateFilename)?.type === 'community-modified'}
+        <Tooltip content="Push to repo" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={overwriteRepoTemplate}
+            class="hdr-btn hdr-btn-icon shrink-0 border-sky-500/60 bg-sky-500/10 text-sky-400
+                   hover:border-sky-400 hover:bg-sky-500/20 hover:text-sky-300 cursor-pointer"
+          >⬆</button>
         </Tooltip>
       {/if}
     </div>

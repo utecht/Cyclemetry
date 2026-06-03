@@ -194,12 +194,6 @@ fn template_metadata_display_name(
         .unwrap_or_else(|| template_display_name(name))
 }
 
-fn set_template_name(template: &mut serde_json::Value, name: &str) {
-    if let Some(obj) = template.as_object_mut() {
-        obj.entry("name").or_insert_with(|| serde_json::json!(name));
-    }
-}
-
 /// Read a JPG into a base64 `data:` URL value, or `None` if it doesn't exist.
 fn jpg_data_url(path: &Path) -> Option<serde_json::Value> {
     if !path.exists() {
@@ -562,11 +556,17 @@ fn backend_get_template(filename: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn backend_save_template(config: serde_json::Value, filename: String) -> Result<String, String> {
+fn backend_save_template(
+    mut config: serde_json::Value,
+    filename: String,
+) -> Result<String, String> {
     let rel = validate_template_path(&filename)?;
     let path = templates_user_dir().join(&rel);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
+    }
+    if let Some(obj) = config.as_object_mut() {
+        obj.remove("name");
     }
     let pretty =
         serde_json::to_string_pretty(&config).map_err(|e| format!("Serialize error: {e}"))?;
@@ -1488,10 +1488,8 @@ async fn install_community_template_impl(
     let src = repo_templates_dir().join(name).join(rel);
     let content =
         std::fs::read_to_string(src).map_err(|e| format!("Failed to read template: {e}"))?;
-    let mut parsed: serde_json::Value =
+    let parsed: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("Invalid template JSON: {e}"))?;
-    let display = template_metadata_display_name(&repo_template_display_names(), name);
-    set_template_name(&mut parsed, &display);
     let pretty =
         serde_json::to_string_pretty(&parsed).map_err(|e| format!("Serialize error: {e}"))?;
     std::fs::write(dest, &pretty).map_err(|e| format!("Failed to write template: {e}"))?;
@@ -1521,29 +1519,39 @@ async fn install_community_template_impl(
         .map_err(|e| format!("Read error: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid template JSON: {e}"))?;
-    let display_names = match reqwest::Client::builder()
-        .user_agent("cyclemetry-app")
-        .build()
-        .map_err(|e| format!("Client error: {e}"))?
-        .get(GITHUB_RAW_TEMPLATE_METADATA)
-        .send()
-        .await
-    {
-        Ok(resp) => match resp.json::<serde_json::Value>().await {
-            Ok(metadata) => template_display_names_from_metadata(&metadata),
-            Err(_) => std::collections::HashMap::new(),
-        },
-        Err(_) => std::collections::HashMap::new(),
-    };
-    let mut parsed = parsed;
-    let display = template_metadata_display_name(&display_names, name);
-    set_template_name(&mut parsed, &display);
     let pretty =
         serde_json::to_string_pretty(&parsed).map_err(|e| format!("Serialize error: {e}"))?;
     std::fs::write(dest, &pretty).map_err(|e| format!("Failed to write template: {e}"))?;
     std::fs::write(dest.with_extension("json.remote"), &pretty)
         .map_err(|e| format!("Failed to write sidecar: {e}"))?;
     Ok(serde_json::json!({ "message": format!("Installed {rel}"), "filename": rel }).to_string())
+}
+
+/// Dev-only: overwrite the repo's community template JSON with the currently
+/// saved user copy. Also refreshes the `.remote` sidecar so the template shows
+/// as unmodified ("community") immediately after the write.
+#[tauri::command]
+fn backend_overwrite_community_template(filename: String) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        let rel = validate_template_path(&filename)?;
+        let name = rel.trim_end_matches(".json");
+        let user_path = templates_user_dir().join(&rel);
+        let content = std::fs::read_to_string(&user_path)
+            .map_err(|e| format!("Failed to read user template: {e}"))?;
+        let repo_path = repo_templates_dir().join(name).join(&rel);
+        if !repo_path.exists() {
+            return Err(format!("Repo template not found: {}", repo_path.display()));
+        }
+        std::fs::write(&repo_path, &content)
+            .map_err(|e| format!("Failed to write repo template: {e}"))?;
+        // Keep sidecar in sync so the template reads as "community" (not "community-modified").
+        std::fs::write(user_path.with_extension("json.remote"), &content)
+            .map_err(|e| format!("Failed to update sidecar: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    Err("Only available in dev mode".to_string())
 }
 
 // ─── Native Rust renderer ─────────────────────────────────────────────────────
@@ -2024,6 +2032,7 @@ pub fn run() {
             probe_video,
             backend_community_templates,
             backend_install_community_template,
+            backend_overwrite_community_template,
             backend_delete_template,
             backend_save_template_preview,
             backend_report_issue,
