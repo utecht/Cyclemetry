@@ -812,6 +812,23 @@ fn backend_delete_activity(filename: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn backend_dev_clear_cache() -> Result<(), String> {
+    for dir in [uploads_dir(), templates_user_dir()] {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    std::fs::remove_dir_all(&p).ok();
+                } else {
+                    std::fs::remove_file(&p).ok();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn backend_default_output_dir() -> String {
     default_output_dir().to_string_lossy().to_string()
 }
@@ -1979,6 +1996,7 @@ pub fn run() {
             backend_list_activities,
             backend_load_saved_activity,
             backend_delete_activity,
+            backend_dev_clear_cache,
             backend_upload,
             probe_video,
             backend_community_templates,

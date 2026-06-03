@@ -307,7 +307,8 @@
             app.errorMessage = e.message
           }),
         ),
-        listen('menu_dev_reset', () => {
+        listen('menu_dev_reset', async () => {
+          await backend.devClearCache().catch(() => {})
           sessionStorage.setItem('dev_reset', '1')
           window.location.reload()
         }),

@@ -191,6 +191,8 @@ export const loadSavedActivity = (filename) =>
 export const deleteActivity = (filename) =>
   invoke('backend_delete_activity', { filename })
 
+export const devClearCache = () => invoke('backend_dev_clear_cache')
+
 /**
  * @param {string} gpxFilename
  * @param {number} sceneStart
