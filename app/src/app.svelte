@@ -67,10 +67,20 @@
     return preset ? preset.label : `${app.outputWidth}×${app.outputHeight}`
   })
 
+  function isHeaderInteractiveTarget(target) {
+    return target.closest('button, input, a, select, [role="button"]')
+  }
+
   function onHeaderMousedown(e) {
-    if (e.button !== 0) return
-    if (e.target.closest('button, input, a, select, [role="button"]')) return
+    if (e.button !== 0 || e.detail > 1) return
+    if (isHeaderInteractiveTarget(e.target)) return
     getCurrentWindow().startDragging()
+  }
+
+  function onHeaderDblclick(e) {
+    if (e.button !== 0) return
+    if (isHeaderInteractiveTarget(e.target)) return
+    getCurrentWindow().toggleMaximize()
   }
 
   function videoBasename(path) {
@@ -530,6 +540,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
     onmousedown={onHeaderMousedown}
+    ondblclick={onHeaderDblclick}
     class="h-14 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 pr-4 pl-[96px] z-50"
   >
     <!-- ── Template toolbar ─────────────────────────────────────────────────── -->
