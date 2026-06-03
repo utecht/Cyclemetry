@@ -1,0 +1,75 @@
+name: CI
+
+# Continuous check so main is known-good before any release is dispatched.
+# Runs the same preflight as `pnpm release:check`: frontend lint, website build,
+# and a release `cargo check` against every platform's Tauri config (which
+# validates the bundle resource globs that have broken release builds before).
+# This is the cheap check — it does not produce installers. The full
+# multi-platform build still lives in release.yml (manual dispatch).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Newer pushes cancel in-flight runs for the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            wget
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm -C app install
+
+      - name: Install website dependencies
+        run: pnpm -C website install
+
+      - name: Stub bundled binaries
+        # ffmpeg binaries are gitignored and only fetched in the release build.
+        # cargo check just validates that the configured resource paths exist,
+        # so empty placeholders are enough to exercise the bundle globs here.
+        run: |
+          : > resources/ffmpeg
+          : > resources/ffmpeg.exe
+
+      - name: Release preflight
+        run: node scripts/release-check.mjs

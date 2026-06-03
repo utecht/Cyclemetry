@@ -35,15 +35,53 @@ Drop a `.ttf` or `.otf` file into `resources/fonts/`. The Tauri bundler picks up
 
 ## Releasing
 
-1. Set the new release version in `src-tauri/Cargo.toml`.
-2. Add the matching changelog page at `website/content/changelog/vX-Y-Z.mdx`, then add it to the release table in `website/content/changelog/index.mdx` and `_meta.js`.
-3. Run the release command from the repo root:
+Release with a single command that picks the next version for you:
 
 ```bash
-pnpm release
+pnpm release patch   # 0.2.0 -> 0.2.1
+pnpm release minor   # 0.2.0 -> 0.3.0
+pnpm release major   # 0.2.0 -> 1.0.0
+pnpm release 1.4.2   # explicit version
+pnpm release         # release the version already in src-tauri/Cargo.toml
 ```
 
-The release script checks that the website changelog entry exists before it tags anything. It syncs the version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits those release metadata and changelog files, creates a `vX.Y.Z` git tag, pushes `main` plus the tag, and starts the Release workflow for all platforms with publishing enabled.
+You no longer hand-edit the version in `src-tauri/Cargo.toml` — the bump argument computes it and `src-tauri/Cargo.toml` stays the single source of truth. The command is hands-off; it runs for ~10–20 minutes because it gates the release on a full build (see below).
+
+What `pnpm release <bump>` does, in order:
+
+1. **Preflight.** Runs [`pnpm release:check`](#release-preflight) locally and aborts if anything fails — *before* it bumps, commits, or pushes anything.
+2. **Changelog.** If the entry for the target version is missing, it generates `website/content/changelog/vX-Y-Z.mdx` from the git commits since the last release tag (grouped into Features / Bug Fixes / Improvements via Conventional Commit prefixes), adds the release-table row in `index.mdx`, and adds the nav label in `_meta.js`. The generated notes are printed; edit the page if you want a cleaner draft before it continues.
+3. **Push (no tag).** Bumps `src-tauri/Cargo.toml`, syncs the version to `package.json`, `app/package.json`, and `src-tauri/Cargo.lock`, commits the release metadata and changelog, and pushes `main` — but **not** the tag yet.
+4. **Gate.** Dispatches the full multi-platform Release workflow with **publishing disabled** and waits for it to finish. If the build is red, the command stops here: **no tag is created and nothing is published.** `main` carries only the (unreleased) version-bump commit — fix forward and re-run.
+5. **Publish.** Once the gate build is green, it creates and pushes the `vX.Y.Z` tag and dispatches the Release workflow with publishing enabled.
+
+The point of the gate is that a broken build can never leave a dangling tag or a half-published release the way it could when the tag was pushed up front. Because the build only runs against a pushed ref, the version-bump commit lands on `main` before the gate — that is the one side effect of a failed build, and it is harmless metadata.
+
+**Retrying after a failed gate build:** the version is already bumped on `main`, so re-run with no argument (which releases the version already in `Cargo.toml`) after pushing your fix:
+
+```bash
+pnpm release         # retry the in-progress version after fixing the build
+```
+
+### Continuous CI
+
+Every push and pull request to `main` runs the [`CI` workflow](https://github.com/walkersutton/cyclemetry/actions/workflows/ci.yml), which runs the same preflight as `pnpm release:check` (lint, website build, and a release `cargo check` against every platform's Tauri config). This surfaces compile errors and stale bundle globs continuously, so `main` is already known-good by the time you release — instead of discovering a break minutes into a release build. It is the cheap check and does not produce installers.
+
+### Release Preflight
+
+`pnpm release` runs this automatically, but you can run it on its own anytime:
+
+```bash
+pnpm release:check
+```
+
+It runs:
+
+- `pnpm -C app lint`
+- `pnpm -C website build`
+- `cargo check --release` against each real platform config (`tauri.macos.conf.json`, `tauri.linux.conf.json`, `tauri.windows.conf.json`)
+
+The cargo check step runs Tauri's build script, which validates every bundle resource glob in the merged config — the exact failure mode that has broken release builds (`glob pattern ... path not found`). Because it reads the **real** per-platform config files rather than hand-copied JSON, the check can't silently drift from what CI actually bundles. It needs the local `resources/ffmpeg`/`resources/ffmpeg.exe` placeholders to exist (they are gitignored but present after a normal checkout/build). This is fast but does not replace a real CI build.
 
 ### Test a Release Build
 
@@ -57,7 +95,9 @@ gh workflow run release.yml -f platform=linux -f publish_release=false
 
 This builds the release artifacts in GitHub Actions and uploads them as workflow artifacts, but does not publish anything to GitHub Releases. Use `-f platform=all` only when you want to test every platform in one run.
 
-The Release workflow is manual-only. In the GitHub UI, choose a platform and leave `publish_release` unchecked to test builds. The `pnpm release` command starts the all-platform publishing workflow for the `vX.Y.Z` release.
+`pnpm release` already runs an all-platform `publish_release=false` build as its gate, so you rarely need to do this by hand — reach for it only when iterating on a single platform's build (signing, installers, bundled resources) without going through a full release.
+
+The Release workflow is manual-only. In the GitHub UI, choose a platform and leave `publish_release` unchecked to test builds.
 
 ## Inspect Built App Logs
 
