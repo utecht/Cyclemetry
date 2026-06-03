@@ -165,6 +165,7 @@
       "id": "value-3",
       "text_align": "center",
       "type": "value",
+      "unit": "mph",
       "value": "speed",
       "x": 601,
       "y": 193
