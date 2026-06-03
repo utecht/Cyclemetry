@@ -11,6 +11,7 @@ fn file_path() -> PathBuf {
         .join("recent_gpx.json")
 }
 
+#[cfg(target_os = "macos")]
 pub fn read() -> Vec<String> {
     let data = std::fs::read_to_string(file_path()).unwrap_or_default();
     serde_json::from_str(&data).unwrap_or_default()
@@ -24,6 +25,7 @@ pub fn save(files: &[String]) {
     std::fs::write(path, serde_json::to_string(files).unwrap_or_default()).ok();
 }
 
+#[cfg(target_os = "macos")]
 pub fn clear() {
     save(&[]);
 }

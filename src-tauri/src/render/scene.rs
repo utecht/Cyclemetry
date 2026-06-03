@@ -774,19 +774,20 @@ fn preflight_ffmpeg_encoder(ffmpeg_bin: &str, codec: &str) -> Result<(), String>
     })
 }
 
+#[cfg(unix)]
 fn ensure_executable(path: &std::path::Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(path) {
-            let mut perms = meta.permissions();
-            if perms.mode() & 0o111 == 0 {
-                perms.set_mode(perms.mode() | 0o755);
-                let _ = std::fs::set_permissions(path, perms);
-            }
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        if perms.mode() & 0o111 == 0 {
+            perms.set_mode(perms.mode() | 0o755);
+            let _ = std::fs::set_permissions(path, perms);
         }
     }
 }
+
+#[cfg(not(unix))]
+fn ensure_executable(_path: &std::path::Path) {}
 
 #[cfg(test)]
 mod tests {
