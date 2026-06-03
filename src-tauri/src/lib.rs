@@ -169,6 +169,37 @@ fn template_display_name(s: &str) -> String {
         .join(" ")
 }
 
+fn template_display_names_from_metadata(
+    metadata: &serde_json::Value,
+) -> std::collections::HashMap<String, String> {
+    metadata
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|template| {
+            let name = template.get("name")?.as_str()?.to_string();
+            let display = template.get("displayName")?.as_str()?.to_string();
+            Some((name, display))
+        })
+        .collect()
+}
+
+fn template_metadata_display_name(
+    display_names: &std::collections::HashMap<String, String>,
+    name: &str,
+) -> String {
+    display_names
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| template_display_name(name))
+}
+
+fn set_template_name(template: &mut serde_json::Value, name: &str) {
+    if let Some(obj) = template.as_object_mut() {
+        obj.entry("name").or_insert_with(|| serde_json::json!(name));
+    }
+}
+
 /// Read a JPG into a base64 `data:` URL value, or `None` if it doesn't exist.
 fn jpg_data_url(path: &Path) -> Option<serde_json::Value> {
     if !path.exists() {
@@ -445,6 +476,10 @@ fn app_build_info() -> String {
 fn backend_list_templates() -> Result<String, String> {
     let mut templates: Vec<serde_json::Value> = Vec::new();
     let dir = templates_user_dir();
+    #[cfg(debug_assertions)]
+    let display_names = repo_template_display_names();
+    #[cfg(not(debug_assertions))]
+    let display_names = std::collections::HashMap::new();
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Ok("[]".to_string());
     };
@@ -468,7 +503,9 @@ fn backend_list_templates() -> Result<String, String> {
                         .and_then(|n| n.as_str())
                         .map(|s| s.to_string())
                 })
-                .unwrap_or_else(|| template_display_name(fname.trim_end_matches(".json")));
+                .unwrap_or_else(|| {
+                    template_metadata_display_name(&display_names, fname.trim_end_matches(".json"))
+                });
             let sidecar = dir.join(format!("{fname}.remote"));
             let type_label = if sidecar.exists() {
                 let current = std::fs::read_to_string(&path).unwrap_or_default();
@@ -1258,6 +1295,9 @@ const GITHUB_API_TEMPLATES: &str =
 const GITHUB_RAW_TEMPLATES: &str =
     "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates";
 #[cfg(not(debug_assertions))]
+const GITHUB_RAW_TEMPLATE_METADATA: &str =
+    "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/website/content/templates.json";
+#[cfg(not(debug_assertions))]
 const COMMUNITY_TEMPLATES_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 #[cfg(not(debug_assertions))]
 static COMMUNITY_TEMPLATES_CACHE: OnceLock<Mutex<Option<(std::time::Instant, String)>>> =
@@ -1290,6 +1330,19 @@ fn repo_templates_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("templates"))
 }
 
+#[cfg(debug_assertions)]
+fn repo_template_display_names() -> std::collections::HashMap<String, String> {
+    let metadata_path = repo_templates_dir()
+        .parent()
+        .map(|root| root.join("website").join("content").join("templates.json"))
+        .unwrap_or_else(|| PathBuf::from("website/content/templates.json"));
+    std::fs::read_to_string(metadata_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .map(|metadata| template_display_names_from_metadata(&metadata))
+        .unwrap_or_default()
+}
+
 /// Template folders use lowercase snake_case names (e.g. `crit`, `power_and_hr`).
 /// Dirs starting with uppercase (e.g. `TO_BE_REFACTORED`) or `.` are skipped.
 fn is_template_dir_name(name: &str) -> bool {
@@ -1299,6 +1352,7 @@ fn is_template_dir_name(name: &str) -> bool {
 #[cfg(debug_assertions)]
 fn community_templates_from_disk() -> Result<String, String> {
     let dir = repo_templates_dir();
+    let display_names = repo_template_display_names();
     let mut templates: Vec<serde_json::Value> = Vec::new();
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Ok("[]".to_string());
@@ -1314,7 +1368,7 @@ fn community_templates_from_disk() -> Result<String, String> {
             let json_path = dir.join(&name).join(format!("{name}.json"));
             if json_path.exists() {
                 let id = format!("{name}.json");
-                let display = template_display_name(&name);
+                let display = template_metadata_display_name(&display_names, &name);
                 let preview_url = jpg_data_url(&dir.join(&name).join("preview.jpg"))
                     .unwrap_or(serde_json::Value::Null);
                 templates.push(serde_json::json!({
@@ -1355,13 +1409,23 @@ async fn community_templates_from_github() -> Result<String, String> {
         .map_err(|e| format!("Parse error: {e}"))?;
 
     let entries = root.as_array().ok_or("Expected array from GitHub API")?;
+    let display_names = match client.get(GITHUB_RAW_TEMPLATE_METADATA).send().await {
+        Ok(resp) => match resp.json::<serde_json::Value>().await {
+            Ok(metadata) => template_display_names_from_metadata(&metadata),
+            Err(_) => std::collections::HashMap::new(),
+        },
+        Err(_) => std::collections::HashMap::new(),
+    };
 
     // Collect template metadata first, then fetch all preview images concurrently.
     let mut metas: Vec<(String, String)> = Vec::new(); // (name, display)
     for entry in entries {
         let name = entry["name"].as_str().unwrap_or("");
         if entry["type"] == "dir" && is_template_dir_name(name) {
-            metas.push((name.to_string(), template_display_name(name)));
+            metas.push((
+                name.to_string(),
+                template_metadata_display_name(&display_names, name),
+            ));
         }
     }
 
@@ -1420,10 +1484,16 @@ async fn install_community_template_impl(
     let name = rel.trim_end_matches(".json");
     // Source: templates/{name}/{name}.json
     let src = repo_templates_dir().join(name).join(rel);
-    std::fs::copy(&src, dest).map_err(|e| format!("Failed to copy template: {e}"))?;
     let content =
-        std::fs::read_to_string(dest).map_err(|e| format!("Failed to read template: {e}"))?;
-    std::fs::write(dest.with_extension("json.remote"), &content)
+        std::fs::read_to_string(src).map_err(|e| format!("Failed to read template: {e}"))?;
+    let mut parsed: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid template JSON: {e}"))?;
+    let display = template_metadata_display_name(&repo_template_display_names(), name);
+    set_template_name(&mut parsed, &display);
+    let pretty =
+        serde_json::to_string_pretty(&parsed).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(dest, &pretty).map_err(|e| format!("Failed to write template: {e}"))?;
+    std::fs::write(dest.with_extension("json.remote"), &pretty)
         .map_err(|e| format!("Failed to write sidecar: {e}"))?;
     Ok(serde_json::json!({ "message": format!("Installed {rel}"), "filename": rel }).to_string())
 }
@@ -1449,6 +1519,23 @@ async fn install_community_template_impl(
         .map_err(|e| format!("Read error: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid template JSON: {e}"))?;
+    let display_names = match reqwest::Client::builder()
+        .user_agent("cyclemetry-app")
+        .build()
+        .map_err(|e| format!("Client error: {e}"))?
+        .get(GITHUB_RAW_TEMPLATE_METADATA)
+        .send()
+        .await
+    {
+        Ok(resp) => match resp.json::<serde_json::Value>().await {
+            Ok(metadata) => template_display_names_from_metadata(&metadata),
+            Err(_) => std::collections::HashMap::new(),
+        },
+        Err(_) => std::collections::HashMap::new(),
+    };
+    let mut parsed = parsed;
+    let display = template_metadata_display_name(&display_names, name);
+    set_template_name(&mut parsed, &display);
     let pretty =
         serde_json::to_string_pretty(&parsed).map_err(|e| format!("Serialize error: {e}"))?;
     std::fs::write(dest, &pretty).map_err(|e| format!("Failed to write template: {e}"))?;

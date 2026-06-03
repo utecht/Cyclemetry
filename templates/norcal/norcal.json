@@ -23,11 +23,7 @@
       "min": 0,
       "max": 35,
       "unit": "mph",
-      "gradient": [
-        "#cc2e1a",
-        "$accent",
-        "$gold"
-      ],
+      "gradient": ["#cc2e1a", "$accent", "$gold"],
       "progress_color": "$accent",
       "arc_color": "#ffffff20",
       "arc_width": 36,
