@@ -92,6 +92,7 @@
       "needle_width": 6,
       "progress_color": "$primary",
       "type": "gauge",
+      "unit": "mph",
       "value": "speed",
       "width": 80,
       "x": 3000,
