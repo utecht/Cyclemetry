@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "scripts": {
     "start": "remotion studio",
-    "render": "remotion render Demo out/demo.mp4 --codec=h264",
-    "render:gif": "remotion render Demo out/demo.gif",
+    "record": "python3 record.py",
+    "render": "pnpm run render:video && pnpm run render:gif",
+    "render:video": "remotion render Demo out/demo.mp4 --codec=h264",
+    "render:gif": "remotion render Demo out/demo.gif --every-nth-frame=4 --scale=0.5",
     "probe": "python3 probe.py"
   },
   "dependencies": {

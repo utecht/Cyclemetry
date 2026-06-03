@@ -1,79 +1,93 @@
 # Demo
 
-Remotion animation of the Cyclemetry app. Instead of stitching static screenshots
-together with a synthetic cursor, the demo plays **one real screen recording** of
-the app, time-remapped (fast through the boring parts, normal speed at the clicks)
-with synthetic click rings drawn over the real cursor. Output is `out/demo.mp4`.
+Remotion animation of the Cyclemetry app. **You don't record it yourself.**
+`record.py` drives the *real* app (real native dialogs, real Rust render) while
+auto-recording the app window — with the real system cursor — to
+`public/screen.mov`, then generates the speed timeline straight from the actions
+it performed. Remotion time-remaps the footage: fast through the boring parts,
+real-time at each click/hover/drag. Output is `out/demo.mp4`.
 
-## Why a recording instead of screenshots
+## Why this works
 
-The old pipeline drove the app, captured numbered screenshots, and animated a fake
-cursor on top — three independently hand-tuned timelines (cursor position, click
-pulse, screenshot swap) that constantly drifted out of sync, so clicks landed in the
-wrong place at the wrong moment. A real recording keeps the cursor, the clicks, and
-the UI transitions perfectly in sync because they're the same footage.
+The footage is the actual app — cursor, clicks, and UI transitions are always in
+sync because they're the same pixels. And because `record.py` *performs* every
+action, the slow-at-action speed ramps are generated, not hand-tuned. No manual
+recording, no eyeballing timestamps, no drift.
 
 ## Workflow
 
-### 1. Record the app
-
-1. Open Cyclemetry (`pnpm dev` or the built app).
-2. Screen-record the full session you want to show (open template → open activity →
-   trim → click render → final video plays). ⌘⇧5 → record the app window, or use
-   QuickTime. Move deliberately; you can speed it up later, so err on the slow side.
-3. Save the recording as **`public/screen.mov`**.
-
-### 2. Probe it
-
 ```bash
-npm run probe        # or: python3 demo/probe.py
+# 1. Open Cyclemetry first (the app must be running)
+pnpm dev                      # from the repo root
+
+# 2. Drive + record + generate timeline  (one command)
+python3 demo/record.py        # first run: build your action sequence (~30s)
+
+# 3. Render
+npm start                     # Remotion Studio — live preview while you tweak
+npm run render                # out/demo.mp4
+npm run render:gif            # out/demo.gif
 ```
 
-This reads the recording's resolution / fps / length and writes
-`src/recording.generated.ts`, so the composition sizes itself to the footage.
-Requires `ffprobe` (`brew install ffmpeg`).
+### First run: build the sequence
 
-### 3. Tune the timeline
+The first run (or `python3 demo/record.py recal`) opens a free-form builder where
+you compose your own steps — there's no fixed storyboard. Point the mouse and press:
 
-Everything you edit lives in **`src/timeline.ts`**:
+| key | action |
+|---|---|
+| `c` | click here |
+| `h` | hover/dwell here |
+| `d` | drag **start** (grab point) |
+| `e` | drag **end** (release point) — pairs with the preceding `d` |
+| `u` | undo last step |
+| `g` | done — record & generate |
+| `q` | quit |
 
-- `DEFAULT_SPEED` — global speed-up multiplier (2 = twice as fast).
-- `SEGMENTS` — per-range speed overrides in **source seconds**. Drop back to `speed: 1`
-  around the important clicks, or blast (`speed: 4`) through long boring stretches.
-- `CLICKS` — `{ sec, x, y }` markers for the synthetic ring pulses. `sec` is the
-  **source time** of the click; `x,y` are **source pixels** (the cursor tip).
-- `SCALE` — downscale the output if renders are slow (click coords scale with it).
+The sequence is saved to `storyboard.coords.json` and replayed verbatim on later
+runs, so making a fresh demo afterward is a single command. Rebuild it whenever
+you want different steps, or when the app's layout / window size changes.
 
-To find a click's `sec`/`x`/`y`: open the studio (`npm start`), scrub to the click,
-read the source time, and eyeball the cursor position — or open the raw `screen.mov`
-in any player.
+### Requirements
 
-### 4. Render
+- macOS with `ffmpeg` (`brew install ffmpeg`).
+- **Screen Recording** and **Accessibility** permission for your terminal
+  (System Settings → Privacy & Security) — needed to capture the screen and to
+  drive the mouse.
 
-```bash
-npm start            # Remotion Studio — scrub + live preview while tuning
-npm run render       # out/demo.mp4
-npm run render:gif   # out/demo.gif
-```
+## Tuning
+
+**Cursor speed** — how fast the cursor travels between points is set at *record
+time* by `MOVE_DUR` in `record.py` (smaller = snappier). Change it and re-record.
+
+Generated values land in `src/timeline.generated.ts` (don't edit by hand). For
+playback tweaks, edit `src/timeline.ts` (no re-record needed — just re-render):
+
+- `GEN_SYNC_OFFSET` (in `timeline.generated.ts`) — if the slow-down windows feel
+  early or late, nudge by ±0.1s.
+- `MANUAL_SEGMENTS` — hand-add speed ramps on top of the generated ones.
+- `GEN_DEFAULT_SPEED` — global speed-up multiplier for the boring stretches.
+- `SCALE` — downscale the output if renders are slow.
 
 ## How the time-remap works
 
-`timeline.ts` builds an output-frame → source-frame map: each source frame occupies
-`1 / speed` output frames, so faster segments consume fewer output frames. `Demo.tsx`
-then feeds `OffthreadVideo` a per-frame `startFrom` (= `sourceFrame − outputFrame`),
-which is exactly how Remotion seeks the source for a given composition frame. The
-composition fps is kept equal to the source fps so that math stays 1:1.
+`timeline.ts` builds an output-frame → source-frame map: each source frame
+occupies `1 / speed` output frames, so faster segments consume fewer output
+frames. `Demo.tsx` feeds `OffthreadVideo` a per-frame `startFrom`
+(= `sourceFrame − outputFrame`), exactly how Remotion seeks the source for a
+given composition frame. Composition fps is kept equal to source fps so the math
+stays 1:1.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `public/screen.mov` | the raw recording (you provide this) |
+| `record.py` | **the entry point** — drives the app, records, generates the timeline |
+| `storyboard.coords.json` | your saved action sequence (reused across runs) |
+| `public/screen.mov` | auto-recorded footage (gitignored; regenerated each run) |
 | `probe.py` | reads the recording → `src/recording.generated.ts` |
-| `src/recording.generated.ts` | auto-generated source dims / fps / length |
-| `src/timeline.ts` | **the one file you edit** — speed segments, clicks, scale |
-| `src/Demo.tsx` | composition: remapped video + click rings |
+| `src/recording.generated.ts` | auto: source dims / fps / length |
+| `src/timeline.generated.ts` | auto: speed segments |
+| `src/timeline.ts` | manual tuning knobs (sync offset, scale, overrides) |
+| `src/Demo.tsx` | composition: remapped video |
 | `src/Root.tsx` | wires composition dims / fps / duration |
-
-> The old screenshot-based scripts (`gen.py`, `capture.py`, `coord-capture.py`) and
-> `public/shots/` are superseded by this flow and can be deleted.
