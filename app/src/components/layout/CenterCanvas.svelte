@@ -39,6 +39,7 @@
   const MAX_CONCURRENT = 3
   const PREVIEW_SLOW_MS = 8000
   const PREVIEW_HARD_TIMEOUT_MS = 45000
+  const MAX_VIEWER_ZOOM = 10
 
   let previewFps = $derived(app.previewFps ?? 1)
 
@@ -404,7 +405,7 @@
     if (e.ctrlKey) {
       // Pinch / Ctrl+wheel → zoom toward the cursor.
       e.preventDefault()
-      const next = Math.min(6, Math.max(1, zoom * Math.exp(-e.deltaY * 0.01)))
+      const next = Math.min(MAX_VIEWER_ZOOM, Math.max(1, zoom * Math.exp(-e.deltaY * 0.01)))
       if (next === zoom) return
       const rect = stageEl.getBoundingClientRect()
       const ratio = 1 - next / zoom
@@ -465,7 +466,7 @@
     <div class="shrink-0 flex items-center justify-end px-3 py-1 border-b border-zinc-800/60 bg-zinc-950/80">
       <button
         onclick={resetZoom}
-        class="text-[10px] font-mono text-zinc-400 hover:text-primary transition-colors"
+        class="cursor-pointer text-[10px] font-mono text-zinc-400 hover:text-primary transition-colors"
         title="Reset zoom (or double-click the canvas)"
       >
         {Math.round(zoom * 100)}% · reset
