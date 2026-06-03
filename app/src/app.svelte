@@ -25,13 +25,11 @@
   import {
     Activity,
     AlertTriangle,
-    Check,
     ChevronDown,
     Clock,
     Film,
     LayoutGrid,
     Monitor,
-    Pencil,
     Play,
     RotateCcw,
     Save,
@@ -102,9 +100,6 @@
   )
 
   // ── Template toolbar helpers ───────────────────────────────────────────────
-  let renaming = $state(false)
-  let renameValue = $state('')
-
   let templateLabel = $derived.by(() => {
     if (!app.loadedTemplateFilename) return null
     const t = (app.templates ?? []).find(
@@ -112,27 +107,6 @@
     )
     return t?.name ?? app.loadedTemplateFilename.replace('.json', '')
   })
-
-  function startRename() {
-    if (!app.loadedTemplateFilename) return
-    renameValue =
-      templateLabel ?? app.loadedTemplateFilename.replace('.json', '')
-    renaming = true
-  }
-
-  function cancelRename() {
-    renaming = false
-    renameValue = ''
-  }
-
-  async function submitRename() {
-    try {
-      await app.renameTemplate(renameValue)
-      cancelRename()
-    } catch (e) {
-      app.errorMessage = e?.message ?? String(e)
-    }
-  }
 
   let rendering = $state(false)
   let showSettings = $state(false)
@@ -560,91 +534,53 @@
   >
     <!-- ── Template toolbar ─────────────────────────────────────────────────── -->
     <div class="flex items-center gap-1 shrink-0">
-      {#if renaming}
-        <form
-          class="flex items-center gap-1"
-          onsubmit={(e) => {
-            e.preventDefault()
-            submitRename()
+      <!-- Template picker -->
+      <Tooltip content="Choose a template" side="bottom" delay={TOOLTIP_DELAY}>
+        <button
+          onclick={() => {
+            openTemplatePicker()
           }}
+          class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep ===
+          1
+            ? 'onboarding-glow'
+            : ''}"
         >
-          <input
-            bind:value={renameValue}
-            class="h-7 w-36 rounded-[6px] border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-100
-                   focus:outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Template name"
-          />
-          <button
-            type="submit"
-            title="Confirm rename"
-            class="hdr-btn hdr-btn-icon"><Check size={12} /></button
+          <LayoutGrid size={12} class="text-zinc-500 shrink-0" />
+          <span
+            class="truncate {templateLabel ? 'text-zinc-200' : 'text-zinc-500'}"
           >
-          <button
-            type="button"
-            onclick={cancelRename}
-            title="Cancel"
-            class="hdr-btn hdr-btn-icon"><X size={12} /></button
-          >
-        </form>
-      {:else}
-        <!-- Template picker -->
-        <Tooltip content="Choose a template" side="bottom" delay={TOOLTIP_DELAY}>
-          <button
-            onclick={() => {
-              openTemplatePicker()
-            }}
-            class="hdr-btn px-2.5 gap-1.5 max-w-[170px] min-w-0 {onboardingStep ===
-            1
-              ? 'onboarding-glow'
-              : ''}"
-          >
-            <LayoutGrid size={12} class="text-zinc-500 shrink-0" />
-            <span
-              class="truncate {templateLabel ? 'text-zinc-200' : 'text-zinc-500'}"
+            {templateLabel ?? 'Templates…'}
+          </span>
+          {#if app.isTemplateModified}
+            <span class="text-amber-400 shrink-0" title="Unsaved changes"
+              >•</span
             >
-              {templateLabel ?? 'Templates…'}
-            </span>
-            {#if app.isTemplateModified}
-              <span class="text-amber-400 shrink-0" title="Unsaved changes"
-                >•</span
-              >
-            {/if}
-          </button>
+          {/if}
+        </button>
+      </Tooltip>
+
+      <!-- Save — amber when modified -->
+      {#if app.isTemplateModified}
+        <Tooltip content="Save template" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={() =>
+              app.saveTemplate().catch((e) => {
+                app.errorMessage = e?.message ?? String(e)
+              })}
+            class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
+                   hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+            ><Save size={12} /></button
+          >
         </Tooltip>
 
-        <!-- Rename -->
-        {#if app.loadedTemplateFilename}
-          <Tooltip content="Rename template" side="bottom" delay={TOOLTIP_DELAY}>
-            <button
-              onclick={startRename}
-              class="hdr-btn hdr-btn-icon shrink-0"><Pencil size={12} /></button
-            >
-          </Tooltip>
-        {/if}
-
-        <!-- Save — amber when modified -->
-        {#if app.isTemplateModified}
-          <Tooltip content="Save template" side="bottom" delay={TOOLTIP_DELAY}>
-            <button
-              onclick={() =>
-                app.saveTemplate().catch((e) => {
-                  app.errorMessage = e?.message ?? String(e)
-                })}
-              class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
-                     hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
-              ><Save size={12} /></button
-            >
-          </Tooltip>
-
-          <!-- Revert to last saved -->
-          <Tooltip content="Revert to last saved" side="bottom" delay={TOOLTIP_DELAY}>
-            <button
-              onclick={handleRevertClick}
-              class="hdr-btn hdr-btn-icon shrink-0"
-              ><RotateCcw size={12} /></button
-            >
-          </Tooltip>
-        {/if}
+        <!-- Revert to last saved -->
+        <Tooltip content="Revert to last saved" side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={handleRevertClick}
+            class="hdr-btn hdr-btn-icon shrink-0"
+            ><RotateCcw size={12} /></button
+          >
+        </Tooltip>
       {/if}
     </div>
 

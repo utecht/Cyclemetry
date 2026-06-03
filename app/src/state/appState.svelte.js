@@ -962,33 +962,6 @@ export function createAppState() {
     showSuccess(`Created "${templateDisplayName(filename)}"`)
   }
 
-  async function renameTemplate(nextName = null) {
-    if (!loadedTemplateFilename) {
-      errorMessage = 'Load or create a template before renaming it.'
-      return
-    }
-    const current = loadedTemplateFilename.replace(/\.json$/, '')
-    const name = nextName ?? prompt('Rename template:', current)
-    if (!name) return
-    const filename = toFilename(name)
-    if (!filename || filename === loadedTemplateFilename) return
-    try {
-      await backend.renameTemplate(loadedTemplateFilename, filename, name)
-    } catch (e) {
-      const message = e?.message ?? String(e)
-      if (!message.includes('Template not found')) throw e
-      if (!config) throw e
-      await backend.saveTemplate(filename, {
-        ...stripDefaults(toEditorFormat(config)),
-        name,
-      })
-      markPristine()
-    }
-    loadedTemplateFilename = filename
-    await fetchTemplates()
-    showSuccess(`Renamed to "${name}"`)
-  }
-
   async function fetchTemplates() {
     try {
       templates = await backend.listTemplates()
@@ -1322,7 +1295,6 @@ export function createAppState() {
     saveTemplate,
     saveTemplateAs,
     newTemplate,
-    renameTemplate,
     revertTemplate,
   }
 }

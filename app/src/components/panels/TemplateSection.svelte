@@ -1,36 +1,14 @@
 <script>
   import { getContext } from 'svelte'
-  import { Check, LayoutGrid, Pencil, X } from 'lucide-svelte'
+  import { LayoutGrid } from 'lucide-svelte'
 
   const app = getContext('app')
-  let renaming = $state(false)
-  let renameValue = $state('')
 
   let currentLabel = $derived.by(() => {
     if (!app.loadedTemplateFilename) return null
     const t = (app.templates ?? []).find((t) => t.id === app.loadedTemplateFilename)
     return t?.name ?? app.loadedTemplateFilename.replace('.json', '')
   })
-
-  function startRename() {
-    if (!app.loadedTemplateFilename) return
-    renameValue = currentLabel ?? app.loadedTemplateFilename.replace('.json', '')
-    renaming = true
-  }
-
-  function cancelRename() {
-    renaming = false
-    renameValue = ''
-  }
-
-  async function submitRename() {
-    try {
-      await app.renameTemplate(renameValue)
-      cancelRename()
-    } catch (e) {
-      app.errorMessage = e?.message ?? String(e)
-    }
-  }
 </script>
 
 <section class="px-4 py-3 border-b border-zinc-800">
@@ -51,52 +29,7 @@
       </span>
       <LayoutGrid size={12} class="shrink-0 text-zinc-500" />
     </button>
-
-    {#if app.loadedTemplateFilename}
-      <button
-        onclick={startRename}
-        title="Rename template"
-        class="shrink-0 h-7 w-7 rounded-[6px] border border-zinc-700 bg-zinc-800/40
-               text-zinc-400 hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-100
-               transition-colors focus:outline-none focus:ring-1 focus:ring-ring
-               flex items-center justify-center"
-      >
-        <Pencil size={12} />
-      </button>
-    {/if}
   </div>
-
-  {#if renaming}
-    <form class="mt-2 flex items-center gap-1.5" onsubmit={(e) => { e.preventDefault(); submitRename() }}>
-      <input
-        bind:value={renameValue}
-        class="min-w-0 flex-1 h-7 rounded-[6px] border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100
-               focus:outline-none focus:ring-1 focus:ring-ring"
-        aria-label="Template name"
-      />
-      <button
-        type="submit"
-        class="h-7 w-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 text-zinc-300
-               hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-100
-               transition-colors focus:outline-none focus:ring-1 focus:ring-ring
-               flex items-center justify-center"
-        title="Save name"
-      >
-        <Check size={13} />
-      </button>
-      <button
-        type="button"
-        onclick={cancelRename}
-        class="h-7 w-7 rounded-[6px] border border-zinc-700 bg-zinc-800/40 text-zinc-500
-               hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200
-               transition-colors focus:outline-none focus:ring-1 focus:ring-ring
-               flex items-center justify-center"
-        title="Cancel rename"
-      >
-        <X size={13} />
-      </button>
-    </form>
-  {/if}
 
   {#if app.isTemplateModified}
     <button

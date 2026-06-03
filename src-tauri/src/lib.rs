@@ -541,71 +541,6 @@ fn backend_save_template(config: serde_json::Value, filename: String) -> Result<
 }
 
 #[tauri::command]
-fn backend_rename_template(
-    from: String,
-    to: String,
-    display_name: Option<String>,
-) -> Result<String, String> {
-    let from_rel = validate_template_path(&from)?;
-    let to_rel = validate_template_path(&to)?;
-    if from_rel == to_rel {
-        return Ok(
-            serde_json::json!({ "message": "Template name unchanged", "filename": to_rel })
-                .to_string(),
-        );
-    }
-
-    let user_dir = templates_user_dir();
-    let from_path = user_dir.join(&from_rel);
-    let to_path = user_dir.join(&to_rel);
-    if !from_path.exists() {
-        return Err(format!("Template not found: {from}"));
-    }
-    if to_path.exists() {
-        return Err(format!("A template named {to} already exists"));
-    }
-    if let Some(parent) = to_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
-    }
-
-    std::fs::rename(&from_path, &to_path).map_err(|e| format!("Failed to rename template: {e}"))?;
-
-    if let Some(label) = display_name {
-        if let Ok(content) = std::fs::read_to_string(&to_path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(obj) = json.as_object_mut() {
-                    obj.insert("name".to_string(), serde_json::Value::String(label));
-                    if let Ok(updated) = serde_json::to_string(&json) {
-                        std::fs::write(&to_path, updated).ok();
-                    }
-                }
-            }
-        }
-    }
-
-    let from_base = from_rel.trim_end_matches(".json");
-    let to_base = to_rel.trim_end_matches(".json");
-    let sidecars = [
-        (
-            user_dir.join(format!("{from_base}.jpg")),
-            user_dir.join(format!("{to_base}.jpg")),
-        ),
-        (
-            user_dir.join(format!("{from_base}.json.remote")),
-            user_dir.join(format!("{to_base}.json.remote")),
-        ),
-    ];
-    for (old_path, new_path) in sidecars {
-        if old_path.exists() && !new_path.exists() {
-            std::fs::rename(old_path, new_path).ok();
-        }
-    }
-
-    Ok(serde_json::json!({ "message": format!("Renamed {from_rel} to {to_rel}"), "filename": to_rel })
-        .to_string())
-}
-
-#[tauri::command]
 fn backend_import_template(path: String) -> Result<String, String> {
     let src = Path::new(&path);
     if !src.exists() {
@@ -1979,7 +1914,6 @@ pub fn run() {
             backend_list_templates,
             backend_get_template,
             backend_save_template,
-            backend_rename_template,
             backend_import_template,
             backend_open_templates,
             backend_default_output_dir,
