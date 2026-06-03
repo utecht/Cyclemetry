@@ -1,0 +1,76 @@
+---
+title: v0.2.0
+description: Cyclemetry v0.2.0 release notes — reference video preview, timeline alignment, template browsing, and editor polish.
+---
+
+import { Callout } from 'nextra/components'
+
+# v0.2.0
+
+<div className="blog-meta">Released 3 June 2026</div>
+
+<Callout type="info">
+  Download from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases/tag/v0.2.0)
+</Callout>
+
+## What's New
+
+### Reference Video Preview
+
+You can now add a local video to the editor as a preview backdrop. Cyclemetry probes the file for duration, codec, dimensions, and recording time, then shows it behind the overlay while you scrub and play the timeline.
+
+The reference video is used for alignment and preview only — exports still render the transparent telemetry overlay so you can composite it with your footage in your editor of choice.
+
+### Video Timeline Alignment
+
+The canvas now includes a video alignment bar when both an activity and reference video are loaded. Drag the video range to nudge the offset, snap it to the activity start, or align by camera recording time when the video's metadata makes that possible.
+
+This makes it much easier to line up ride data with real footage before rendering.
+
+### Activity Picker
+
+Recent and saved activities now have a proper picker instead of relying only on the file menu. You can load saved GPX files, remove stale entries, and recover more cleanly when an original file has moved.
+
+### Template Browser Improvements
+
+The template picker has been redesigned around installed templates and community templates. Public templates can now be browsed with previews, installed locally, and opened without manually moving files around.
+
+### Refreshed Public Templates
+
+The bundled templates have been cleaned up and expanded with proper preview images and documentation. This release refreshes Aaron, Crit, Jeff, NorCal, Safa, and Will, plus shared template assets for common icons and graphics.
+
+## Editor Improvements
+
+- Added dedicated opacity controls and improved color inputs
+- Added metric min/max controls for gauges, meters, and other value-driven elements
+- Improved label templating for filled meters
+- Polished playback controls, timeline behavior, and preview FPS handling
+- Improved dialog behavior so template, activity, and settings overlays do not fight each other
+- Tightened header button styling and video replacement controls
+- Improved default template stripping so saved files stay cleaner
+
+## Rendering & Reliability
+
+- Added video metadata probing through the bundled FFmpeg path
+- Improved render progress and finalization reporting
+- Added placement sidecar output for cropped transparent overlays
+- Improved GPX parsing and activity preparation for files with uneven or extreme data
+- Improved platform configuration for macOS, Windows, and Linux release builds
+
+## Bug Fixes
+
+- Fixed activity dialog open behavior
+- Fixed several template text alignment and capitalization issues
+- Fixed meter and gauge defaults that could produce awkward ranges
+- Fixed stale template rename behavior
+- Fixed right panel layout rough edges for denser element controls
+
+## Known Issues
+
+- Reference video preview depends on readable local files; moved or deleted videos must be replaced
+- Exported output is still the telemetry overlay, not a muxed final video with source footage
+- Hardware-accelerated encoding remains platform-dependent
+
+## Upgrading
+
+Download the latest `.dmg` (macOS), `.exe` installer (Windows), or `.deb`/`.AppImage` (Linux) from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases).
