@@ -85,17 +85,18 @@ Videos made with Cyclemetry. Click any thumbnail to watch on YouTube.
 
 → **[cyclemetry.walkersutton.com/videos](https://cyclemetry.walkersutton.com/videos)** · submit your own video
 
-## Built with
+## Star History
 
-| Layer        | Technology              |
-| ------------ | ----------------------- |
-| UI           | Svelte 5 + Vite         |
-| Shell        | Tauri 2                 |
-| Rendering    | Rust (native pipeline)  |
-| Video export | FFmpeg                  |
-| Platforms    | macOS · Windows · Linux |
+<div align="center">
+  <a href="https://star-history.com/#walkersutton/cyclemetry&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=walkersutton/cyclemetry&type=Date&theme=dark" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=walkersutton/cyclemetry&type=Date" />
+    </picture>
+  </a>
+</div>
 
-## Development
+## Developing
 
 Local setup, resource bundling, and release steps: **[cyclemetry.walkersutton.com/developing](https://cyclemetry.walkersutton.com/developing)**
 
