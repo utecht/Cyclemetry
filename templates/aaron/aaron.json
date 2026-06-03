@@ -9,14 +9,14 @@
         "width": 10
       },
       "margin": 0.1,
+      "point": {
+        "weight": 700
+      },
       "type": "plot",
       "value": "course",
       "width": 600,
       "x": 3204,
-      "y": 40,
-      "point": {
-        "weight": 2000
-      }
+      "y": 40
     },
     {
       "fill": {
@@ -28,26 +28,17 @@
         "color": "$primary",
         "width": 5
       },
-      "type": "plot",
-      "value": "elevation",
-      "width": 900,
-      "x": 0,
-      "y": 1910,
       "point": {
         "color": "$accent",
         "edge_color": "$accent",
         "edge_width": 0,
-        "weight": 800
-      }
-    },
-    {
-      "font_size": 80,
-      "id": "value-1",
-      "suffix": " bpm",
-      "type": "value",
-      "value": "heartrate",
-      "x": 3100,
-      "y": 2110
+        "weight": 500
+      },
+      "type": "plot",
+      "value": "elevation",
+      "width": 900,
+      "x": 0,
+      "y": 1910
     },
     {
       "distance_reference": "overlay_end",
@@ -59,6 +50,25 @@
       "unit": "m",
       "value": "distance",
       "x": 3810,
+      "y": 2110
+    },
+    {
+      "file": "white_heart.png",
+      "height": 80,
+      "id": "image-0",
+      "pulse_metric": "heartrate",
+      "type": "image",
+      "width": 80,
+      "x": 3000,
+      "y": 2045
+    },
+    {
+      "font_size": 80,
+      "id": "value-1",
+      "suffix": " bpm",
+      "type": "value",
+      "value": "heartrate",
+      "x": 3100,
       "y": 2110
     },
     {
@@ -102,19 +112,15 @@
       "color": "$primary",
       "direction": "right",
       "fill_opacity": 1,
-      "gradient": [
-        "#00d000",
-        "#fffb00",
-        "#ff2600"
-      ],
+      "gradient": ["#00d000", "#fffb00", "#ff2600"],
       "height": 80,
       "id": "meter-0",
-      "max": 1000,
+      "max": 1500,
       "min": 0,
       "scale_font_size": 60,
       "scale_offset": 20,
       "scale_suffix": " W",
-      "scale_tick_length": 30,
+      "scale_tick_length": 25,
       "scale_tick_width": 6,
       "scale_ticks": 9,
       "type": "meter",
@@ -122,68 +128,38 @@
       "width": 1700,
       "x": 1070,
       "y": 1909
-    },
-    {
-      "file": "white_heart.png",
-      "height": 80,
-      "id": "image-0",
-      "pulse_metric": "heartrate",
-      "type": "image",
-      "width": 80,
-      "x": 3000,
-      "y": 2045
-    },
-    {
-      "arc_color": "#ffffff55",
-      "arc_width": 14,
-      "color": "$primary",
-      "height": 360,
-      "id": "gauge-1",
-      "max": 60,
-      "min": 0,
-      "needle_color": "#ef4444",
-      "needle_width": 6,
-      "progress_color": "$primary",
-      "type": "gauge",
-      "value": "speed",
-      "width": 360,
-      "x": 1575,
-      "y": 478
     }
   ],
   "scene": {
     "color": "#ffffff",
     "decimal_rounding": 0,
-    "end": 2520,
-    "font": "Arial.ttf",
-    "font_size": 30,
-    "height": 2160,
-    "opacity": 0.5,
-    "start": 1380,
-    "width": 3840,
     "editor": {
       "groups": [
         {
-          "element_ids": [
-            "gauge-0",
-            "value-0"
-          ],
+          "element_ids": ["gauge-0", "value-0"],
           "id": "group-0",
           "name": "speed group"
         },
         {
-          "element_ids": [
-            "value-3",
-            "meter-0"
-          ],
+          "element_ids": ["value-3", "meter-0"],
           "id": "group-1",
           "name": "power group"
+        },
+        {
+          "element_ids": ["image-0", "value-1"],
+          "id": "group-2",
+          "name": "heartrate group"
         }
       ]
     },
+    "font": "Times New Roman",
+    "font_size": 30,
+    "height": 2160,
+    "opacity": 0.5,
     "vars": {
-      "primary": "#ffffff",
-      "accent": "#eed105"
-    }
+      "accent": "#eed105",
+      "primary": "#ffffff"
+    },
+    "width": 3840
   }
 }
