@@ -84,11 +84,11 @@
       <span class="text-zinc-300">v{update.version} available</span>
       <button
         onclick={handleInstall}
-        class="ml-1 font-medium text-[#22C55E] hover:text-white transition-colors duration-[150ms]"
+        class="ml-1 cursor-pointer font-medium text-[#22C55E] hover:text-white transition-colors duration-[150ms]"
       >Update &amp; Restart</button>
       <button
         onclick={() => (status = 'hidden')}
-        class="ml-1 text-zinc-600 hover:text-zinc-300 text-sm leading-none transition-colors duration-[150ms]"
+        class="ml-1 cursor-pointer text-zinc-600 hover:text-zinc-300 text-sm leading-none transition-colors duration-[150ms]"
         aria-label="Dismiss"
       >×</button>
 
@@ -109,7 +109,7 @@
       <span class="text-zinc-400">Update check failed</span>
       <button
         onclick={() => (status = 'hidden')}
-        class="ml-1 text-zinc-600 hover:text-zinc-300 text-sm leading-none transition-colors duration-[150ms]"
+        class="ml-1 cursor-pointer text-zinc-600 hover:text-zinc-300 text-sm leading-none transition-colors duration-[150ms]"
         aria-label="Dismiss"
       >×</button>
     {/if}
