@@ -1,6 +1,31 @@
 {
   "elements": [
     {
+      "color": "$primary",
+      "fill": {
+        "opacity": 0
+      },
+      "height": 1000,
+      "id": "plot-0",
+      "line": {
+        "width": 8
+      },
+      "margin": 0.1,
+      "opacity": 0.5,
+      "point": {
+        "color": "#ffda01",
+        "edge_color": "#710e0b",
+        "edge_width": 9,
+        "weight": 800
+      },
+      "rotation": 90,
+      "type": "plot",
+      "value": "course",
+      "width": 600,
+      "x": 2538,
+      "y": 1314
+    },
+    {
       "color": "$card",
       "fill_opacity": 1,
       "height": 150,
@@ -18,7 +43,7 @@
       "text": "KPH",
       "type": "label",
       "x": 3710,
-      "y": 1927
+      "y": 1950
     },
     {
       "font_size": 150,
@@ -87,55 +112,7 @@
       "text": "RPM",
       "type": "label",
       "x": 3710,
-      "y": 2080
-    },
-    {
-      "color": "$card",
-      "fill_opacity": 1,
-      "height": 150,
-      "id": "rect-3",
-      "radius": 30,
-      "type": "rect",
-      "width": 400,
-      "x": 3410,
-      "y": 30
-    },
-    {
-      "distance_reference": "overlay_end",
-      "font_size": 100,
-      "id": "value-6",
-      "suffix": " m",
-      "text_align": "right",
-      "type": "value",
-      "unit": "m",
-      "value": "distance",
-      "x": 3790,
-      "y": 140
-    },
-    {
-      "color": "$primary",
-      "fill": {
-        "opacity": 0
-      },
-      "height": 1000,
-      "id": "plot-0",
-      "line": {
-        "width": 8
-      },
-      "margin": 0.1,
-      "opacity": 0.5,
-      "rotation": 90,
-      "type": "plot",
-      "value": "course",
-      "width": 600,
-      "x": 2538,
-      "y": 1314,
-      "point": {
-        "color": "#ffda01",
-        "edge_color": "#710e0b",
-        "edge_width": 8,
-        "weight": 1000
-      }
+      "y": 2110
     },
     {
       "color": "$primary",
@@ -173,14 +150,11 @@
       "color": "#ff40ff",
       "direction": "right",
       "font_size": 1,
-      "gradient": [
-        "#050ef7",
-        "#bc23ff"
-      ],
+      "gradient": ["#050ef7", "#bc23ff"],
       "height": 100,
       "id": "meter-1",
-      "max": 991,
-      "min": 0,
+      "max": "max",
+      "min": "min",
       "type": "meter",
       "value": "power",
       "width": 1200,
@@ -223,14 +197,11 @@
       "color": "#ff40ff",
       "direction": "right",
       "font_size": 1,
-      "gradient": [
-        "#fffb00",
-        "#ff2600"
-      ],
+      "gradient": ["#fffb00", "#ff2600"],
       "height": 100,
       "id": "meter-0",
-      "max": 192,
-      "min": 150,
+      "max": "max",
+      "min": "min",
       "type": "meter",
       "value": "heartrate",
       "width": 1200,
@@ -247,22 +218,36 @@
       "y": 2105
     },
     {
-      "file": "white_heart.png",
-      "height": 125,
-      "id": "image-1",
-      "type": "image",
-      "width": 133,
-      "x": 1256,
-      "y": 2000
-    },
-    {
       "file": "red_heart.png",
-      "height": 94,
+      "height": 104,
       "id": "image-3",
       "type": "image",
-      "width": 100,
-      "x": 1275,
-      "y": 2015
+      "width": 110,
+      "x": 1270,
+      "y": 2010
+    },
+    {
+      "color": "$card",
+      "fill_opacity": 1,
+      "height": 150,
+      "id": "rect-3",
+      "radius": 30,
+      "type": "rect",
+      "width": 400,
+      "x": 3410,
+      "y": 30
+    },
+    {
+      "distance_reference": "overlay_end",
+      "font_size": 100,
+      "id": "value-6",
+      "suffix": " m",
+      "text_align": "right",
+      "type": "value",
+      "unit": "m",
+      "value": "distance",
+      "x": 3790,
+      "y": 140
     },
     {
       "file": "checkered_flag.webp",
@@ -278,70 +263,35 @@
   "scene": {
     "color": "#ffffff",
     "decimal_rounding": 0,
-    "end": 2100,
-    "font": "BebasNeue-Regular.ttf",
-    "font_size": 30,
-    "height": 2160,
-    "opacity": 0.5,
-    "start": 1200,
-    "width": 3840,
     "editor": {
       "groups": [
         {
-          "element_ids": [
-            "rect-1",
-            "label-3",
-            "value-4"
-          ],
+          "element_ids": ["rect-1", "label-3", "value-4"],
           "id": "group-0",
           "name": "speed [KPH]"
         },
         {
-          "element_ids": [
-            "rect-2",
-            "value-2",
-            "label-4"
-          ],
+          "element_ids": ["rect-2", "value-2", "label-4"],
           "id": "group-2",
           "name": "speed [MPH]"
         },
         {
-          "element_ids": [
-            "rect-0",
-            "value-5",
-            "label-2"
-          ],
+          "element_ids": ["rect-0", "value-5", "label-2"],
           "id": "group-1",
           "name": "cadence [RPM]"
         },
         {
-          "element_ids": [
-            "rect-3",
-            "value-6"
-          ],
+          "element_ids": ["rect-3", "value-6", "image-2"],
           "id": "group-3",
           "name": "distance to finish"
         },
         {
-          "element_ids": [
-            "rect-5",
-            "label-0",
-            "value-3",
-            "meter-1",
-            "image-0"
-          ],
+          "element_ids": ["rect-5", "label-0", "value-3", "meter-1", "image-0"],
           "id": "group-5",
           "name": "power fill"
         },
         {
-          "element_ids": [
-            "rect-4",
-            "value-1",
-            "meter-0",
-            "label-1",
-            "image-1",
-            "image-3"
-          ],
+          "element_ids": ["rect-4", "value-1", "meter-0", "label-1", "image-3"],
           "id": "group-4",
           "name": "heartrate fill"
         }
@@ -353,16 +303,21 @@
         "value-2",
         "rect-0",
         "value-5",
-        "rect-3",
+        "rect-5",
+        "meter-1",
         "rect-4",
         "meter-0",
-        "rect-5",
-        "meter-1"
+        "rect-3"
       ]
     },
+    "font": "BebasNeue-Regular.ttf",
+    "font_size": 30,
+    "height": 2160,
+    "opacity": 1,
     "vars": {
-      "primary": "#ffffff",
-      "card": "#797979"
-    }
+      "card": "#797979",
+      "primary": "#ffffff"
+    },
+    "width": 3840
   }
 }
