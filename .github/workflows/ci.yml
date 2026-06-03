@@ -18,6 +18,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -68,11 +71,12 @@ jobs:
 
       - name: Stub bundled binaries
         # ffmpeg binaries are gitignored and only fetched in the release build.
-        # cargo check just validates that the configured resource paths exist,
-        # so empty placeholders are enough to exercise the bundle globs here.
+        # app/dist is not built in CI — cargo check only validates that the
+        # configured paths exist, so empty placeholders are enough here.
         run: |
           : > resources/ffmpeg
           : > resources/ffmpeg.exe
+          mkdir -p app/dist
 
       - name: Release preflight
         run: node scripts/release-check.mjs
