@@ -66,6 +66,9 @@ export function createAppState() {
   // `missing: true` means the path persisted from a prior session but the file
   // is no longer there, so the UI can prompt for relink.
   let video = $state(parseLocalStorage('projectVideo'))
+  let videoUnderlayVisible = $state(
+    localStorage.getItem('videoUnderlayVisible') !== 'false',
+  )
   const storedActivityDuration = parseFloat(
     localStorage.getItem('activityDuration') ?? '',
   )
@@ -135,6 +138,9 @@ export function createAppState() {
   $effect(() => {
     if (video) localStorage.setItem('projectVideo', JSON.stringify(video))
     else localStorage.removeItem('projectVideo')
+  })
+  $effect(() => {
+    localStorage.setItem('videoUnderlayVisible', String(videoUnderlayVisible))
   })
   $effect(() => {
     if (gpxStartTime) localStorage.setItem('gpxStartTime', gpxStartTime)
@@ -232,6 +238,7 @@ export function createAppState() {
         ? 0
         : offsetForVideoStart(gpxStartTime, draft, config?.scene?.start ?? 0)
       video = { ...draft, userOffsetSec: initialOffset }
+      videoUnderlayVisible = true
       // Bump preview FPS so the overlay animation tracks the video instead
       // of snapping every 200ms. Only when the user is at the default (5);
       // a deliberate non-default choice is preserved.
@@ -267,6 +274,10 @@ export function createAppState() {
 
   function clearVideo() {
     video = null
+  }
+
+  function setVideoUnderlayVisible(visible) {
+    videoUnderlayVisible = visible
   }
 
   function setVideoOffset(seconds) {
@@ -1099,6 +1110,10 @@ export function createAppState() {
     get video() {
       return video
     },
+    get videoUnderlayVisible() {
+      return videoUnderlayVisible
+    },
+    setVideoUnderlayVisible,
     loadVideo,
     pickAndLoadVideo,
     clearVideo,

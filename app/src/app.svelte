@@ -27,6 +27,8 @@
     AlertTriangle,
     ChevronDown,
     Clock,
+    Eye,
+    EyeOff,
     Film,
     LayoutGrid,
     Monitor,
@@ -682,6 +684,24 @@
             class="hdr-btn hdr-btn-icon shrink-0"><Clock size={12} /></button
           >
         {/if}
+        <Tooltip
+          content={app.videoUnderlayVisible ? 'Hide video underlay' : 'Show video underlay'}
+          side="bottom"
+          delay={TOOLTIP_DELAY}
+        >
+          <button
+            onclick={() => app.setVideoUnderlayVisible(!app.videoUnderlayVisible)}
+            class="hdr-btn hdr-btn-icon shrink-0 {app.videoUnderlayVisible ? '' : 'text-zinc-500'}"
+            aria-label={app.videoUnderlayVisible ? 'Hide video underlay' : 'Show video underlay'}
+            aria-pressed={app.videoUnderlayVisible}
+          >
+            {#if app.videoUnderlayVisible}
+              <Eye size={12} />
+            {:else}
+              <EyeOff size={12} />
+            {/if}
+          </button>
+        </Tooltip>
         <button
           onclick={() => app.clearVideo()}
           class="hdr-btn hdr-btn-icon shrink-0"><X size={12} /></button

@@ -223,6 +223,7 @@
   // fight RAF with constant seeks, which was the source of stutter).
   let videoIsMaster = $derived.by(() => {
     if (!playing) return false
+    if (!app.videoUnderlayVisible) return false
     const v = app.video
     if (!v || v.missing || !(v.duration > 0)) return false
     const startAbs = videoStartOnAxis(app.gpxStartTime, v)
@@ -501,7 +502,9 @@
         ></div>
 
         <!-- Reference video backdrop — driven by selectedSecond, hidden when out of range -->
-        <VideoBackdrop {playing} />
+        {#if app.videoUnderlayVisible}
+          <VideoBackdrop {playing} />
+        {/if}
 
         <!-- Rendered frame -->
         {#if sceneInvalid}
