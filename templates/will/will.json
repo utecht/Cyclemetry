@@ -17,10 +17,7 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": [
-        "#53d5fd",
-        "#d357fe"
-      ],
+      "gradient": ["#53d5fd", "#d357fe"],
       "height": 54,
       "id": "meter-0",
       "max": 195,
@@ -66,10 +63,7 @@
       "direction": "right",
       "fill_opacity": 1,
       "gap": 10,
-      "gradient": [
-        "#b1dd8c",
-        "#74a7fe"
-      ],
+      "gradient": ["#b1dd8c", "#74a7fe"],
       "height": 54,
       "id": "meter-1",
       "max": 991,
@@ -106,17 +100,17 @@
         "future_opacity": 0.5,
         "width": 10
       },
-      "type": "plot",
-      "value": "course",
-      "width": 400,
-      "x": 30,
-      "y": 30,
       "point": {
         "color": "$primary",
         "edge_color": "$accent",
         "edge_width": 5,
         "weight": 1000
-      }
+      },
+      "type": "plot",
+      "value": "course",
+      "width": 400,
+      "x": 30,
+      "y": 30
     },
     {
       "arc_color": "#ffffff55",
@@ -141,7 +135,8 @@
       "font_size": 110,
       "id": "value-2",
       "type": "value",
-      "value": "speed",
+      "unit": "mi",
+      "value": "distance",
       "x": 860,
       "y": 180
     },
@@ -158,13 +153,6 @@
   "scene": {
     "color": "#ffffff",
     "decimal_rounding": 0,
-    "end": 2100,
-    "font": "rajdhani-bold.ttf",
-    "font_size": 30,
-    "height": 2160,
-    "opacity": 0.5,
-    "start": 1800,
-    "width": 3840,
     "editor": {
       "groups": [
         {
@@ -173,30 +161,21 @@
           "name": "heartrate fill"
         },
         {
-          "element_ids": [
-            "rect-0",
-            "meter-0",
-            "value-0",
-            "label-0"
-          ],
+          "element_ids": ["rect-0", "meter-0", "value-0", "label-0"],
           "id": "group-0",
           "name": "heartrate group"
         },
         {
-          "element_ids": [
-            "label-1",
-            "rect-1",
-            "value-1",
-            "meter-1"
-          ],
+          "element_ids": ["label-1", "rect-1", "value-1", "meter-1"],
           "id": "group-1",
           "name": "power group"
         }
       ]
     },
     "vars": {
-      "primary": "#ffffff",
-      "accent": "#f7773f"
-    }
+      "accent": "#f7773f",
+      "primary": "#ffffff"
+    },
+    "width": 3840
   }
 }
