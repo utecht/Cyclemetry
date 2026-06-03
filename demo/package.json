@@ -1,0 +1,25 @@
+{
+  "name": "cyclemetry-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "remotion studio",
+    "record": "python3 record.py",
+    "render": "pnpm run render:video && pnpm run render:gif",
+    "render:video": "remotion render Demo out/demo.mp4 --codec=h264",
+    "render:gif": "remotion render Demo out/demo.gif --every-nth-frame=4 --scale=0.5",
+    "probe": "python3 probe.py"
+  },
+  "dependencies": {
+    "@remotion/media-utils": "4.0.290",
+    "geist": "^1.3.1",
+    "remotion": "4.0.290"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.290",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

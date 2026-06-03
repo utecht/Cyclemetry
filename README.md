@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="app/public/logo192.png" width="68" alt="Cyclemetry">
+  <img src="resources/brand/logo192.png" width="68" alt="Cyclemetry">
   <h1>Cyclemetry</h1>
   <p><strong>Open-source desktop app for creating cycling telemetry video overlays from GPX data.</strong><br>
   Import a ride, design your overlay in a live editor, and export a finished video — no subscription, no cloud.</p>
@@ -11,9 +11,9 @@
 
 </div>
 
-<br>
-
-![Cyclemetry editor demo](https://github.com/user-attachments/assets/7e578b89-070b-4709-b016-075fcc364b13)
+<div align="center">
+  <img src="resources/demo/demo.gif" alt="Cyclemetry editor demo">
+</div>
 
 <br>
 
