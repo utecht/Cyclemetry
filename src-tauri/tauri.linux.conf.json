@@ -3,9 +3,9 @@
     "resources": {
       "../resources/ffmpeg": ".",
       "../resources/fonts/*": "fonts/",
-      "../templates/assets/*.png": "assets/",
-      "../templates/assets/*.svg": "assets/",
-      "../templates/assets/*.webp": "assets/"
+      "../templates/_assets/*.png": "assets/",
+      "../templates/_assets/*.svg": "assets/",
+      "../templates/_assets/*.webp": "assets/"
     }
   }
 }
