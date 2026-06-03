@@ -213,7 +213,7 @@
           class="inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus size={12} />
-          {creating ? 'Creating…' : 'New template'}
+          {creating ? 'Creating…' : 'Create template'}
         </button>
         <button
           onclick={onclose}

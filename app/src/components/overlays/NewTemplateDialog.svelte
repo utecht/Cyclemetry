@@ -29,7 +29,7 @@
 <div
   role="dialog"
   aria-modal="true"
-  aria-label="New Template"
+  aria-label="Create Template"
   tabindex="-1"
   class="fixed inset-0 z-[70] flex items-center justify-center"
   onmousedown={(e) => { if (e.target === e.currentTarget) oncancel?.() }}
@@ -37,7 +37,7 @@
   <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
 
   <div class="relative z-10 w-[380px] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-5">
-    <p class="text-sm font-semibold text-zinc-100">New template</p>
+    <p class="text-sm font-semibold text-zinc-100">Create template</p>
     <form onsubmit={handleSubmit} class="mt-4">
       <input
         bind:this={inputEl}

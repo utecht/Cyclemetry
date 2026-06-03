@@ -2266,7 +2266,7 @@ pub fn run() {
 
                 // ── Templates menu ────────────────────────────────────────
                 let new_tpl =
-                    MenuItem::with_id(app, "new_template", "New Template", true, None::<&str>)?;
+                    MenuItem::with_id(app, "new_template", "Create Template", true, None::<&str>)?;
                 let save_tpl = MenuItem::with_id(
                     app,
                     "save_template",
@@ -2519,7 +2519,7 @@ pub fn run() {
                 )?;
 
                 let new_tpl =
-                    MenuItem::with_id(app, "new_template", "New Template", true, None::<&str>)?;
+                    MenuItem::with_id(app, "new_template", "Create Template", true, None::<&str>)?;
                 let save_tpl = MenuItem::with_id(
                     app,
                     "save_template",
