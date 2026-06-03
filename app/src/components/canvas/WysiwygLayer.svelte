@@ -75,11 +75,13 @@
       if (el.type === 'label') {
         const fs = el.font_size ?? 32
         const text = el.text ?? 'LABEL'
+        const charCount = Array.from(text).length
+        const letterSpacing = el.letter_spacing ?? 0
         byId[id] = boundsFor(id) ?? fb({
           id,
           x: el.x ?? 100,
           y: (el.y ?? 100) - fs * 0.8,           // baseline → visual top
-          w: Math.max(text.length * fs * 0.58, fs),
+          w: Math.max(charCount * fs * 0.58 + Math.max(charCount - 1, 0) * letterSpacing, fs),
           h: fs,
         })
       } else if (el.type === 'value') {

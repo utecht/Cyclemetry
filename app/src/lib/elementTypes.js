@@ -102,6 +102,7 @@
  * @property {number} x
  * @property {number} y
  * @property {number} [font_size]
+ * @property {number} [letter_spacing]
  * @property {string} [font]
  * @property {boolean} [italic]
  * @property {string} [color]

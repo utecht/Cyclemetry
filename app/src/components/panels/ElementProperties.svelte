@@ -102,7 +102,7 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'letter_spacing', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
     const rangeBoundFields = ['min', 'max']
     let value = rangeBoundFields.includes(field)
       ? parseRangeBound(raw)
@@ -1498,6 +1498,12 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">Size</span>
           <Input type="number" value={numVal(item, 'font_size')} placeholder="Scene default" oninput={(e) => update('font_size', e.target.value)} />
         </label>
+        {#if type === 'label'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Letter spacing (px)</span>
+          <Input type="number" value={numVal(item, 'letter_spacing')} placeholder="0" step={0.5} oninput={(e) => update('letter_spacing', e.target.value)} />
+        </label>
+        {/if}
         <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
           <span class="text-xs text-zinc-500">Italic</span>
           <Switch checked={item.italic ?? false} ariaLabel="Italic text" onchange={(v) => update('italic', v ? true : undefined)} />

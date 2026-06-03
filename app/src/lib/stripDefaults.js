@@ -5,6 +5,7 @@
  */
 const SCALAR_DEFAULTS = {
   opacity: 1,
+  letter_spacing: 0,
   rotation: 0,
   italic: false,
   remove_edge_color: false,

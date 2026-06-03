@@ -101,6 +101,7 @@ impl Element {
                 c.x = (c.x as f64 * factor).round() as i32;
                 c.y = (c.y as f64 * factor).round() as i32;
                 c.font_size = c.font_size.map(|v| v * f32f);
+                c.letter_spacing = c.letter_spacing.map(|v| v * f32f);
             }
             Element::Value(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -185,6 +186,8 @@ pub struct LabelConfig {
     pub x: i32,
     pub y: i32,
     pub font_size: Option<f32>,
+    /// Additional tracking between characters in px. Default 0.
+    pub letter_spacing: Option<f32>,
     pub font: Option<String>,
     pub italic: Option<bool>,
     pub color: Option<String>,

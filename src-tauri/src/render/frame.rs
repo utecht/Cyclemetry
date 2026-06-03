@@ -147,7 +147,9 @@ impl OverlayElement for LabelConfig {
             .get(font_name)
             .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
             .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
-        let (text_w, rect) = font.measure_str(&self.text, None);
+        let letter_spacing = self.letter_spacing.unwrap_or(0.0);
+        let (text_w, rect) =
+            measure_text_with_letter_spacing(&font, &self.text, None, letter_spacing);
         let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
@@ -179,9 +181,18 @@ impl OverlayElement for LabelConfig {
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
             paint.set_color(color);
-            let text_w = font.measure_str(&self.text, Some(&paint)).0;
+            let letter_spacing = self.letter_spacing.unwrap_or(0.0);
+            let text_w =
+                measure_text_with_letter_spacing(&font, &self.text, Some(&paint), letter_spacing).0;
             let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
-            canvas.draw_str(&self.text, (draw_x, self.y as f32), &font, &paint);
+            draw_text_with_letter_spacing(
+                canvas,
+                &self.text,
+                (draw_x, self.y as f32),
+                &font,
+                &paint,
+                letter_spacing,
+            );
         }
     }
 }
@@ -1483,6 +1494,44 @@ fn align_x(base_x: f32, text_width: f32, align: Option<&str>) -> f32 {
         "right" => base_x - text_width,
         "center" => base_x - text_width / 2.0,
         _ => base_x, // "left" default
+    }
+}
+
+fn measure_text_with_letter_spacing(
+    font: &Font,
+    text: &str,
+    paint: Option<&Paint>,
+    letter_spacing: f32,
+) -> (f32, skia_safe::Rect) {
+    let (base_width, mut rect) = font.measure_str(text, paint);
+    if letter_spacing == 0.0 {
+        return (base_width, rect);
+    }
+
+    let gaps = text.chars().count().saturating_sub(1) as f32;
+    let width = base_width + letter_spacing * gaps;
+    rect.right = rect.left + width;
+    (width, rect)
+}
+
+fn draw_text_with_letter_spacing(
+    canvas: &Canvas,
+    text: &str,
+    origin: (f32, f32),
+    font: &Font,
+    paint: &Paint,
+    letter_spacing: f32,
+) {
+    if letter_spacing == 0.0 {
+        canvas.draw_str(text, origin, font, paint);
+        return;
+    }
+
+    let (mut x, y) = origin;
+    for ch in text.chars() {
+        let s = ch.to_string();
+        canvas.draw_str(&s, (x, y), font, paint);
+        x += font.measure_str(&s, Some(paint)).0 + letter_spacing;
     }
 }
 
