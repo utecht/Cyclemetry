@@ -2,6 +2,7 @@
   import { getContext } from 'svelte'
   import { Plus, X } from 'lucide-svelte'
   import ElementList from '../panels/ElementList.svelte'
+  import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
 
   const app = getContext('app')
@@ -253,6 +254,14 @@
           value={app.config.scene.font ?? 'Arial.ttf'}
           options={fontOpts()}
           onchange={onSceneFont}
+        />
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-[11px] text-zinc-500">Opacity</span>
+        <OpacityControl
+          value={app.config.scene.opacity ?? 1}
+          oninput={(e) => app.updateScene({ opacity: Number(e.target.value) })}
         />
       </div>
 
