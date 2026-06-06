@@ -9,6 +9,7 @@ pub const ATTR_FRONT_GEAR: &str = "front_gear";
 pub const ATTR_GEAR: &str = "gear";
 pub const ATTR_GRADIENT: &str = "gradient";
 pub const ATTR_HEARTRATE: &str = "heartrate";
+pub const ATTR_LEAN: &str = "lean";
 pub const ATTR_POWER: &str = "power";
 pub const ATTR_REAR_GEAR: &str = "rear_gear";
 pub const ATTR_SPEED: &str = "speed";
@@ -31,6 +32,7 @@ pub struct Activity {
     pub elevation: Vec<f64>,
     pub gradient: Vec<f64>,
     pub heartrate: Vec<f64>,
+    pub lean: Vec<f64>,
     pub speed: Vec<f64>,
     pub cadence: Vec<f64>,
     pub power: Vec<f64>,
@@ -204,6 +206,7 @@ impl Activity {
                             elevation,
                             time_str,
                             heartrate,
+                            lean: None,
                             cadence,
                             power,
                             temperature,
@@ -344,6 +347,7 @@ impl Activity {
             a.speed.push(spd);
             a.power.push(200.0 + 60.0 * (t / 8.0).sin());
             a.heartrate.push(140.0 + 15.0 * (t / 12.0).sin());
+            a.lean.push(18.0 * (t / 5.0).sin());
             a.cadence.push(88.0 + 6.0 * (t / 6.0).sin());
             a.elevation.push(100.0 + 20.0 * (t / 15.0).sin());
             a.gradient.push(3.0 * (t / 15.0).cos());
@@ -364,6 +368,7 @@ impl Activity {
             ATTR_ELEVATION,
             ATTR_GRADIENT,
             ATTR_HEARTRATE,
+            ATTR_LEAN,
             ATTR_CADENCE,
             ATTR_POWER,
             ATTR_TEMPERATURE,
@@ -445,6 +450,9 @@ impl Activity {
                             "atemp" if in_tpx => {
                                 pt.temperature = current_text.parse().ok();
                             }
+                            "lean" if in_extensions => {
+                                pt.lean = current_text.parse::<f64>().ok().map(f64::to_degrees);
+                            }
                             "front_gear" | "frontGear" | "front_gear_num" if in_extensions => {
                                 pt.front_gear = current_text.parse().ok();
                             }
@@ -507,6 +515,9 @@ impl Activity {
         if points.iter().any(|p| p.heartrate.is_some()) {
             valid.insert(ATTR_HEARTRATE.into());
         }
+        if points.iter().any(|p| p.lean.is_some()) {
+            valid.insert(ATTR_LEAN.into());
+        }
         if points.iter().any(|p| p.cadence.is_some()) {
             valid.insert(ATTR_CADENCE.into());
         }
@@ -560,6 +571,7 @@ impl Activity {
             activity.course.push((pt.lat, pt.lon));
             activity.elevation.push(pt.elevation.unwrap_or(0.0));
             activity.heartrate.push(pt.heartrate.unwrap_or(0.0));
+            activity.lean.push(pt.lean.unwrap_or(0.0));
             activity.cadence.push(pt.cadence.unwrap_or(0.0));
             activity.power.push(pt.power.unwrap_or(0.0));
             activity.temperature.push(pt.temperature.unwrap_or(0.0));
@@ -665,6 +677,9 @@ impl Activity {
                 ATTR_HEARTRATE => {
                     self.heartrate = linear_interp(&self.heartrate, fps);
                 }
+                ATTR_LEAN => {
+                    self.lean = linear_interp(&self.lean, fps);
+                }
                 ATTR_SPEED => {
                     self.speed = linear_interp(&self.speed, fps);
                 }
@@ -756,6 +771,7 @@ impl Activity {
             out.elevation.push(sample.elevation);
             out.gradient.push(sample.gradient);
             out.heartrate.push(sample.heartrate);
+            out.lean.push(sample.lean);
             out.speed.push(sample.speed);
             out.cadence.push(sample.cadence);
             out.power.push(sample.power);
@@ -818,6 +834,7 @@ impl Activity {
             elevation: self.elevation.get(index).copied().unwrap_or_default(),
             gradient: self.gradient.get(index).copied().unwrap_or_default(),
             heartrate: self.heartrate.get(index).copied().unwrap_or_default(),
+            lean: self.lean.get(index).copied().unwrap_or_default(),
             speed: self.speed.get(index).copied().unwrap_or_default(),
             cadence: self.cadence.get(index).copied().unwrap_or_default(),
             power: self.power.get(index).copied().unwrap_or_default(),
@@ -845,6 +862,7 @@ impl Activity {
             elevation: lerp(&self.elevation),
             gradient: lerp(&self.gradient),
             heartrate: lerp(&self.heartrate),
+            lean: lerp(&self.lean),
             speed: lerp(&self.speed),
             cadence: lerp(&self.cadence),
             power: lerp(&self.power),
@@ -862,6 +880,7 @@ impl Activity {
             ATTR_ELEVATION => safe(&self.elevation),
             ATTR_GRADIENT => safe(&self.gradient),
             ATTR_HEARTRATE => safe(&self.heartrate),
+            ATTR_LEAN => safe(&self.lean),
             ATTR_SPEED => safe(&self.speed),
             ATTR_CADENCE => safe(&self.cadence),
             ATTR_POWER => safe(&self.power),
@@ -907,6 +926,7 @@ impl Activity {
             ATTR_DISTANCE => scalar(&self.distance),
             ATTR_ELEVATION => scalar(&self.elevation),
             ATTR_HEARTRATE => scalar(&self.heartrate),
+            ATTR_LEAN => scalar(&self.lean),
             ATTR_SPEED => scalar(&self.speed),
             ATTR_CADENCE => scalar(&self.cadence),
             ATTR_POWER => scalar(&self.power),
@@ -932,6 +952,7 @@ struct ActivitySample {
     elevation: f64,
     gradient: f64,
     heartrate: f64,
+    lean: f64,
     speed: f64,
     cadence: f64,
     power: f64,
@@ -950,6 +971,7 @@ struct TrackPoint {
     elevation: Option<f64>,
     time_str: Option<String>,
     heartrate: Option<f64>,
+    lean: Option<f64>,
     cadence: Option<f64>,
     power: Option<f64>,
     temperature: Option<f64>,
@@ -1232,6 +1254,26 @@ mod tests {
         let activity = Activity::parse_gpx(gpx).unwrap();
         assert_eq!(activity.elapsed_seconds, vec![0.0, 2.0, 5.0]);
         assert!(activity.has_wall_clock_time_axis());
+    }
+
+    #[test]
+    fn parses_gpx_lean_extension_as_degrees() {
+        let gpx = r#"
+        <gpx xmlns:ext="https://example.com/gpx/extensions">
+          <trk><trkseg>
+            <trkpt lat="14.087824807012469" lon="120.97403787326296">
+              <time>2026-05-17T00:49:21.754Z</time>
+              <extensions><ext:lean>0.21519530465830444</ext:lean></extensions>
+            </trkpt>
+          </trkseg></trk>
+        </gpx>
+        "#;
+        let activity = Activity::parse_gpx(gpx).unwrap();
+        let expected = 0.21519530465830444_f64.to_degrees();
+
+        assert!(activity.valid_attributes.contains(&ATTR_LEAN.to_string()));
+        assert!((activity.lean[0] - expected).abs() < 1e-12);
+        assert!((activity.get_scalar(ATTR_LEAN, 0) - expected).abs() < 1e-12);
     }
 
     #[test]

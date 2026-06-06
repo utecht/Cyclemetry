@@ -30,7 +30,7 @@
       ...app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) })),
     ]
   }
-  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
   const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
   const METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
   const METER_DIRECTIONS = [
@@ -53,7 +53,7 @@
     { value: 'since_custom', label: 'Since custom point' },
   ]
   // Per-metric explicit unit options. Metrics absent from this map (gradient,
-  // power, cadence, heartrate, time) have no unit choice and render raw.
+  // lean, power, cadence, heartrate, time) have no unit choice and render raw.
   // Legacy 'metric'/'imperial' tokens still render — the Rust side normalizes
   // them — but new selections use these precise tokens.
   const UNITS_BY_METRIC = {

@@ -53,6 +53,12 @@ const RANGE_LIMITS = {
       '': { min: -45, max: 45, label: '-45-45%' },
     },
   },
+  lean: {
+    defaultUnit: '',
+    units: {
+      '': { min: -90, max: 90, label: '-90-90 degrees' },
+    },
+  },
   front_gear: {
     defaultUnit: '',
     units: {
