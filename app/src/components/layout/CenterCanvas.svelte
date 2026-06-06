@@ -94,7 +94,7 @@
           PREVIEW_HARD_TIMEOUT_MS,
         )
       })
-      let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, app.outputWidth, app.outputHeight), timeout])
+      let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, previewW, previewH), timeout])
       if (generation !== previewGeneration) return
       if (data?.image) {
         console.debug('[tpl-diag] fetchFrame got image', { frameIdx, elements: data.elements?.length })
@@ -155,8 +155,8 @@
     const _fps = app.previewFps ?? 1
     const _hasActivity = app.hasActivity
     void app.gpxFilename // reactive dep: re-run when GPX changes
-    void app.outputWidth // reactive dep: re-render preview on resolution change
-    void app.outputHeight
+    void previewW // reactive dep: re-render when the base target size changes
+    void previewH // (export resolution, preview box size, or display pixel ratio)
 
     if (configDebounce) clearTimeout(configDebounce)
     configDebounce = setTimeout(() => {
@@ -369,11 +369,37 @@
       )),
     })
   }
-  // Preview canvas matches the chosen output resolution (the backend renders
-  // the frame retargeted to these dims), so the aspect ratio is honored.
-  let sceneW = $derived(app.outputWidth ?? 1920)
-  let sceneH = $derived(app.outputHeight ?? 1080)
-  let aspectRatio = $derived(sceneH / sceneW)
+  // Base preview render size. The frame is shown in a viewport-sized box that's
+  // usually far smaller than the export resolution, so rendering the full output
+  // res wastes pixels the screen can't show — while rendering *below* the box's
+  // device pixels looks soft on HiDPI displays. We render at the box's CSS width
+  // × devicePixelRatio, capped at the export resolution. Zoom is intentionally
+  // NOT a factor here: the base stays put and provides gap-free coverage, while
+  // the separate crop layer (below) supersamples the visible window for crisp
+  // zoomed text. Aspect ratio always follows the output.
+  let zoom = $state(1)
+  let dpr = $state(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
+  let boxCssW = $state(0)
+  let previewW = $derived.by(() => {
+    const ow = app.outputWidth ?? 1920
+    if (!boxCssW) return ow
+    return Math.max(1, Math.min(ow, Math.round(boxCssW * dpr)))
+  })
+  let previewH = $derived.by(() => {
+    const ow = app.outputWidth ?? 1920
+    const oh = app.outputHeight ?? 1080
+    return Math.max(1, Math.round(previewW * (oh / ow)))
+  })
+  // Canvas buffer + overlay coordinate space track the *currently displayed*
+  // frame's render dims (returned by the backend), not the in-flight target.
+  // While a zoom/resize re-render is in flight the old frame stays up, so using
+  // the live target here would mis-size the canvas and misalign the overlay.
+  // Falls back to the target for the very first paint, before any frame lands.
+  let sceneW = $derived(currentFrameData?.width ?? previewW)
+  let sceneH = $derived(currentFrameData?.height ?? previewH)
+  // The box geometry follows the export aspect ratio so it never jumps while
+  // the rendered frame size changes (frames always preserve the output aspect).
+  let aspectRatio = $derived((app.outputHeight ?? 1080) / (app.outputWidth ?? 1920))
   let sceneInvalid = $derived(sceneEnd <= sceneStart)
 
   // Preview zoom/pan. Pinch or Ctrl+wheel zooms toward the cursor; two-finger
@@ -381,10 +407,140 @@
   // drag pointer layer). transform-origin is 0 0 so the focal math is a clean
   // closed form. Safe for WYSIWYG editing — drag reads svg.getScreenCTM(),
   // which already accounts for ancestor transforms. Double-click resets.
-  let zoom = $state(1)
+  // (`zoom` is declared above, since the preview render size depends on it.)
   let panX = $state(0)
   let panY = $state(0)
   let stageEl = $state()
+
+  // Track the preview box's on-screen CSS width so previewW/previewH reflect what
+  // the screen can actually show. ResizeObserver reports layout (pre-transform)
+  // size, so zoom doesn't perturb it. Quantized to 8px to avoid a SceneCache
+  // rebuild on every sub-pixel of a window-resize drag.
+  $effect(() => {
+    if (!stageEl) return
+    const apply = (w) => { if (w) boxCssW = Math.round(w / 8) * 8 }
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) apply(e.contentRect?.width ?? stageEl.offsetWidth)
+    })
+    ro.observe(stageEl)
+    apply(stageEl.offsetWidth)
+    return () => ro.disconnect()
+  })
+
+  // devicePixelRatio changes when the window moves between displays of different
+  // density. matchMedia fires once per change, so re-register after each one.
+  $effect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    let mql
+    const update = () => {
+      dpr = window.devicePixelRatio || 1
+      mql?.removeEventListener('change', update)
+      mql = window.matchMedia(`(resolution: ${dpr}dppx)`)
+      mql.addEventListener('change', update)
+    }
+    update()
+    return () => mql?.removeEventListener('change', update)
+  })
+
+  // ── Crisp-zoom crop layer ───────────────────────────────────────────────────
+  // The full-frame base preview is CSS-upscaled when zoomed, so text softens past
+  // the base render resolution. We additionally render just the *visible window*
+  // of the scene, supersampled to device resolution, and lay it crisply over the
+  // base. The base always covers the whole scene (gap-free during gestures); the
+  // crop sharpens in once it lands. Reuses the base render cache (same target
+  // dims) so zooming/panning never rebuilds the SceneCache.
+  let clipEl = $state()
+  let cropImage = $state(null)
+  let cropBox = $state(null) // { left, top, width, height } as % of the stage box
+  let cropVisible = $state(false)
+  let cropGen = 0
+  let cropDebounce = null
+  const CROP_DEBOUNCE_MS = 140
+
+  // Visible window of the scene → a render request, in base-scene px (for the
+  // supersample source) + device px (for the output surface) + box-% (placement).
+  function computeCropView() {
+    if (!stageEl || !clipEl) return null
+    const baseW = currentFrameData?.width
+    const baseH = currentFrameData?.height
+    if (!baseW || !baseH) return null
+    const box = stageEl.getBoundingClientRect() // post-transform (zoom + pan)
+    const clip = clipEl.getBoundingClientRect() // the clipping viewport
+    if (box.width <= 0 || box.height <= 0) return null
+    const left = Math.max(box.left, clip.left)
+    const top = Math.max(box.top, clip.top)
+    const right = Math.min(box.right, clip.right)
+    const bottom = Math.min(box.bottom, clip.bottom)
+    if (right <= left || bottom <= top) return null // nothing visible
+    const nx0 = (left - box.left) / box.width
+    const ny0 = (top - box.top) / box.height
+    const nx1 = (right - box.left) / box.width
+    const ny1 = (bottom - box.top) / box.height
+    const outW = Math.round((right - left) * dpr)
+    const outH = Math.round((bottom - top) * dpr)
+    if (outW < 2 || outH < 2) return null
+    return {
+      baseW,
+      baseH,
+      view: {
+        vx: nx0 * baseW,
+        vy: ny0 * baseH,
+        vw: (nx1 - nx0) * baseW,
+        vh: (ny1 - ny0) * baseH,
+        outW,
+        outH,
+      },
+      box: {
+        left: nx0 * 100,
+        top: ny0 * 100,
+        width: (nx1 - nx0) * 100,
+        height: (ny1 - ny0) * 100,
+      },
+    }
+  }
+
+  async function fetchCrop() {
+    const v = computeCropView()
+    if (!v) { cropVisible = false; return }
+    const gen = ++cropGen
+    const config = app.config
+    const gpx = app.gpxFilename
+    const fps = app.previewFps ?? 1
+    const start = config?.scene?.start ?? 0
+    const frameIdx = secToFrameIdx(Math.max(start, app.selectedSecond), fps, start)
+    try {
+      const data = await backend.nativeGenerateDemoCrop(
+        config, gpx, frameIdx, fps, v.baseW, v.baseH,
+        v.view.vx, v.view.vy, v.view.vw, v.view.vh, v.view.outW, v.view.outH,
+      )
+      if (gen !== cropGen) return // superseded by a newer view
+      if (data?.image) {
+        cropImage = data.image
+        cropBox = v.box
+        cropVisible = true
+      }
+    } catch (e) {
+      if (gen === cropGen) cropVisible = false
+      console.debug('[crop] fetch failed', e)
+    }
+  }
+
+  // Re-render the crop on zoom/pan (and when the base frame changes). Hide the
+  // stale crop immediately so the gesture shows the gap-free base, then debounce
+  // a fresh crop. Only active while zoomed in and paused.
+  $effect(() => {
+    const z = zoom
+    void panX
+    void panY
+    const base = currentFrameData
+    const active = z > 1 && !playing && !!base?.image && !sceneInvalid && app.hasActivity
+    cropVisible = false // hide stale crop instantly → base (gap-free) shows through
+    cropGen++ // invalidate any in-flight fetch
+    if (cropDebounce) { clearTimeout(cropDebounce); cropDebounce = null }
+    if (!active) return
+    cropDebounce = setTimeout(() => { cropDebounce = null; fetchCrop() }, CROP_DEBOUNCE_MS)
+    return () => { if (cropDebounce) { clearTimeout(cropDebounce); cropDebounce = null } }
+  })
 
   // Keep the scaled content overlapping the viewport so it can't be lost.
   function clampPan() {
@@ -478,6 +634,7 @@
   <!-- Canvas area (flexible height) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    bind:this={clipEl}
     class="flex-1 flex items-center justify-center p-6 overflow-hidden"
     onwheel={onCanvasWheel}
     ondblclick={resetZoom}
@@ -487,7 +644,7 @@
       <div
         bind:this={stageEl}
         class="relative shadow-2xl"
-        style={`width: min(100%, calc((100vh - 180px) / ${aspectRatio})); aspect-ratio: ${sceneW} / ${sceneH}; transform-origin: 0 0; transform: translate(${panX}px, ${panY}px) scale(${zoom});`}
+        style={`width: min(100%, calc((100vh - 180px) / ${aspectRatio})); aspect-ratio: ${app.outputWidth ?? 1920} / ${app.outputHeight ?? 1080}; transform-origin: 0 0; transform: translate(${panX}px, ${panY}px) scale(${zoom});`}
       >
         <!-- Background -->
         <div
@@ -547,11 +704,27 @@
           </div>
         {/if}
 
+        <!-- Crisp-zoom crop: a supersampled render of just the visible window,
+             laid over the base frame so text stays sharp while zoomed in. Sits
+             above the base canvas and below the WYSIWYG overlay. Positioned by
+             % of the stage box, so the box's own transform places + scales it. -->
+        {#if cropVisible && cropImage && cropBox && !sceneInvalid}
+          <img
+            src={cropImage}
+            alt=""
+            draggable="false"
+            class="absolute pointer-events-none select-none"
+            style={`left:${cropBox.left}%; top:${cropBox.top}%; width:${cropBox.width}%; height:${cropBox.height}%;`}
+          />
+        {/if}
+
         {#if !fetchError && !sceneInvalid}
           <!-- WYSIWYG drag layer — only active while the preview is editable. -->
           <WysiwygLayer
             measuredElements={currentFrameData?.elements ?? []}
             frameImage={currentFrameData?.image ?? null}
+            sceneWidth={sceneW}
+            sceneHeight={sceneH}
             {zoom}
           />
         {/if}

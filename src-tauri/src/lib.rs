@@ -1736,6 +1736,17 @@ async fn native_demo(
     preview_fps: u32,
     target_width: Option<u32>,
     target_height: Option<u32>,
+    // Zoomed-preview supersampling. When the output dims are present, only the
+    // scene window (view_x,view_y,view_w,view_h) is rendered, magnified into a
+    // view_out_w × view_out_h surface so text stays crisp at any zoom. The cache
+    // is still keyed by target_width/height, so the zoomed crop reuses the same
+    // base SceneCache the un-zoomed frame built (no rebuild on zoom/pan).
+    view_x: Option<f32>,
+    view_y: Option<f32>,
+    view_w: Option<f32>,
+    view_h: Option<f32>,
+    view_out_w: Option<u32>,
+    view_out_h: Option<u32>,
     demo_cache: tauri::State<'_, SharedDemoCache>,
 ) -> Result<String, String> {
     let target = match (target_width, target_height) {
@@ -1744,6 +1755,17 @@ async fn native_demo(
     };
     // Preview canvas = chosen output resolution (so aspect ratio is honored).
     let wh = target.unwrap_or_else(|| template_value_wh(&config));
+    let view = match (view_out_w, view_out_h) {
+        (Some(ow), Some(oh)) => Some(render::frame::ViewTransform {
+            vx: view_x.unwrap_or(0.0),
+            vy: view_y.unwrap_or(0.0),
+            vw: view_w.unwrap_or(wh.0 as f32),
+            vh: view_h.unwrap_or(wh.1 as f32),
+            out_w: ow,
+            out_h: oh,
+        }),
+        _ => None,
+    };
     let preview_fps = preview_fps.max(1);
     if gpx_filename.is_empty() || gpx_filename == "null" || gpx_filename == "undefined" {
         return Err("No activity selected".to_string());
@@ -1765,7 +1787,7 @@ async fn native_demo(
     let fonts_dir = resolve_fonts_dir();
     let cache_arc = demo_cache.inner().clone();
 
-    let (rgba, elements) = tokio::task::spawn_blocking(move || {
+    let (rgba, elements, out_wh) = tokio::task::spawn_blocking(move || {
         let mut guard = cache_arc.lock().unwrap_or_else(|e| e.into_inner());
 
         let needs_rebuild = match &*guard {
@@ -1815,12 +1837,32 @@ async fn native_demo(
         // frame_index is relative to trimmed+interpolated activity start (0-based).
         let frame_idx = (frame_index as usize).min(cached.activity.data_len().saturating_sub(1));
 
+        if let Some(v) = &view {
+            // Zoomed crop: supersample just the visible window. No element
+            // measurement — the un-zoomed base frame already owns the overlay's
+            // coordinate space; this layer is purely a crispness enhancement.
+            let rgba = render::frame::render_frame(
+                frame_idx,
+                &cached.scene_cache,
+                &cached.activity,
+                &cached.template,
+                None,
+                Some(v),
+            );
+            return Ok::<(Vec<u8>, Vec<render::frame::ElementBounds>, (u32, u32)), String>((
+                rgba,
+                Vec::new(),
+                (v.out_w, v.out_h),
+            ));
+        }
+
         // Preview renders the full frame (placement context); no crop.
         let rgba = render::frame::render_frame(
             frame_idx,
             &cached.scene_cache,
             &cached.activity,
             &cached.template,
+            None,
             None,
         );
         let elements = render::frame::measure_elements(
@@ -1829,17 +1871,22 @@ async fn native_demo(
             &cached.template,
             &fonts_dir,
         );
-        Ok::<(Vec<u8>, Vec<render::frame::ElementBounds>), String>((rgba, elements))
+        Ok::<(Vec<u8>, Vec<render::frame::ElementBounds>, (u32, u32)), String>((rgba, elements, wh))
     })
     .await
     .map_err(|e| format!("Task join error: {e}"))??;
 
-    let png = rgba_to_png(&rgba, wh);
+    let png = rgba_to_png(&rgba, out_wh);
     use base64::{Engine as _, engine::general_purpose};
     let b64 = general_purpose::STANDARD.encode(&png);
     Ok(serde_json::json!({
         "image": format!("data:image/png;base64,{b64}"),
         "elements": elements,
+        // The dims the frame was actually rendered + measured at. The frontend
+        // keys the canvas buffer and the WYSIWYG overlay's coordinate space off
+        // these so they track the displayed frame, not an in-flight render target.
+        "width": out_wh.0,
+        "height": out_wh.1,
         "warning": gpx_warning,
     })
     .to_string())
@@ -1932,11 +1979,11 @@ async fn native_benchmark(
             .collect();
         // Three warm-up frames to prime font/surface/path caches before timing.
         for &idx in indices.iter().take(3) {
-            let _ = render::frame::render_frame(idx, &cache, &activity, &template, None);
+            let _ = render::frame::render_frame(idx, &cache, &activity, &template, None, None);
         }
         let t0 = std::time::Instant::now();
         for &idx in &indices {
-            let _ = render::frame::render_frame(idx, &cache, &activity, &template, None);
+            let _ = render::frame::render_frame(idx, &cache, &activity, &template, None, None);
         }
         let elapsed_ms = t0.elapsed().as_millis() as u64;
 

@@ -320,6 +320,56 @@ export const nativeGenerateDemo = (
   })
 
 /**
+ * Zoomed-preview crop: supersample just the visible window of the scene so text
+ * stays crisp at any zoom. `targetWidth`/`targetHeight` must match the base
+ * frame's dims (they key the shared render cache, so no rebuild on zoom/pan).
+ * `view*` are in base-scene pixel coords; `viewOutW/H` are the device pixels to
+ * render that window into. Returns a DemoFrame whose `image` is the crop.
+ *
+ * @param {import('./elementTypes.js').Template} config
+ * @param {string} gpxFilename
+ * @param {number} frameIndex
+ * @param {number} previewFps
+ * @param {number} targetWidth
+ * @param {number} targetHeight
+ * @param {number} viewX
+ * @param {number} viewY
+ * @param {number} viewW
+ * @param {number} viewH
+ * @param {number} viewOutW
+ * @param {number} viewOutH
+ * @returns {Promise<DemoFrame>}
+ */
+export const nativeGenerateDemoCrop = (
+  config,
+  gpxFilename,
+  frameIndex,
+  previewFps,
+  targetWidth,
+  targetHeight,
+  viewX,
+  viewY,
+  viewW,
+  viewH,
+  viewOutW,
+  viewOutH,
+) =>
+  invoke('native_demo', {
+    config,
+    gpxFilename,
+    frameIndex,
+    previewFps,
+    targetWidth,
+    targetHeight,
+    viewX,
+    viewY,
+    viewW,
+    viewH,
+    viewOutW,
+    viewOutH,
+  })
+
+/**
  * @param {import('./elementTypes.js').Template} config
  * @param {string} gpxFilename
  * @param {string} [outputDir]

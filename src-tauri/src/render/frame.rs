@@ -1243,19 +1243,42 @@ pub struct CropRect {
     pub h: u32,
 }
 
+/// A supersampled sub-view of the scene, in the scene's own pixel coordinates.
+/// Used by the zoomed preview: render only the visible window (`vx,vy,vw,vh`)
+/// but rasterise it into an `out_w × out_h` surface — so vector draws (text) are
+/// re-rasterised crisply at the zoomed resolution while cost stays bounded by the
+/// viewport, not the zoom level. Pre-rasterised content (chart backgrounds,
+/// images) is bitmap-scaled and so softens past its native resolution.
+#[derive(Debug, Clone, Copy)]
+pub struct ViewTransform {
+    pub vx: f32,
+    pub vy: f32,
+    pub vw: f32,
+    pub vh: f32,
+    pub out_w: u32,
+    pub out_h: u32,
+}
+
 /// Render a single video frame and return raw BGRA bytes.
 ///
 /// `crop`: when `Some`, the surface is sized to the crop window and the canvas
 /// is translated so all absolute-coordinate draws (base image, charts, text)
-/// land correctly while only the window is captured. `None` = full frame
-/// (preview path).
+/// land correctly while only the window is captured. `None` = full frame.
+///
+/// `view`: when `Some`, takes precedence over `crop` — renders the supersampled
+/// sub-view described above (zoomed preview path). The cache/template are used at
+/// their existing (un-zoomed) scale; the canvas scale does the magnification.
 pub fn render_frame(
     frame_idx: usize,
     cache: &SceneCache,
     activity: &Activity,
     template: &Template,
     crop: Option<&CropRect>,
+    view: Option<&ViewTransform>,
 ) -> Vec<u8> {
+    if let Some(v) = view {
+        return render_view(frame_idx, cache, activity, template, v);
+    }
     let (w, h, ox, oy) = match crop {
         Some(c) => (c.w as i32, c.h as i32, c.x, c.y),
         None => (cache.width as i32, cache.height as i32, 0, 0),
@@ -1309,6 +1332,58 @@ pub fn render_frame(
         }
     } // surface dropped here → releases the &mut pixels borrow
 
+    pixels
+}
+
+/// Render a supersampled sub-view (zoomed preview). Surface is `out_w × out_h`;
+/// the canvas is scaled so the scene window `(vx,vy,vw,vh)` fills it, then drawn
+/// with absolute scene coordinates unchanged. Text re-rasterises crisply at the
+/// magnified scale; the (transparent) base image is skipped — the zeroed buffer
+/// already provides transparency.
+fn render_view(
+    frame_idx: usize,
+    cache: &SceneCache,
+    activity: &Activity,
+    template: &Template,
+    v: &ViewTransform,
+) -> Vec<u8> {
+    let w = v.out_w.max(1) as i32;
+    let h = v.out_h.max(1) as i32;
+    let info = ImageInfo::new(
+        ISize::new(w, h),
+        skia_safe::ColorType::BGRA8888,
+        skia_safe::AlphaType::Premul,
+        None,
+    );
+    let row_bytes = (w * 4) as usize;
+    let mut pixels = vec![0u8; (h as usize) * row_bytes];
+    {
+        let mut surface =
+            skia_safe::surfaces::wrap_pixels(&info, &mut pixels, Some(row_bytes), None)
+                .expect("Skia surface");
+        let canvas = surface.canvas();
+
+        // Map the scene window onto the output surface: scale so vw→out_w, then
+        // shift the window origin to (0,0). Draw calls keep absolute coords.
+        let sx = v.out_w as f32 / v.vw.max(1.0);
+        let sy = v.out_h as f32 / v.vh.max(1.0);
+        canvas.scale((sx, sy));
+        canvas.translate((-v.vx, -v.vy));
+
+        let ctx = ElementCtx {
+            activity,
+            scene: &template.scene,
+            typefaces: &cache.typefaces,
+            charts: &cache.charts,
+            fonts_dir: "",
+            images: &cache.images,
+        };
+        for idx in template.layer_order() {
+            if let Some(el) = template.elements.get(idx) {
+                el.as_overlay().draw(canvas, &ctx, frame_idx);
+            }
+        }
+    }
     pixels
 }
 

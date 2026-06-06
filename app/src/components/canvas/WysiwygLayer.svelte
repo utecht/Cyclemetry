@@ -16,16 +16,14 @@
   const app = getContext('app')
 
   // Pixel-perfect bounds from the Rust renderer — { id, x, y, w, h }[]
-  // frameImage: full rendered scene PNG (data URL) at output resolution.
-  let { measuredElements = [], frameImage = null, zoom = 1 } = $props()
+  // frameImage: full rendered scene PNG (data URL) at the preview render size.
+  // sceneWidth/sceneHeight: the dims the backend rendered + measured at (the
+  // preview box CSS size × devicePixelRatio, capped at the export resolution).
+  // The SVG overlay must use that same space so measured element bounds line up;
+  // config-derived fallbacks and drag write-back are converted between
+  // authored ↔ render space via `authorScale`.
+  let { measuredElements = [], frameImage = null, zoom = 1, sceneWidth = 1920, sceneHeight = 1080 } = $props()
 
-  // The backend renders + measures the preview frame at the chosen OUTPUT
-  // resolution, scaled from the template's authored size by a uniform
-  // height-based factor. The SVG overlay must use that same output space so
-  // measured element bounds line up; config-derived fallbacks and drag
-  // write-back are converted between authored ↔ output via `authorScale`.
-  let sceneWidth = $derived(app.outputWidth ?? 1920)
-  let sceneHeight = $derived(app.outputHeight ?? 1080)
   let authoredHeight = $derived(app.config?.scene?.height ?? 1080)
   let authorScale = $derived(sceneHeight / (authoredHeight || sceneHeight))
 

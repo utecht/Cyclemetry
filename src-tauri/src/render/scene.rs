@@ -227,7 +227,7 @@ pub fn render_video(
                 let t0 = Instant::now();
                 let frames: Vec<Vec<u8>> = (sent..chunk_end)
                     .into_par_iter()
-                    .map(|i| render_frame(i, &cache, &activity, template, crop.as_ref()))
+                    .map(|i| render_frame(i, &cache, &activity, template, crop.as_ref(), None))
                     .collect();
                 let render_elapsed = t0.elapsed();
                 total_render += render_elapsed;
