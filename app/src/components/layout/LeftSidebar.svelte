@@ -1,6 +1,6 @@
 <script>
   import { getContext } from 'svelte'
-  import { Plus, X } from 'lucide-svelte'
+  import { ChevronDown, Plus, X } from 'lucide-svelte'
   import ElementList from '../panels/ElementList.svelte'
   import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
@@ -51,6 +51,9 @@
     }
     return isNaN(raw) ? NaN : Math.round(raw)
   }
+
+  let timelineCollapsed = $state(false)
+  let sceneCollapsed = $state(false)
 
   let timelineError = $derived.by(() => {
     const s = app.config?.scene
@@ -114,13 +117,22 @@
   {#if app.config?.scene}
     {#if app.hasActivity}
       <!-- Overlay timeline -->
-      <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
-        <p
-          class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      <section class="border-b border-zinc-800">
+        <button
+          onclick={() => (timelineCollapsed = !timelineCollapsed)}
+          class="w-full flex items-center justify-between px-4 py-3 cursor-pointer group"
         >
-          Overlay Timeline
-        </p>
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors duration-[150ms]">
+            Overlay Timeline
+          </span>
+          <ChevronDown
+            size={12}
+            class="text-zinc-600 group-hover:text-zinc-400 transition-all duration-[150ms] {timelineCollapsed ? '-rotate-90' : ''}"
+          />
+        </button>
 
+        {#if !timelineCollapsed}
+        <div class="px-4 pb-3 space-y-3">
         <div class="space-y-1.5">
           <div class="flex items-baseline justify-between">
             <span class="text-[11px] text-zinc-500">Range</span>
@@ -236,17 +248,28 @@
           <p class="text-[11px] text-red-500">{timelineError}</p>
         {/if}
         </div>
+        </div>
+        {/if}
       </section>
     {/if}
 
     <!-- Scene settings -->
-    <section class="px-4 py-3 border-b border-zinc-800 space-y-3">
-      <p
-        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+    <section class="border-b border-zinc-800">
+      <button
+        onclick={() => (sceneCollapsed = !sceneCollapsed)}
+        class="w-full flex items-center justify-between px-4 py-3 cursor-pointer group"
       >
-        Scene
-      </p>
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors duration-[150ms]">
+          Scene
+        </span>
+        <ChevronDown
+          size={12}
+          class="text-zinc-600 group-hover:text-zinc-400 transition-all duration-[150ms] {sceneCollapsed ? '-rotate-90' : ''}"
+        />
+      </button>
 
+      {#if !sceneCollapsed}
+      <div class="px-4 pb-3 space-y-3">
       <!-- Font (scene default — elements inherit unless overridden) -->
       <div class="space-y-1">
         <span class="text-[11px] text-zinc-500">Font</span>
@@ -340,6 +363,8 @@
           </p>
         {/if}
       </div>
+      </div>
+      {/if}
     </section>
   {/if}
 
