@@ -1168,6 +1168,7 @@ fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
         "duration_seconds": duration,
         "has_data": duration > 0.0,
         "start_time": start_time,
+        "valid_attributes": activity.valid_attributes,
     })
     .to_string())
 }

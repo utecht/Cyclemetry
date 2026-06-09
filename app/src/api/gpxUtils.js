@@ -38,6 +38,7 @@ export default async function loadGpx(fileOrPath, state) {
   state.gpxFilename = result.filename ?? displayName
   state.gpxStartTime = result.start_time ?? null
   state.activityDuration = duration
+  state.activityMetrics = result.valid_attributes ?? null
   state.selectedSecond = 0
   if (state.config?.scene) {
     state.updateScene({ start: 0, end: duration })

@@ -30,9 +30,19 @@
       ...app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) })),
     ]
   }
-  const METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
-  const PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
-  const METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
+  const ALL_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+  const ALL_PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
+  const ALL_METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
+
+  function filterMetrics(list) {
+    const valid = app.activityMetrics
+    if (!valid) return list
+    return list.filter((m) => valid.includes(m))
+  }
+
+  const METRICS = $derived(filterMetrics(ALL_METRICS))
+  const PLOT_METRICS = $derived(filterMetrics(ALL_PLOT_METRICS))
+  const METER_METRICS = $derived(filterMetrics(ALL_METER_METRICS))
   const METER_DIRECTIONS = [
     { value: 'up', label: 'Fill upward' },
     { value: 'down', label: 'Fill downward' },

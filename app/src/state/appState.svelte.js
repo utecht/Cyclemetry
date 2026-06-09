@@ -76,6 +76,9 @@ export function createAppState() {
   const initialActivityDuration =
     storedGpxFilename && storedActivityDuration > 0 ? storedActivityDuration : 0
   let activityDuration = $state(initialActivityDuration)
+  let activityMetrics = $state(
+    storedGpxFilename ? (parseLocalStorage('activityMetrics') ?? null) : null,
+  )
   let selectedSecond = $state(
     parseInt(localStorage.getItem('selectedSecond') ?? '0'),
   )
@@ -149,6 +152,11 @@ export function createAppState() {
   })
   $effect(() => {
     localStorage.setItem('activityDuration', String(activityDuration))
+  })
+  $effect(() => {
+    if (activityMetrics)
+      localStorage.setItem('activityMetrics', JSON.stringify(activityMetrics))
+    else localStorage.removeItem('activityMetrics')
   })
   $effect(() => {
     localStorage.setItem('selectedSecond', String(selectedSecond))
@@ -1125,6 +1133,12 @@ export function createAppState() {
     },
     set activityDuration(v) {
       activityDuration = v
+    },
+    get activityMetrics() {
+      return activityMetrics
+    },
+    set activityMetrics(v) {
+      activityMetrics = v
     },
     get hasActivity() {
       return !!gpxFilename && activityDuration > 0
