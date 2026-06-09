@@ -6,7 +6,7 @@ use skia_safe::{
 };
 use std::collections::HashMap;
 
-use crate::render::activity::{ATTR_DISTANCE, ATTR_GEAR, Activity, decode_gear};
+use crate::render::activity::{ATTR_DISTANCE, ATTR_GEAR, ATTR_TIME, Activity, decode_gear};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
@@ -209,6 +209,13 @@ impl ValueConfig {
                 .distance_target
                 .map(|t| units::distance_target_to_m(t, self.unit.as_deref()));
             activity.get_distance(self.distance_reference.as_deref(), target_m, frame_idx)
+        } else if self.value == ATTR_TIME {
+            activity.get_time(
+                self.time_reference.as_deref(),
+                self.time_target,
+                self.hours_offset.unwrap_or(0.0),
+                frame_idx,
+            )
         } else {
             activity.get_scalar(&self.value, frame_idx)
         }
@@ -1618,6 +1625,20 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
         };
     }
 
+    if cfg.value == ATTR_TIME {
+        let text = format_time(
+            raw,
+            cfg.time_format.as_deref(),
+            cfg.decimal_rounding,
+            cfg.time_12h.unwrap_or(false),
+            cfg.time_ampm.unwrap_or(false),
+        );
+        return match &cfg.suffix {
+            Some(s) => format!("{text}{s}"),
+            None => text,
+        };
+    }
+
     // Convert from the GPX-native unit. Value elements do not auto-append a
     // unit suffix; the optional manual `suffix` field is applied below.
     let (conv, _) = units::resolve(&cfg.value, cfg.unit.as_deref());
@@ -1635,6 +1656,81 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
         Some(s) => format!("{text}{s}"),
         None => text,
     }
+}
+
+/// Format raw seconds into a human-readable string.
+/// `fmt`: "hh:mm:ss" | "hh:mm" | "mm:ss" | "h" | "m" | "s" (default).
+/// `twelve_hour`: convert 24h → 12h for clock formats.
+/// `show_ampm`: append " AM"/" PM" suffix (only when `twelve_hour` is true).
+fn format_time(
+    raw: f64,
+    fmt: Option<&str>,
+    rounding: Option<i32>,
+    twelve_hour: bool,
+    show_ampm: bool,
+) -> String {
+    match fmt.unwrap_or("hh:mm:ss") {
+        "hh:mm:ss" | "hms" => {
+            let secs = raw.abs() as i64;
+            let h24 = secs / 3600;
+            let m = (secs % 3600) / 60;
+            let s = secs % 60;
+            let (h, ampm) = clock_hour(h24, twelve_hour, show_ampm);
+            if h24 >= 1 || twelve_hour {
+                format!("{h}:{m:02}:{s:02}{ampm}")
+            } else {
+                format!("{m}:{s:02}")
+            }
+        }
+        "hh:mm" => {
+            let secs = raw.abs() as i64;
+            let h24 = secs / 3600;
+            let m = (secs % 3600) / 60;
+            let (h, ampm) = clock_hour(h24, twelve_hour, show_ampm);
+            format!("{h}:{m:02}{ampm}")
+        }
+        "mm:ss" | "ms" => {
+            let secs = raw.abs() as i64;
+            let m = secs / 60;
+            let s = secs % 60;
+            format!("{m}:{s:02}")
+        }
+        "h" => {
+            let v = raw / 3600.0;
+            match rounding {
+                Some(n) if n > 0 => format!("{:.prec$}", v, prec = n as usize),
+                _ => format!("{:.1}", v),
+            }
+        }
+        "m" => {
+            let v = raw / 60.0;
+            match rounding {
+                Some(n) if n > 0 => format!("{:.prec$}", v, prec = n as usize),
+                _ => format!("{:.1}", v),
+            }
+        }
+        _ => {
+            // "s" or anything else — raw seconds
+            match rounding {
+                Some(0) => format!("{}", raw.round() as i64),
+                Some(n) if n > 0 => format!("{:.prec$}", raw, prec = n as usize),
+                _ => format!("{}", raw.round() as i64),
+            }
+        }
+    }
+}
+
+/// Returns the display hour and optional AM/PM suffix string.
+/// When `twelve_hour` is false, returns (h24, "").
+fn clock_hour(h24: i64, twelve_hour: bool, show_ampm: bool) -> (i64, String) {
+    if !twelve_hour {
+        return (h24, String::new());
+    }
+    let ampm = if h24 % 24 < 12 { " AM" } else { " PM" };
+    let h12 = h24 % 12;
+    let h12 = if h12 == 0 { 12 } else { h12 };
+    let suffix = if show_ampm { ampm } else { "" };
+    (h12, suffix.to_string())
 }
 
 // ─── Image element ─────────────────────────────────────────────────────────

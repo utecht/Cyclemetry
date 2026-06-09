@@ -199,6 +199,16 @@ export const getActivityDistanceInfo = (gpxFilename, sceneStart, sceneEnd) =>
   })
 
 /**
+ * Returns the Unix timestamp (ms) of the first GPS sample, or null if the
+ * file has no timestamps. Used to compute the correct DST offset for a
+ * named timezone.
+ * @param {string} gpxFilename
+ * @returns {Promise<number|null>}
+ */
+export const getActivityStartTimeMs = (gpxFilename) =>
+  invoke('backend_activity_start_time_ms', { gpxFilename })
+
+/**
  * @param {string} gpxFilename
  * @param {string} metric
  * @param {string} [unit]

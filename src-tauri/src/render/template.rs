@@ -213,6 +213,14 @@ pub struct ValueConfig {
     pub decimal_rounding: Option<i32>,
     pub hours_offset: Option<f32>,
     pub time_format: Option<String>,
+    /// IANA timezone name (e.g. "America/Los_Angeles"). When present, the
+    /// frontend computes `hours_offset` from this name + the activity's start
+    /// time so DST is handled automatically. Rust rendering uses `hours_offset`.
+    pub time_timezone: Option<String>,
+    /// Use 12-hour clock for "hh:mm:ss" / "hh:mm" formats. Default false (24-hour).
+    pub time_12h: Option<bool>,
+    /// Show AM/PM suffix when `time_12h` is true. Default false.
+    pub time_ampm: Option<bool>,
     /// For `value: "distance"` — which reference point to measure from/to.
     /// Options: "overlay_start" (default), "activity_start", "overlay_end", "activity_end",
     /// "until_custom" (distance until a custom point), "since_custom" (distance since a custom point).
@@ -220,6 +228,12 @@ pub struct ValueConfig {
     /// For `distance_reference: "until_custom"` or `"since_custom"` — the reference distance in the
     /// element's display unit (km, mi, or m per `unit`). Converted to metres at render time.
     pub distance_target: Option<f64>,
+    /// For `value: "time"` — which reference point to measure from/to.
+    /// Options: "overlay_start" (default), "activity_start", "overlay_end", "activity_end",
+    /// "until_custom", "since_custom", "time_of_day" (wall-clock time, requires GPS timestamps).
+    pub time_reference: Option<String>,
+    /// For `time_reference: "until_custom"` or `"since_custom"` — the reference time in seconds.
+    pub time_target: Option<f64>,
     /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
     pub text_align: Option<String>,
 }

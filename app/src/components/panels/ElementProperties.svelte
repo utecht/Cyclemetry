@@ -62,6 +62,96 @@
     { value: 'until_custom', label: 'Until custom point' },
     { value: 'since_custom', label: 'Since custom point' },
   ]
+  const TIME_REFERENCES = [
+    { value: 'overlay_start', label: 'Since overlay start' },
+    { value: 'activity_start', label: 'Since activity start' },
+    { value: 'overlay_end', label: 'Until overlay end' },
+    { value: 'activity_end', label: 'Until activity end' },
+    { value: 'until_custom', label: 'Until custom point' },
+    { value: 'since_custom', label: 'Since custom point' },
+    { value: 'time_of_day', label: 'Time of day' },
+  ]
+  const TIME_FORMATS = [
+    { value: 'hh:mm:ss', label: 'HH:MM:SS' },
+    { value: 'hh:mm', label: 'HH:MM' },
+    { value: 'mm:ss', label: 'MM:SS' },
+    { value: 's', label: 'Seconds' },
+    { value: 'm', label: 'Minutes' },
+    { value: 'h', label: 'Hours' },
+  ]
+  const isClockFormat = (fmt) => !fmt || fmt === 'hh:mm:ss' || fmt === 'hh:mm'
+
+  // Curated IANA timezone list. Grouped by region for the <optgroup> Select.
+  // Rust rendering uses `hours_offset`; this list drives the friendly picker
+  // and lets us compute the correct DST-aware offset at the activity's time.
+  const TIMEZONES = [
+    { tz: 'Pacific/Honolulu',               label: 'Hawaii',                      group: 'Americas' },
+    { tz: 'America/Anchorage',              label: 'Alaska',                      group: 'Americas' },
+    { tz: 'America/Los_Angeles',            label: 'Pacific Time',                group: 'Americas' },
+    { tz: 'America/Denver',                 label: 'Mountain Time',               group: 'Americas' },
+    { tz: 'America/Phoenix',                label: 'Arizona (no DST)',             group: 'Americas' },
+    { tz: 'America/Chicago',                label: 'Central Time',                group: 'Americas' },
+    { tz: 'America/New_York',               label: 'Eastern Time',                group: 'Americas' },
+    { tz: 'America/Halifax',                label: 'Atlantic Time',               group: 'Americas' },
+    { tz: 'America/St_Johns',               label: 'Newfoundland',                group: 'Americas' },
+    { tz: 'America/Sao_Paulo',              label: 'Brasília',                    group: 'Americas' },
+    { tz: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires',                group: 'Americas' },
+    { tz: 'America/Santiago',               label: 'Santiago',                    group: 'Americas' },
+    { tz: 'Atlantic/Reykjavik',             label: 'Iceland (no DST)',             group: 'Europe' },
+    { tz: 'Europe/London',                  label: 'London',                      group: 'Europe' },
+    { tz: 'Europe/Paris',                   label: 'Paris, Berlin, Madrid',       group: 'Europe' },
+    { tz: 'Europe/Helsinki',                label: 'Helsinki, Athens',            group: 'Europe' },
+    { tz: 'Europe/Moscow',                  label: 'Moscow (no DST)',              group: 'Europe' },
+    { tz: 'Africa/Lagos',                   label: 'Lagos, Casablanca',           group: 'Africa' },
+    { tz: 'Africa/Johannesburg',            label: 'Johannesburg',                group: 'Africa' },
+    { tz: 'Africa/Nairobi',                 label: 'Nairobi',                     group: 'Africa' },
+    { tz: 'Asia/Riyadh',                    label: 'Riyadh',                      group: 'Middle East' },
+    { tz: 'Asia/Tehran',                    label: 'Tehran',                      group: 'Middle East' },
+    { tz: 'Asia/Dubai',                     label: 'Dubai, Abu Dhabi',            group: 'Middle East' },
+    { tz: 'Asia/Kabul',                     label: 'Kabul',                       group: 'Middle East' },
+    { tz: 'Asia/Karachi',                   label: 'Karachi',                     group: 'Asia' },
+    { tz: 'Asia/Kolkata',                   label: 'Mumbai, Kolkata',             group: 'Asia' },
+    { tz: 'Asia/Kathmandu',                 label: 'Kathmandu',                   group: 'Asia' },
+    { tz: 'Asia/Dhaka',                     label: 'Dhaka',                       group: 'Asia' },
+    { tz: 'Asia/Rangoon',                   label: 'Yangon',                      group: 'Asia' },
+    { tz: 'Asia/Bangkok',                   label: 'Bangkok, Jakarta',            group: 'Asia' },
+    { tz: 'Asia/Shanghai',                  label: 'Beijing, Shanghai',           group: 'Asia' },
+    { tz: 'Asia/Singapore',                 label: 'Singapore',                   group: 'Asia' },
+    { tz: 'Asia/Tokyo',                     label: 'Tokyo',                       group: 'Asia' },
+    { tz: 'Asia/Seoul',                     label: 'Seoul',                       group: 'Asia' },
+    { tz: 'Australia/Perth',                label: 'Perth',                       group: 'Australia / Pacific' },
+    { tz: 'Australia/Darwin',               label: 'Darwin (no DST)',              group: 'Australia / Pacific' },
+    { tz: 'Australia/Adelaide',             label: 'Adelaide',                    group: 'Australia / Pacific' },
+    { tz: 'Australia/Brisbane',             label: 'Brisbane (no DST)',            group: 'Australia / Pacific' },
+    { tz: 'Australia/Sydney',               label: 'Sydney, Melbourne',           group: 'Australia / Pacific' },
+    { tz: 'Pacific/Auckland',               label: 'Auckland',                    group: 'Australia / Pacific' },
+    { tz: 'Pacific/Chatham',                label: 'Chatham Islands',             group: 'Australia / Pacific' },
+    { tz: 'Pacific/Apia',                   label: 'Samoa',                       group: 'Australia / Pacific' },
+  ]
+
+  /**
+   * Compute the UTC offset (decimal hours) for an IANA timezone at a given UTC
+   * timestamp. Uses Intl.DateTimeFormat shortOffset to get "GMT+5:30" strings.
+   * Falls back to the current time when utcMs is null.
+   */
+  function getTimezoneOffsetHours(ianaTimezone, utcMs) {
+    try {
+      const date = new Date(utcMs ?? Date.now())
+      const parts = new Intl.DateTimeFormat('en', {
+        timeZone: ianaTimezone,
+        timeZoneName: 'shortOffset',
+      }).formatToParts(date)
+      const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value ?? 'GMT+0'
+      const m = offsetStr.match(/GMT([+-])(\d+)(?::(\d+))?/)
+      if (!m) return 0
+      const sign = m[1] === '+' ? 1 : -1
+      return sign * (parseInt(m[2], 10) + (parseInt(m[3] ?? '0', 10) / 60))
+    } catch {
+      return 0
+    }
+  }
+
+  const tzOptions = TIMEZONES.map(t => ({ value: t.tz, label: t.label, group: t.group }))
   // Per-metric explicit unit options. Metrics absent from this map (gradient,
   // lean, power, cadence, heartrate, time) have no unit choice and render raw.
   // Legacy 'metric'/'imperial' tokens still render — the Rust side normalizes
@@ -112,7 +202,7 @@
   function update(field, raw) {
     const s = selected()
     if (!s) return
-    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'letter_spacing', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
+    const numFields = ['x', 'y', 'width', 'height', 'font_size', 'letter_spacing', 'opacity', 'fill_opacity', 'decimal_rounding', 'rotation', 'distance_target', 'time_target', 'hours_offset', 'radius', 'start_angle', 'sweep_angle', 'arc_width', 'needle_width', 'cap_radius', 'segments', 'gap', 'background_opacity', 'background_margin', 'border_width', 'border_opacity', 'scale_font_size', 'scale_offset', 'scale_tick_length', 'scale_tick_width', 'scale_ticks', 'pulse_bpm', 'pulse_amplitude']
     const rangeBoundFields = ['min', 'max']
     let value = rangeBoundFields.includes(field)
       ? parseRangeBound(raw)
@@ -1593,6 +1683,89 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             oninput={(e) => update('distance_target', e.target.value)} />
           {/if}
         </label>
+        {/if}
+        {:else if item.value === 'time'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Reference</span>
+          <Select
+            value={item.time_reference ?? 'overlay_start'}
+            options={TIME_REFERENCES}
+            onchange={async (v) => {
+              const s = selected()
+              if (!s) return
+              const updates = { time_reference: v }
+              if (v === 'time_of_day' && s.item.time_timezone == null) {
+                const ianaTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+                const startMs = app.gpxFilename
+                  ? await backend.getActivityStartTimeMs(app.gpxFilename).catch(() => null)
+                  : null
+                const match = TIMEZONES.find(t => t.tz === ianaTimezone)
+                updates.time_timezone = match ? ianaTimezone : null
+                updates.hours_offset = getTimezoneOffsetHours(ianaTimezone, startMs)
+              }
+              app.updateElement(s.id, updates)
+            }}
+          />
+        </label>
+        {#if item.time_reference === 'time_of_day'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Time zone</span>
+          <Select
+            value={item.time_timezone ?? ''}
+            placeholder="Select time zone…"
+            options={tzOptions}
+            onchange={async (v) => {
+              const s = selected()
+              if (!s) return
+              const startMs = app.gpxFilename
+                ? await backend.getActivityStartTimeMs(app.gpxFilename).catch(() => null)
+                : null
+              const offset = getTimezoneOffsetHours(v, startMs)
+              app.updateElement(s.id, { time_timezone: v, hours_offset: offset })
+            }}
+          />
+          {#if item.time_timezone && item.hours_offset != null}
+          {@const h = item.hours_offset}
+          {@const sign = h >= 0 ? '+' : '−'}
+          {@const ah = Math.abs(h)}
+          {@const hr = Math.floor(ah)}
+          {@const min = Math.round((ah - hr) * 60)}
+          <p class="text-[10px] text-zinc-600">
+            Offset: UTC{sign}{hr}{min > 0 ? `:${String(min).padStart(2, '0')}` : ''} at time of recording
+          </p>
+          {/if}
+        </label>
+        {/if}
+        {#if item.time_reference === 'until_custom' || item.time_reference === 'since_custom'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Point (seconds)</span>
+          <Input type="number" value={numVal(item, 'time_target')} min={0} step={1}
+            oninput={(e) => update('time_target', e.target.value)} />
+        </label>
+        {/if}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Format</span>
+          <Select
+            value={item.time_format ?? 'hh:mm:ss'}
+            options={TIME_FORMATS}
+            onchange={(v) => update('time_format', v)}
+          />
+        </label>
+        {#if isClockFormat(item.time_format)}
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={item.time_12h ?? false}
+            onchange={(e) => update('time_12h', e.target.checked || undefined)}
+            class="rounded" />
+          <span class="text-xs text-zinc-400">12-hour clock</span>
+        </label>
+        {#if item.time_12h}
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={item.time_ampm ?? false}
+            onchange={(e) => update('time_ampm', e.target.checked || undefined)}
+            class="rounded" />
+          <span class="text-xs text-zinc-400">Show AM/PM</span>
+        </label>
+        {/if}
         {/if}
         {:else if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">

@@ -313,6 +313,11 @@
     (selectedDistanceEl?.distance_reference === 'until_custom' ||
      selectedDistanceEl?.distance_reference === 'since_custom')
   )
+  let showTimeBar = $derived(
+    selectedDistanceEl?.value === 'time' &&
+    (selectedDistanceEl?.time_reference === 'until_custom' ||
+     selectedDistanceEl?.time_reference === 'since_custom')
+  )
   let showCourseMarkerBar = $derived(!!selectedCourseMarker)
 
   let customDistanceM = $derived.by(() => {
@@ -356,6 +361,15 @@
     else if (unit === 'mi') displayVal = Math.round((newM / 1609.34) * 100) / 100
     else displayVal = Math.round((newM / 1000) * 100) / 100
     app.updateElement(id, { distance_target: displayVal })
+  }
+
+  let customTimeS = $derived(showTimeBar ? (selectedDistanceEl?.time_target ?? 0) : null)
+
+  function onCustomTimeChange(newS) {
+    const id = app.selectedElementId
+    const el = app.config?.elements?.find((e) => e.id === id)
+    if (!el || el.type !== 'value') return
+    app.updateElement(id, { time_target: Math.round(newS) })
   }
 
   function onCourseMarkerDistanceChange(newM) {
@@ -832,6 +846,8 @@
     distanceInfo={(showDistanceBar || showCourseMarkerBar) ? distanceInfo : null}
     customDistanceM={showDistanceBar ? customDistanceM : null}
     oncustomdistancechange={onCustomDistanceChange}
+    customTimeS={customTimeS}
+    oncustomtimechange={onCustomTimeChange}
     markerDistanceM={showCourseMarkerBar ? courseMarkerDistanceM : null}
     markerStyle={selectedCourseMarker?.style ?? 'checkered'}
     markerColor={selectedCourseMarker?.color ?? '#ef4444'}

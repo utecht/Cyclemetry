@@ -43,6 +43,8 @@ pub struct Activity {
     pub valid_attributes: Vec<String>,
     /// Total cumulative distance (metres) of the full activity before any trim.
     pub total_activity_distance: f64,
+    /// Total elapsed seconds of the full activity before any trim.
+    pub total_activity_elapsed: f64,
     /// Unix millis of the first recorded sample, or `None` for sources without
     /// timestamps (some screen-recorded TCX, manually authored GPX). Used by
     /// the alignment timeline to map activity time → wall-clock for matching
@@ -361,6 +363,7 @@ impl Activity {
             a.elapsed_seconds.push(t);
         }
         a.total_activity_distance = cum_dist;
+        a.total_activity_elapsed = a.elapsed_seconds.last().copied().unwrap_or(0.0);
         a.valid_attributes = [
             ATTR_COURSE,
             ATTR_DISTANCE,
@@ -645,6 +648,7 @@ impl Activity {
         }
 
         activity.total_activity_distance = cum_dist;
+        activity.total_activity_elapsed = activity.elapsed_seconds.last().copied().unwrap_or(0.0);
         Ok(activity)
     }
 
@@ -758,6 +762,8 @@ impl Activity {
 
         let mut out = Activity {
             total_activity_distance: self.total_activity_distance,
+            total_activity_elapsed: self.total_activity_elapsed,
+            start_time_ms: self.start_time_ms.map(|ms| ms + (start * 1000.0) as i64),
             valid_attributes: self.valid_attributes.clone(),
             ..Activity::default()
         };
@@ -913,6 +919,40 @@ impl Activity {
             "until_custom" | "custom" => target_m.map(|t| (t - current).max(0.0)).unwrap_or(0.0),
             "since_custom" => target_m.map(|t| (current - t).max(0.0)).unwrap_or(0.0),
             _ => (current - overlay_start).max(0.0), // "overlay_start"
+        }
+    }
+
+    /// Elapsed seconds adjusted for the requested reference point.
+    /// `reference` values: "overlay_start" (default), "activity_start",
+    /// "overlay_end", "activity_end", "until_custom", "since_custom",
+    /// "time_of_day" (wall-clock seconds since midnight, requires `start_time_ms`).
+    /// `target_s`: for "until_custom" / "since_custom" — the reference time in seconds.
+    /// `hours_offset`: UTC offset in hours applied only for "time_of_day".
+    pub fn get_time(
+        &self,
+        reference: Option<&str>,
+        target_s: Option<f64>,
+        hours_offset: f32,
+        index: usize,
+    ) -> f64 {
+        let elapsed = self.elapsed_seconds.get(index).copied().unwrap_or(0.0);
+        let overlay_end = self.elapsed_seconds.last().copied().unwrap_or(0.0);
+        match reference.unwrap_or("overlay_start") {
+            "time_of_day" => {
+                if let Some(start_ms) = self.start_time_ms {
+                    let start_s = start_ms as f64 / 1000.0;
+                    let wall_s = start_s + elapsed + hours_offset as f64 * 3600.0;
+                    wall_s.rem_euclid(86400.0)
+                } else {
+                    elapsed
+                }
+            }
+            "activity_start" => elapsed,
+            "overlay_end" => (overlay_end - elapsed).max(0.0),
+            "activity_end" => (self.total_activity_elapsed - elapsed).max(0.0),
+            "until_custom" => target_s.map(|t| (t - elapsed).max(0.0)).unwrap_or(0.0),
+            "since_custom" => target_s.map(|t| (elapsed - t).max(0.0)).unwrap_or(0.0),
+            _ => elapsed, // "overlay_start"
         }
     }
 

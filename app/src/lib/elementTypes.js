@@ -127,9 +127,14 @@
  * @property {string} [suffix]
  * @property {number} [decimal_rounding]
  * @property {number} [hours_offset]
+ * @property {string} [time_timezone]
  * @property {string} [time_format]
+ * @property {boolean} [time_12h]
+ * @property {boolean} [time_ampm]
  * @property {'overlay_start'|'activity_start'|'overlay_end'|'activity_end'|'until_custom'|'since_custom'} [distance_reference]
  * @property {number} [distance_target]
+ * @property {'overlay_start'|'activity_start'|'overlay_end'|'activity_end'|'until_custom'|'since_custom'|'time_of_day'} [time_reference]
+ * @property {number} [time_target]
  * @property {'left'|'center'|'right'} [text_align]
  */
 

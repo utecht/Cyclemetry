@@ -14,6 +14,8 @@
     distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }
     customDistanceM = null,  // current custom reference point in metres
     oncustomdistancechange,
+    customTimeS = null,      // current custom time reference point in overlay-relative seconds
+    oncustomtimechange,
     markerDistanceM = null,  // selected course marker position in metres
     markerStyle = 'checkered',
     markerColor = '#ef4444',
@@ -38,6 +40,10 @@
 
   function onDistanceScrub(e) {
     oncustomdistancechange?.(parseFloat(e.target.value))
+  }
+
+  function onTimeScrub(e) {
+    oncustomtimechange?.(parseFloat(e.target.value))
   }
 
   function onMarkerScrub(e) {
@@ -104,6 +110,12 @@
         )
       : 0,
   )
+  let timeDotPct = $derived(
+    customTimeS !== null && duration > 0
+      ? Math.max(0, Math.min(100, (customTimeS / duration) * 100))
+      : 0,
+  )
+
   let markerDotPct = $derived(
     distanceInfo && markerDistanceM !== null
       ? Math.max(
@@ -172,6 +184,27 @@
           style="--dist-pct: {distDotPct}%"
           class="dist-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
           title="Custom distance reference: {customDistanceM >= 1000 ? (customDistanceM / 1000).toFixed(1) + ' km' : Math.round(customDistanceM) + ' m'}"
+        />
+      </div>
+    </div>
+  {/if}
+
+  <!-- Time reference bar — visible when a time element with reference='until_custom'/'since_custom' is selected.
+       Bar spans 0 → overlay duration in seconds. -->
+  {#if customTimeS !== null}
+    <div class="relative h-5 flex items-center">
+      <div class="relative w-full h-full flex items-center">
+        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
+        <input
+          type="range"
+          min={0}
+          max={duration}
+          step={1}
+          value={customTimeS}
+          oninput={onTimeScrub}
+          style="--time-pct: {timeDotPct}%"
+          class="time-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
+          title="Custom time reference: {formatTime(customTimeS)}"
         />
       </div>
     </div>
@@ -270,6 +303,7 @@
   }
 
   .dist-range,
+  .time-range,
   .marker-range {
     cursor: default;
   }
@@ -285,6 +319,24 @@
     margin-top: -4px;
   }
   .dist-range::-webkit-slider-runnable-track {
+    height: 4px;
+    cursor: pointer;
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  .time-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #10B981;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    margin-top: -4px;
+  }
+  .time-range::-webkit-slider-runnable-track {
     height: 4px;
     cursor: pointer;
     background: transparent;

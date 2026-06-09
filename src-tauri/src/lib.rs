@@ -1233,6 +1233,18 @@ async fn backend_activity_distance_info(
     .to_string())
 }
 
+/// Returns the Unix timestamp (milliseconds) of the first GPS sample in an
+/// activity file, or `null` if the file has no timestamps (e.g. a manually
+/// authored GPX). Used by the frontend to compute the correct DST-aware UTC
+/// offset when the user picks a named timezone for the time-of-day overlay.
+#[tauri::command]
+async fn backend_activity_start_time_ms(gpx_filename: String) -> Option<i64> {
+    let path = resolve_gpx_path(&gpx_filename).ok()?.0;
+    render::activity::Activity::from_file(&path)
+        .ok()
+        .and_then(|a| a.start_time_ms)
+}
+
 #[tauri::command]
 async fn backend_activity_metric_range(
     gpx_filename: String,
@@ -2085,6 +2097,7 @@ pub fn run() {
             backend_save_template_preview,
             backend_report_issue,
             backend_activity_distance_info,
+            backend_activity_start_time_ms,
             backend_activity_metric_range,
             record_gpx_opened,
         ])
