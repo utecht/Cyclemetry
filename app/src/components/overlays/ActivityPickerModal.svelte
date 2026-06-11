@@ -63,6 +63,19 @@
     return filename.replace(/\.[^.]+$/, '')
   }
 
+  function formatDuration(s) {
+    if (!s) return ''
+    const total = Math.round(s)
+    if (total < 60) return `${total}s`
+    const h = Math.floor(total / 3600)
+    const m = Math.floor((total % 3600) / 60)
+    return h > 0 ? `${h}h ${m}m` : `${m}m`
+  }
+
+  function metaLine(a) {
+    return [formatStart(a.start_ms), formatDuration(a.duration_s)].filter(Boolean).join(' · ')
+  }
+
   let sortedSaved = $derived.by(() => {
     const items = [...saved]
     if (sortMode === 'name-asc') {
@@ -142,7 +155,7 @@
   aria-modal="true"
   aria-label="Choose Activity"
   tabindex="-1"
-  class="fixed inset-0 z-50 flex items-center justify-center"
+  class="fixed inset-0 z-50 flex items-center justify-center pt-14"
 >
   <button
     type="button"
@@ -228,10 +241,30 @@
               >
                 <button
                   onclick={() => handleLoadSaved(a.filename)}
-                  class="flex-1 min-w-0 text-left px-3 py-2.5 cursor-pointer"
+                  class="flex-1 min-w-0 flex items-center gap-2.5 text-left px-3 py-2.5 cursor-pointer"
                 >
-                  <span class="text-xs font-medium text-zinc-100 truncate block">{displayName(a.filename)}</span>
-                  <span class="text-[10px] text-zinc-500 truncate block mt-0.5">{formatStart(a.start_ms)}</span>
+                  <svg
+                    viewBox="-0.1 -0.1 1.2 1.2"
+                    class="h-9 w-9 shrink-0 {active ? 'text-primary' : 'text-zinc-500'}"
+                    aria-hidden="true"
+                  >
+                    {#if a.track?.length}
+                      <polyline
+                        points={a.track.map(([x, y]) => `${x},${y}`).join(' ')}
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="0.07"
+                        stroke-linejoin="round"
+                        stroke-linecap="round"
+                      />
+                    {:else}
+                      <circle cx="0.5" cy="0.5" r="0.05" fill="currentColor" opacity="0.4" />
+                    {/if}
+                  </svg>
+                  <span class="min-w-0">
+                    <span class="text-xs font-medium text-zinc-100 truncate block">{displayName(a.filename)}</span>
+                    <span class="text-[10px] text-zinc-500 truncate block mt-0.5">{metaLine(a)}</span>
+                  </span>
                 </button>
 
                 <button
@@ -262,7 +295,7 @@
     aria-modal="true"
     aria-label="Strava import coming soon"
     tabindex="-1"
-    class="fixed inset-0 z-[60] flex items-center justify-center"
+    class="fixed inset-0 z-[60] flex items-center justify-center pt-14"
     onmousedown={(e) => { if (e.target === e.currentTarget) showStravaDialog = false }}
   >
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>

@@ -184,7 +184,7 @@
   aria-modal="true"
   aria-label="Choose Template"
   tabindex="-1"
-  class="fixed inset-0 z-50 flex items-center justify-center"
+  class="fixed inset-0 z-50 flex items-center justify-center pt-14"
 >
   <button
     type="button"

@@ -713,6 +713,58 @@ struct SavedActivity {
     /// mtime when the source lacks usable timestamps so the entry still sorts
     /// reasonably and shows *some* date.
     start_ms: i64,
+    /// Total recorded duration in seconds; None when the file has no time axis.
+    duration_s: Option<f64>,
+    /// Downsampled route preview: up to ~64 points normalized into a unit
+    /// square (y grows downward, aspect preserved and centered) so the
+    /// frontend can draw it as an SVG polyline without knowing about
+    /// coordinates or projections. Empty when the file has no GPS track.
+    track: Vec<[f32; 2]>,
+}
+
+/// Equirectangular-project a course into a unit square for the picker's
+/// route thumbnail: longitude is scaled by cos(mid-latitude) so the shape
+/// isn't stretched, the longer axis spans 0..1, and the shorter axis is
+/// centered.
+fn preview_track(course: &[(f64, f64)]) -> Vec<[f32; 2]> {
+    const MAX_POINTS: usize = 64;
+    let pts: Vec<(f64, f64)> = course
+        .iter()
+        .filter(|(lat, lon)| lat.is_finite() && lon.is_finite() && (*lat != 0.0 || *lon != 0.0))
+        .copied()
+        .collect();
+    if pts.len() < 2 {
+        return Vec::new();
+    }
+    let (min_lat, max_lat) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), (lat, _)| {
+        (lo.min(*lat), hi.max(*lat))
+    });
+    let (min_lon, max_lon) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), (_, lon)| {
+        (lo.min(*lon), hi.max(*lon))
+    });
+    let cos_mid = ((min_lat + max_lat) / 2.0).to_radians().cos().max(0.01);
+    let width = (max_lon - min_lon) * cos_mid;
+    let height = max_lat - min_lat;
+    let span = width.max(height).max(1e-9);
+    let x_off = (1.0 - width / span) / 2.0;
+    let y_off = (1.0 - height / span) / 2.0;
+    let step = (pts.len() as f64 / MAX_POINTS as f64).max(1.0);
+    let mut out: Vec<[f32; 2]> = Vec::with_capacity(MAX_POINTS + 1);
+    let mut i = 0.0;
+    while (i as usize) < pts.len() {
+        let (lat, lon) = pts[i as usize];
+        out.push([
+            (x_off + (lon - min_lon) * cos_mid / span) as f32,
+            (y_off + (max_lat - lat) / span) as f32,
+        ]);
+        i += step;
+    }
+    let last = pts[pts.len() - 1];
+    out.push([
+        (x_off + (last.1 - min_lon) * cos_mid / span) as f32,
+        (y_off + (max_lat - last.0) / span) as f32,
+    ]);
+    out
 }
 
 /// List activities in the uploads dir, newest first. Used by the
@@ -744,13 +796,24 @@ fn backend_list_activities() -> Vec<SavedActivity> {
             .unwrap_or(0);
         // Prefer the activity's first-sample timestamp; fall back to file mtime
         // so timestamp-less or unreadable files still show *a* date.
-        let start_ms = render::activity::Activity::from_file(&path.to_string_lossy())
-            .ok()
+        let parsed = render::activity::Activity::from_file(&path.to_string_lossy()).ok();
+        let start_ms = parsed
+            .as_ref()
             .and_then(|a| a.start_time_ms)
             .unwrap_or(mtime_ms);
+        let duration_s = parsed
+            .as_ref()
+            .and_then(|a| a.elapsed_duration())
+            .filter(|d| d.is_finite() && *d > 0.0);
+        let track = parsed
+            .as_ref()
+            .map(|a| preview_track(&a.course))
+            .unwrap_or_default();
         items.push(SavedActivity {
             filename: name,
             start_ms,
+            duration_s,
+            track,
         });
     }
     items.sort_by_key(|a| std::cmp::Reverse(a.start_ms));

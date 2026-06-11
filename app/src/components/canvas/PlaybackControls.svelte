@@ -237,7 +237,7 @@
       <Tooltip content="−1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepBack}
-          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-zinc-800 hover:text-zinc-100 active:scale-90"
           aria-label="Step back 1 second"
         >
           <SkipBack size={14} />
@@ -246,20 +246,20 @@
 
       <button
         onclick={() => playing = !playing}
-        class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary/85 active:scale-95"
+        class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-zinc-100 transition-all duration-[80ms] hover:bg-zinc-800 active:scale-90"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {#if playing}
-          <Pause size={14} fill="currentColor" strokeWidth={0} />
+          <Pause size={22} fill="currentColor" strokeWidth={0} />
         {:else}
-          <Play size={14} fill="currentColor" strokeWidth={0} class="translate-x-[1px]" />
+          <Play size={22} fill="currentColor" strokeWidth={0} class="translate-x-[1px]" />
         {/if}
       </button>
 
       <Tooltip content="+1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepForward}
-          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-zinc-800 hover:text-zinc-100 active:scale-90"
           aria-label="Step forward 1 second"
         >
           <SkipForward size={14} />
