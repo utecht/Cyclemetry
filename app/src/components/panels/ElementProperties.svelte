@@ -652,7 +652,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">{group.element_ids.length} element{group.element_ids.length !== 1 ? 's' : ''}</span>
           <button
             onclick={() => app.deleteGroup(group.id)}
-            class="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-zinc-400 hover:text-destructive hover:bg-zinc-800 transition-colors"
+            class="cursor-pointer flex items-center gap-1.5 px-2 py-1 rounded text-xs text-zinc-400 hover:text-destructive hover:bg-zinc-800 transition-colors"
             title="Ungroup (elements remain)"
           >
             <Ungroup size={12} />
@@ -669,13 +669,14 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
   {:else}
     {@const { id, item, type } = selected()}
 
+    <!-- Header: element type name -->
     <div class="mb-3">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
         {elementTypeName(item)}
       </p>
     </div>
 
-    <!-- Advanced disclosure: hides position/size and rarely-changed detail -->
+    <!-- Advanced toggle -->
     <div class="mb-4 flex items-center justify-between">
       <span class="text-[10px] uppercase tracking-wider text-zinc-600">Advanced</span>
       <Switch
@@ -685,930 +686,33 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
       />
     </div>
 
-    <!-- Position (basic) -->
-    <section class="mb-4 space-y-2">
-      <div class="flex items-center justify-between">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Position</p>
-        <button
-          onclick={() => app.updateElement(id, { locked: !item.locked })}
-          title={item.locked ? 'Unlock position' : 'Lock position'}
-          class="p-1 rounded transition-colors {item.locked ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-zinc-300'}"
-        >
-          {#if item.locked}
-            <Lock size={13} />
-          {:else}
-            <LockOpen size={13} />
-          {/if}
-        </button>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <label class="space-y-1">
-          <span class="text-xs text-zinc-500">X</span>
-          <Input type="number" step="1" value={numVal(item, 'x')} oninput={(e) => update('x', e.target.value)} />
-        </label>
-        <label class="space-y-1">
-          <span class="text-xs text-zinc-500">Y</span>
-          <Input type="number" step="1" value={numVal(item, 'y')} oninput={(e) => update('y', e.target.value)} />
-        </label>
-      </div>
-    </section>
-
-    <!-- Size — always shown for rect/image; advanced for plot/meter/gauge -->
-    {#if type === 'rect' || type === 'image' || (showAdvanced && (type === 'plot' || type === 'meter' || type === 'gauge'))}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Width</span>
-            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => type === 'image' ? updateImageSize('width', e.target.value) : update('width', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Height</span>
-            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => type === 'image' ? updateImageSize('height', e.target.value) : update('height', e.target.value)} />
-          </label>
-        </div>
-        {#if type === 'plot' || type === 'meter' || type === 'gauge'}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Rotation (°)</span>
-          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
-            oninput={(e) => update('rotation', e.target.value)} />
-        </label>
-        {/if}
-        {#if type === 'image' && showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Rotation (°)</span>
-          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
-            oninput={(e) => update('rotation', e.target.value)} />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <OpacityControl value={item.opacity ?? 1}
-            oninput={(e) => update('opacity', e.target.value)} />
-        </label>
-        {/if}
-        {#if type === 'rect' && showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Rotation (°)</span>
-          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
-            oninput={(e) => update('rotation', e.target.value)} />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Corner radius (px)</span>
-          <Input type="number" value={item.radius ?? 0} min={0} step={1}
-            oninput={(e) => update('radius', e.target.value)} />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Element opacity (0–1)</span>
-          <OpacityControl value={item.opacity ?? 1}
-            oninput={(e) => update('opacity', e.target.value)} />
-        </label>
-        {/if}
-      </section>
-    {/if}
-
-    <!-- Rectangle fill + border -->
-    {#if type === 'rect'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={item.color ?? '#ffffff'}
-            vars={sceneVars}
-            onchange={(v) => update('color', v)}
-          />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
-            oninput={(e) => update('fill_opacity', e.target.value)} />
-        </label>
-      </section>
-
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={item.border_color ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('border_color', v || undefined)}
-          />
-        </label>
-        {#if item.border_color}
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Width (px)</span>
-            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
-              oninput={(e) => update('border_width', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
-              oninput={(e) => update('border_opacity', e.target.value)} />
-          </label>
-        </div>
-        {/if}
-      </section>
-    {/if}
-
-    <!-- Image asset file -->
-    {#if type === 'image'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Asset</p>
-        <div class="flex items-center gap-2">
-          <span class="flex-1 truncate text-xs font-mono {item.file ? 'text-zinc-300' : 'text-zinc-600 italic'}">
-            {item.file || 'None selected'}
-          </span>
-          <button
-            onclick={() => (showAssetPicker = true)}
-            class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-medium
-                   border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 transition-colors"
-          >
-            <FolderOpen size={11} />
-            Browse
-          </button>
-        </div>
-      </section>
-
-      {#if showAdvanced}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Pulse animation</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">BPM source</span>
-          <Select
-            value={item.pulse_metric ?? ''}
-            options={[{value:'',label:'Fixed BPM'},{value:'heartrate',label:'Heart rate (live)'}]}
-            onchange={(v) => update('pulse_metric', v || undefined)}
-          />
-        </label>
-        {#if !item.pulse_metric}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">BPM</span>
-          <Input type="number" value={numVal(item, 'pulse_bpm')} min={0} max={300} step={1}
-            placeholder="0 = off"
-            oninput={(e) => update('pulse_bpm', e.target.value || undefined)} />
-        </label>
-        {/if}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Amplitude (0–1)</span>
-          <Input type="number" value={item.pulse_amplitude ?? 0.15} min={0} max={1} step={0.05}
-            oninput={(e) => update('pulse_amplitude', e.target.value)} />
-        </label>
-      </section>
-      {/if}
-    {/if}
-
-    {#if showAssetPicker}
-      <AssetPicker
-        current={selected()?.item.file ?? ''}
-        onselect={(name) => { applyAsset(name); showAssetPicker = false }}
-        oncancel={() => (showAssetPicker = false)}
-      />
-    {/if}
-
-    <!-- Text content (label) -->
+    <!-- ═══ LABEL ═══ -->
     {#if type === 'label'}
-      <section class="mb-4 space-y-1">
+      <!-- Text: all text properties in one place -->
+      <section class="mb-4 space-y-2">
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Text</p>
         <Input value={item.text ?? ''} oninput={(e) => update('text', e.target.value)} />
-      </section>
-    {/if}
-
-    <!-- Metric (value) -->
-    {#if type === 'value'}
-      <section class="mb-4 space-y-1">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
-        <Select
-          value={item.value ?? ''}
-          options={METRICS.map((m) => ({ value: m, label: m }))}
-          onchange={(v) => update('value', v)}
-        />
-      </section>
-    {/if}
-
-    <!-- Metric or chart value -->
-    {#if type === 'plot'}
-      <section class="mb-4 space-y-1">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
-        <Select
-          value={item.value ?? ''}
-          options={PLOT_METRICS.map((m) => ({ value: m, label: m === 'course' ? 'course (map)' : m }))}
-          onchange={(v) => update('value', v)}
-        />
-      </section>
-    {/if}
-
-    <!-- Meter: metric + range + direction -->
-    {#if type === 'meter'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
-        <Select
-          value={item.value ?? ''}
-          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
-          onchange={(v) => update('value', v)}
-        />
-        {#if UNITS_BY_METRIC[item.value]}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
-        </label>
-        {/if}
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Min</span>
-            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
-              <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
-            </Tooltip>
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Max</span>
-            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
-              <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
-            </Tooltip>
-          </label>
-        </div>
-        {#if rangeWarning(item)}
-          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
-            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
-            <span>{rangeWarning(item)}</span>
-          </div>
-        {/if}
-        {#if showAdvanced}
-        <button
-          type="button"
-          onclick={applyMeterActivityRange}
-          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
-        >
-          Set min/max
-        </button>
-        {/if}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Direction</span>
-          <Select
-            value={item.direction ?? 'up'}
-            options={METER_DIRECTIONS}
-            onchange={(v) => update('direction', v)}
-          />
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Segments</span>
-            <Input type="number" value={item.segments ?? ''} min={0} step={1} placeholder="off"
-              oninput={(e) => update('segments', e.target.value)} />
-          </label>
-          {#if (item.segments ?? 0) >= 1}
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Gap (px)</span>
-            <Input type="number" value={item.gap ?? 0} min={0} step={1}
-              oninput={(e) => update('gap', e.target.value)} />
-          </label>
-          {/if}
-        </div>
-        {#if (item.segments ?? 0) >= 1}
-        <div class="space-y-1">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-500">Gradient (min → max)</span>
-            <button type="button" class="text-xs text-primary hover:underline"
-              onclick={addGradientStop}>+ stop</button>
-          </div>
-          {#if meterGradient().length === 0}
-            <p class="text-[10px] text-zinc-600 italic">No stops — uses the solid color below.</p>
-          {/if}
-          {#each meterGradient() as stop, i (i)}
-            <div class="flex gap-2 items-center">
-              <ColorInput
-                value={stop ?? '#ffffff'}
-                vars={sceneVars}
-                onchange={(v) => updateGradientStop(i, v)}
-                class="flex-1 min-w-0"
-              />
-              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
-                onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
-            </div>
-          {/each}
-        </div>
-        {/if}
-        {#if showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Corner radius (px)</span>
-          <Input type="number" value={item.radius ?? 0} min={0} step={1}
-            oninput={(e) => update('radius', e.target.value)} />
-        </label>
-        {/if}
-      </section>
-
-      <!-- Fill (continuous meters only — segmented uses gradient stops in the Metric section) -->
-      {#if !(item.segments >= 1)}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
-        <div class="space-y-2">
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Low value</span>
-            <ColorInput
-              value={meterGradient()[0] ?? item.color ?? '#ffffff'}
-              vars={sceneVars}
-              onchange={(v) => updateContinuousGradientStop(0, v)}
-            />
-          </label>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">High value</span>
-            <ColorInput
-              value={meterGradient()[1] ?? item.color ?? '#ffffff'}
-              vars={sceneVars}
-              onchange={(v) => updateContinuousGradientStop(1, v)}
-            />
-          </label>
-        </div>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
-            oninput={(e) => update('fill_opacity', e.target.value)} />
-        </label>
-      </section>
-      {/if}
-
-      <!-- Background (track — the empty portion of the meter) -->
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Background</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={item.background ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('background', v || undefined)}
-          />
-        </label>
-        {#if item.background}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <OpacityControl value={item.background_opacity ?? 1}
-            oninput={(e) => update('background_opacity', e.target.value)} />
-        </label>
-        {/if}
-      </section>
-
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={item.border_color ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('border_color', v || undefined)}
-          />
-        </label>
-        {#if item.border_color}
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Width (px)</span>
-            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
-              oninput={(e) => update('border_width', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
-              oninput={(e) => update('border_opacity', e.target.value)} />
-          </label>
-        </div>
-        {/if}
-      </section>
-
-      <!-- Scale (number line beside the meter) -->
-      {#if showAdvanced}
-      <section class="mb-4 space-y-2">
-        <div class="flex items-center justify-between">
-          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Scale</p>
-          {#if scaleEnabled()}
-            <button type="button" class="text-xs text-zinc-500 hover:text-red-400 transition-colors"
-              onclick={disableScale}>Remove</button>
-          {:else}
-            <button type="button" class="text-xs text-primary hover:underline"
-              onclick={enableScale}>+ Enable</button>
-          {/if}
-        </div>
-        {#if scaleEnabled()}
-          <div class="space-y-1">
-            <div class="flex items-center justify-between">
-              <span class="text-xs text-zinc-500">Labels (empty = auto min/mid/max)</span>
-              <button type="button" class="text-xs text-primary hover:underline"
-                onclick={addScaleLabel}>+ add</button>
-            </div>
-            {#if (scaleLabels() ?? []).length === 0}
-              <p class="text-[10px] text-zinc-600 italic">Auto: min, mid, max</p>
-            {/if}
-            {#each (scaleLabels() ?? []) as val, i (i)}
-              <div class="flex gap-2 items-center">
-                <Input type="number" value={val} step="any"
-                  oninput={(e) => updateScaleLabel(i, e.target.value)}
-                  class="flex-1 font-mono text-xs" />
-                <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1"
-                  onclick={() => removeScaleLabel(i)} aria-label="Remove">✕</button>
-              </div>
-            {/each}
-          </div>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Label color</span>
-            <ColorInput
-              value={item.scale_color ?? ''}
-              vars={sceneVars}
-              placeholder="fill color"
-              onchange={(v) => update('scale_color', v || undefined)}
-            />
-          </label>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Suffix</span>
-            <Input value={item.scale_suffix ?? ''} placeholder="e.g. mph"
-              oninput={(e) => update('scale_suffix', e.target.value || undefined)} />
-          </label>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Font</span>
-            <Select
-              value={item.scale_font ?? ''}
-              options={fontOpts(true)}
-              onchange={(v) => update('scale_font', v || undefined)}
-            />
-          </label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="space-y-1">
-              <span class="text-xs text-zinc-500">Font size (px)</span>
-              <Input type="number" value={item.scale_font_size ?? 20} min={6} step={1}
-                oninput={(e) => update('scale_font_size', e.target.value)} />
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs text-zinc-500">Label offset (px)</span>
-              <Input type="number" value={item.scale_offset ?? 8} min={0} step={1}
-                oninput={(e) => update('scale_offset', e.target.value)} />
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs text-zinc-500">End tick ext. (px)</span>
-              <Input type="number" value={item.scale_tick_length ?? 6} min={0} step={1}
-                oninput={(e) => update('scale_tick_length', e.target.value)} />
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs text-zinc-500">Tick width (px)</span>
-              <Input type="number" value={item.scale_tick_width ?? 1} min={0} step={0.5}
-                oninput={(e) => update('scale_tick_width', e.target.value)} />
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs text-zinc-500">Extra ticks (unlabeled)</span>
-              <Input type="number" value={item.scale_ticks ?? 0} min={0} step={1}
-                oninput={(e) => update('scale_ticks', e.target.value || undefined)} />
-            </label>
-          </div>
-        {/if}
-      </section>
-      {/if}
-
-    {/if}
-
-    <!-- Gauge: metric + range + dial geometry -->
-    {#if type === 'gauge'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
-        <Select
-          value={item.value ?? ''}
-          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
-          onchange={(v) => update('value', v)}
-        />
-        {#if UNITS_BY_METRIC[item.value]}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
-        </label>
-        {/if}
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Min</span>
-            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
-              <Input value={numVal(item, 'min')} placeholder="number, min, or max" onchange={(e) => update('min', e.target.value)} />
-            </Tooltip>
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Max</span>
-            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
-              <Input value={numVal(item, 'max')} placeholder="number, min, or max" onchange={(e) => update('max', e.target.value)} />
-            </Tooltip>
-          </label>
-        </div>
-        {#if rangeWarning(item)}
-          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
-            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
-            <span>{rangeWarning(item)}</span>
-          </div>
-        {/if}
-        {#if showAdvanced}
-        <button
-          type="button"
-          onclick={applyGaugeActivityRange}
-          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
-        >
-          Set min/max
-        </button>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Start angle (°)</span>
-            <Input type="number" value={item.start_angle ?? 135} step={1}
-              oninput={(e) => update('start_angle', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Sweep (°)</span>
-            <Input type="number" value={item.sweep_angle ?? 270} step={1}
-              oninput={(e) => update('sweep_angle', e.target.value)} />
-          </label>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Arc width (px)</span>
-            <Input type="number" value={item.arc_width ?? 14} min={0} step={1}
-              oninput={(e) => update('arc_width', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Needle width (px)</span>
-            <Input type="number" value={item.needle_width ?? 6} min={0} step={1}
-              oninput={(e) => update('needle_width', e.target.value)} />
-          </label>
-        </div>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Track color</span>
-          <ColorInput
-            value={item.arc_color ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('arc_color', v || undefined)}
-          />
-        </label>
-        <div class="space-y-1">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-500">Progress gradient (start → end)</span>
-            <button type="button" class="text-xs text-primary hover:underline"
-              onclick={addGradientStop}>+ stop</button>
-          </div>
-          {#if meterGradient().length === 0}
-            <p class="text-[10px] text-zinc-600 italic">No stops — uses progress color below.</p>
-          {/if}
-          {#each meterGradient() as stop, i (i)}
-            <div class="flex gap-2 items-center">
-              <ColorInput
-                value={stop ?? '#ffffff'}
-                vars={sceneVars}
-                onchange={(v) => updateGradientStop(i, v)}
-                class="flex-1 min-w-0"
-              />
-              <button type="button" class="text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
-                onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
-            </div>
-          {/each}
-        </div>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Progress color</span>
-          <ColorInput
-            value={item.progress_color ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('progress_color', v || undefined)}
-          />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Needle color</span>
-          <ColorInput
-            value={item.needle_color ?? ''}
-            vars={sceneVars}
-            placeholder="base color"
-            onchange={(v) => update('needle_color', v || undefined)}
-          />
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1 block col-span-2">
-            <span class="text-xs text-zinc-500">Cap dot color</span>
-            <ColorInput
-              value={item.cap_color ?? ''}
-              vars={sceneVars}
-              placeholder="none"
-              onchange={(v) => update('cap_color', v || undefined)}
-            />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Cap radius (px)</span>
-            <Input type="number" value={item.cap_radius ?? ''} min={0} step={1} placeholder="auto"
-              oninput={(e) => update('cap_radius', e.target.value)} />
-          </label>
-        </div>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={item.hide_track ?? false}
-            onchange={(e) => update('hide_track', e.target.checked || undefined)}
-            class="rounded" />
-          <span class="text-xs text-zinc-400">Hide unfilled arc (current → max)</span>
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Background color</span>
-          <ColorInput
-            value={item.background_color ?? ''}
-            vars={sceneVars}
-            placeholder="none"
-            onchange={(v) => update('background_color', v || undefined)}
-          />
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Opacity</span>
-            <OpacityControl value={item.background_opacity ?? 0}
-              oninput={(e) => update('background_opacity', e.target.value)} />
-          </label>
-          <label class="space-y-1">
-            <span class="text-xs text-zinc-500">Margin (px)</span>
-            <Input type="number" value={numVal(item, 'background_margin')} min={0} step={4}
-              oninput={(e) => update('background_margin', e.target.value || undefined)} />
-          </label>
-        </div>
-        {/if}
-      </section>
-    {/if}
-
-    <!-- Line & Fill (plots only) -->
-    {#if type === 'plot'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Line</p>
-        {#if showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={colorRow('line', 'color')}
-            vars={sceneVars}
-            onchange={(v) => updateNested('line', 'color', v)}
-          />
-        </label>
-        {/if}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Width (px)</span>
-          <Input type="number" value={item.line?.width ?? 1.75} min={0} step={0.25}
-            oninput={(e) => updateNested('line', 'width', e.target.value)} />
-        </label>
-        {#if showAdvanced && item.value === 'course'}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Past opacity (traveled, 0–1)</span>
-          <OpacityControl value={item.line?.past_opacity ?? 1}
-            oninput={(e) => updateNested('line', 'past_opacity', e.target.value)} />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Future opacity (ahead, 0–1)</span>
-          <OpacityControl value={item.line?.future_opacity ?? 1}
-            oninput={(e) => updateNested('line', 'future_opacity', e.target.value)} />
-        </label>
-        {/if}
-      </section>
-
-      {#if showAdvanced}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={colorRow('fill', 'color')}
-            vars={sceneVars}
-            onchange={(v) => updateNested('fill', 'color', v)}
-          />
-        </label>
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-          <OpacityControl value={item.fill?.opacity ?? 0}
-            oninput={(e) => updateNested('fill', 'opacity', e.target.value)} />
-        </label>
-      </section>
-      {/if}
-
-      {#if item.value === 'course'}
-      <section class="mb-4 space-y-2">
-        <div class="flex items-center justify-between">
-          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Course Markers</p>
-          <button type="button" class="text-xs text-primary hover:underline" onclick={addCourseMarker}>+ marker</button>
-        </div>
-        {#if courseMarkers().length === 0}
-          <p class="text-[10px] text-zinc-600 italic">No markers.</p>
-        {:else}
-          <div class="flex flex-wrap gap-1.5">
-            {#each courseMarkers() as marker, i (marker.id ?? i)}
-              <button
-                type="button"
-                class="rounded-[6px] border px-2 py-1 text-[11px] transition-colors
-                  {(selectedCourseMarker()?.id ?? courseMarkers()[0]?.id) === marker.id
-                    ? 'border-primary bg-primary/10 text-zinc-100'
-                    : 'border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'}"
-                onclick={() => (app.selectedCourseMarkerId = marker.id)}
-              >
-                {marker.name || `Marker ${i + 1}`}
-              </button>
-            {/each}
-          </div>
-          {@const marker = selectedCourseMarker()}
-          {#if marker}
-            <label class="space-y-1 block">
-              <span class="text-xs text-zinc-500">Name</span>
-              <Input value={marker.name ?? ''} oninput={(e) => updateCourseMarker('name', e.target.value)} />
-            </label>
-            <label class="space-y-1 block">
-              <span class="text-xs text-zinc-500">Style</span>
-              <Select
-                value={marker.style ?? 'checkered'}
-                options={COURSE_MARKER_STYLES}
-                onchange={(v) => updateCourseMarker('style', v)}
-              />
-            </label>
-            <label class="space-y-1 block">
-              <span class="text-xs text-zinc-500">Distance from activity start (m)</span>
-              <Input type="number" value={marker.distance ?? 0} min={0} step={10}
-                oninput={(e) => updateCourseMarker('distance', e.target.value)} />
-            </label>
-            {#if (marker.style ?? 'checkered') !== 'checkered'}
-            <label class="space-y-1 block">
-              <span class="text-xs text-zinc-500">Color</span>
-              <ColorInput
-                value={marker.color ?? '#ef4444'}
-                vars={sceneVars}
-                onchange={(v) => updateCourseMarker('color', v)}
-              />
-            </label>
-            {/if}
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1">
-                <span class="text-xs text-zinc-500">Width (px)</span>
-                <Input type="number" value={marker.width ?? 34} min={1} step={1}
-                  oninput={(e) => updateCourseMarker('width', e.target.value)} />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-zinc-500">Height (px)</span>
-                <Input type="number" value={marker.height ?? 10} min={1} step={1}
-                  oninput={(e) => updateCourseMarker('height', e.target.value)} />
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1">
-                <span class="text-xs text-zinc-500">Rotation trim (°)</span>
-                <Input type="number" value={marker.rotation ?? 0} step={1}
-                  oninput={(e) => updateCourseMarker('rotation', e.target.value)} />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-                <OpacityControl value={marker.opacity ?? 1}
-                  oninput={(e) => updateCourseMarker('opacity', e.target.value)} />
-              </label>
-            </div>
-            <button type="button" class="text-xs text-zinc-500 hover:text-red-400"
-              onclick={() => removeCourseMarker(marker.id)}>Remove marker</button>
-          {/if}
-        {/if}
-      </section>
-      {/if}
-
-      <!-- Tracking point -->
-      {@const pt = item.point ?? {}}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Tracking Point</p>
-        {#if showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Color</span>
-          <ColorInput
-            value={pt.color ?? '#ffffff'}
-            vars={sceneVars}
-            onchange={(v) => updatePoint('color', v)}
-          />
-        </label>
-        {/if}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Size (area px²)</span>
-          <Input type="number" value={pt.weight ?? 80} min={4} step={4}
-            oninput={(e) => updatePoint('weight', e.target.value)} />
-        </label>
-        {#if showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Edge Color</span>
-          <ColorInput
-            value={pt.edge_color ?? '#000000'}
-            vars={sceneVars}
-            onchange={(v) => updatePoint('edge_color', v)}
-          />
-        </label>
-        {#if !(pt.remove_edge_color ?? false)}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Edge width (px)</span>
-          <Input type="number" value={pt.edge_width ?? 1} min={0} step={0.5}
-            oninput={(e) => updatePoint('edge_width', e.target.value)} />
-        </label>
-        {/if}
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={pt.remove_edge_color ?? false}
-            onchange={(e) => updatePoint('remove_edge_color', e.target.checked)}
-            class="accent-primary" />
-          <span class="text-xs text-zinc-400">Remove edge</span>
-        </label>
-        {/if}
-      </section>
-
-      <!-- Point Label — value text next to the marker -->
-      {#if showAdvanced}
-      {@const pl = item.point_label}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Point Label</p>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={pl != null}
-            onchange={(e) => togglePointLabel(e.target.checked)}
-            class="accent-primary" />
-          <span class="text-xs text-zinc-400">Show current value at the marker</span>
-        </label>
-        {#if pl != null}
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={(pl.units ?? []).includes('metric')}
-                onchange={(e) => toggleUnit('metric', e.target.checked)}
-                class="accent-primary" />
-              <span class="text-xs text-zinc-400">Metric</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={(pl.units ?? []).includes('imperial')}
-                onchange={(e) => toggleUnit('imperial', e.target.checked)}
-                class="accent-primary" />
-              <span class="text-xs text-zinc-400">Imperial</span>
-            </label>
-          </div>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Font</span>
-            <Select
-              value={pl.font ?? 'Furore.otf'}
-              options={fontOpts(false)}
-              onchange={(v) => updatePL('font', v)}
-            />
-          </label>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Size</span>
-            <Input type="number" value={pl.font_size ?? 64} min={1}
-              oninput={(e) => updatePL('font_size', e.target.value)} />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
-            <span class="text-xs text-zinc-500">Italic</span>
-            <Switch checked={pl.italic ?? false} ariaLabel="Italic point label" onchange={(v) => updatePL('italic', v ? true : undefined)} />
-          </label>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Color</span>
-            <ColorInput
-              value={pl.color ?? '#ffffffc8'}
-              vars={sceneVars}
-              onchange={(v) => updatePL('color', v)}
-            />
-          </label>
-          <div class="flex gap-2">
-            <label class="space-y-1 block flex-1">
-              <span class="text-xs text-zinc-500">X offset</span>
-              <Input type="number" value={pl.x_offset ?? 0}
-                oninput={(e) => updatePL('x_offset', e.target.value)} />
-            </label>
-            <label class="space-y-1 block flex-1">
-              <span class="text-xs text-zinc-500">Y offset</span>
-              <Input type="number" value={pl.y_offset ?? 0}
-                oninput={(e) => updatePL('y_offset', e.target.value)} />
-            </label>
-          </div>
-          <label class="space-y-1 block">
-            <span class="text-xs text-zinc-500">Decimal places</span>
-            <Input type="number" value={pl.decimal_rounding ?? 0} min={0} step={1}
-              oninput={(e) => updatePL('decimal_rounding', e.target.value)} />
-          </label>
-        {/if}
-      </section>
-      {/if}
-    {/if}
-
-    <!-- Typography (label + value) -->
-    {#if type !== 'plot' && type !== 'rect' && type !== 'image'}
-      <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Typography</p>
-        {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Font</span>
-          <Select
-            value={item.font ?? ''}
-            options={fontOpts(true)}
-            onchange={(v) => update('font', v || undefined)}
-          />
+          <Select value={item.font ?? ''} options={fontOpts(true)} onchange={(v) => update('font', v || undefined)} />
         </label>
-        {/if}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Size</span>
           <Input type="number" value={numVal(item, 'font_size')} placeholder="Scene default" oninput={(e) => update('font_size', e.target.value)} />
         </label>
-        {#if type === 'label'}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Letter spacing (px)</span>
-          <Input type="number" value={numVal(item, 'letter_spacing')} placeholder="0" step={0.5} oninput={(e) => update('letter_spacing', e.target.value)} />
-        </label>
-        {/if}
         <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
           <span class="text-xs text-zinc-500">Italic</span>
           <Switch checked={item.italic ?? false} ariaLabel="Italic text" onchange={(v) => update('italic', v ? true : undefined)} />
         </label>
-        {#if showAdvanced && (type === 'label' || type === 'value')}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
+        </label>
+        {#if showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Letter spacing (px)</span>
+          <Input type="number" value={numVal(item, 'letter_spacing')} placeholder="0" step={0.5} oninput={(e) => update('letter_spacing', e.target.value)} />
+        </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Alignment</span>
           <Select
@@ -1617,46 +721,25 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             onchange={(v) => update('text_align', v)}
           />
         </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? app.config?.scene?.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
         {/if}
       </section>
     {/if}
 
-    <!-- Appearance (not shown for rect/meter/image — image handles opacity in size section) -->
-    {#if type !== 'rect' && type !== 'meter' && type !== 'image'}
-    <section class="mb-4 space-y-2">
-      <p class="text-[10px] uppercase tracking-wider text-zinc-600">Appearance</p>
-      {#if showAdvanced}
-      <label class="space-y-1 block">
-        <span class="text-xs text-zinc-500">Color</span>
-        <ColorInput
-          value={item.color ?? '#ffffff'}
-          vars={sceneVars}
-          onchange={(v) => update('color', v)}
-        />
-      </label>
-      {:else}
-      <label class="space-y-1 block">
-        <span class="text-xs text-zinc-500">Color</span>
-        <ColorInput
-          value={primaryColor()}
-          vars={sceneVars}
-          onchange={(v) => setAllColors(v)}
-        />
-      </label>
-      {/if}
-      {#if showAdvanced}
-      <label class="space-y-1 block">
-        <span class="text-xs text-zinc-500">Opacity (0–1)</span>
-        <OpacityControl value={item.opacity ?? app.config?.scene?.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
-      </label>
-      {/if}
-    </section>
-    {/if}
-
-    <!-- Value-specific -->
+    <!-- ═══ VALUE ═══ -->
     {#if type === 'value'}
+      <!-- Metric + formatting -->
       <section class="mb-4 space-y-2">
-        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Formatting</p>
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={METRICS.map((m) => ({ value: m, label: m }))}
+          onchange={(v) => update('value', v)}
+        />
+
         {#if item.value === 'distance'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
@@ -1664,11 +747,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Reference</span>
-          <Select
-            value={item.distance_reference ?? 'overlay_start'}
-            options={DISTANCE_REFERENCES}
-            onchange={(v) => update('distance_reference', v)}
-          />
+          <Select value={item.distance_reference ?? 'overlay_start'} options={DISTANCE_REFERENCES} onchange={(v) => update('distance_reference', v)} />
         </label>
         {#if item.distance_reference === 'until_custom' || item.distance_reference === 'since_custom'}
         <label class="space-y-1 block">
@@ -1684,6 +763,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           {/if}
         </label>
         {/if}
+
         {:else if item.value === 'time'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Reference</span>
@@ -1745,34 +825,30 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         {/if}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Format</span>
-          <Select
-            value={item.time_format ?? 'hh:mm:ss'}
-            options={TIME_FORMATS}
-            onchange={(v) => update('time_format', v)}
-          />
+          <Select value={item.time_format ?? 'hh:mm:ss'} options={TIME_FORMATS} onchange={(v) => update('time_format', v)} />
         </label>
         {#if isClockFormat(item.time_format)}
         <label class="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={item.time_12h ?? false}
-            onchange={(e) => update('time_12h', e.target.checked || undefined)}
-            class="rounded" />
+            onchange={(e) => update('time_12h', e.target.checked || undefined)} class="rounded" />
           <span class="text-xs text-zinc-400">12-hour clock</span>
         </label>
         {#if item.time_12h}
         <label class="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={item.time_ampm ?? false}
-            onchange={(e) => update('time_ampm', e.target.checked || undefined)}
-            class="rounded" />
+            onchange={(e) => update('time_ampm', e.target.checked || undefined)} class="rounded" />
           <span class="text-xs text-zinc-400">Show AM/PM</span>
         </label>
         {/if}
         {/if}
+
         {:else if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
           <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
         </label>
         {/if}
+
         {#if showAdvanced}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Suffix</span>
@@ -1784,6 +860,902 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         </label>
         {/if}
       </section>
+
+      <!-- Text: all text styling in one place -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Text</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Font</span>
+          <Select value={item.font ?? ''} options={fontOpts(true)} onchange={(v) => update('font', v || undefined)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Size</span>
+          <Input type="number" value={numVal(item, 'font_size')} placeholder="Scene default" oninput={(e) => update('font_size', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
+        </label>
+        {#if showAdvanced}
+        <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
+          <span class="text-xs text-zinc-500">Italic</span>
+          <Switch checked={item.italic ?? false} ariaLabel="Italic text" onchange={(v) => update('italic', v ? true : undefined)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Alignment</span>
+          <Select
+            value={item.text_align ?? 'left'}
+            options={[{value:'left',label:'Left'},{value:'center',label:'Center'},{value:'right',label:'Right'}]}
+            onchange={(v) => update('text_align', v)}
+          />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? app.config?.scene?.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
     {/if}
+
+    <!-- ═══ PLOT ═══ -->
+    {#if type === 'plot'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={PLOT_METRICS.map((m) => ({ value: m, label: m === 'course' ? 'course (map)' : m }))}
+          onchange={(v) => update('value', v)}
+        />
+      </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Appearance</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          {#if showAdvanced}
+          <ColorInput value={colorRow('line', 'color')} vars={sceneVars} onchange={(v) => updateNested('line', 'color', v)} />
+          {:else}
+          <ColorInput value={primaryColor()} vars={sceneVars} onchange={(v) => setAllColors(v)} />
+          {/if}
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Line width (px)</span>
+          <Input type="number" value={item.line?.width ?? 1.75} min={0} step={0.25}
+            oninput={(e) => updateNested('line', 'width', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Point size (area px²)</span>
+          <Input type="number" value={item.point?.weight ?? 80} min={4} step={4}
+            oninput={(e) => updatePoint('weight', e.target.value)} />
+        </label>
+        {#if showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+
+      {#if showAdvanced}
+      <!-- Fill -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={colorRow('fill', 'color')} vars={sceneVars} onchange={(v) => updateNested('fill', 'color', v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.fill?.opacity ?? 0} oninput={(e) => updateNested('fill', 'opacity', e.target.value)} />
+        </label>
+      </section>
+
+      {#if item.value === 'course'}
+      <!-- Course map: traveled / ahead opacity -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Visibility</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Traveled opacity (0–1)</span>
+          <OpacityControl value={item.line?.past_opacity ?? 1}
+            oninput={(e) => updateNested('line', 'past_opacity', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Ahead opacity (0–1)</span>
+          <OpacityControl value={item.line?.future_opacity ?? 1}
+            oninput={(e) => updateNested('line', 'future_opacity', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+
+      <!-- Tracking point detail -->
+      {@const pt = item.point ?? {}}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Tracking Point</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={pt.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => updatePoint('color', v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Edge color</span>
+          <ColorInput value={pt.edge_color ?? '#000000'} vars={sceneVars} onchange={(v) => updatePoint('edge_color', v)} />
+        </label>
+        {#if !(pt.remove_edge_color ?? false)}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Edge width (px)</span>
+          <Input type="number" value={pt.edge_width ?? 1} min={0} step={0.5}
+            oninput={(e) => updatePoint('edge_width', e.target.value)} />
+        </label>
+        {/if}
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={pt.remove_edge_color ?? false}
+            onchange={(e) => updatePoint('remove_edge_color', e.target.checked)}
+            class="accent-primary" />
+          <span class="text-xs text-zinc-400">Remove edge</span>
+        </label>
+      </section>
+
+      <!-- Point label -->
+      {@const pl = item.point_label}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Point Label</p>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={pl != null}
+            onchange={(e) => togglePointLabel(e.target.checked)}
+            class="accent-primary" />
+          <span class="text-xs text-zinc-400">Show value at marker</span>
+        </label>
+        {#if pl != null}
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={(pl.units ?? []).includes('metric')}
+                onchange={(e) => toggleUnit('metric', e.target.checked)} class="accent-primary" />
+              <span class="text-xs text-zinc-400">Metric</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={(pl.units ?? []).includes('imperial')}
+                onchange={(e) => toggleUnit('imperial', e.target.checked)} class="accent-primary" />
+              <span class="text-xs text-zinc-400">Imperial</span>
+            </label>
+          </div>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Font</span>
+            <Select value={pl.font ?? 'Furore.otf'} options={fontOpts(false)} onchange={(v) => updatePL('font', v)} />
+          </label>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Size</span>
+            <Input type="number" value={pl.font_size ?? 64} min={1} oninput={(e) => updatePL('font_size', e.target.value)} />
+          </label>
+          <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
+            <span class="text-xs text-zinc-500">Italic</span>
+            <Switch checked={pl.italic ?? false} ariaLabel="Italic point label" onchange={(v) => updatePL('italic', v ? true : undefined)} />
+          </label>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Color</span>
+            <ColorInput value={pl.color ?? '#ffffffc8'} vars={sceneVars} onchange={(v) => updatePL('color', v)} />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">X offset</span>
+              <Input type="number" value={pl.x_offset ?? 0} oninput={(e) => updatePL('x_offset', e.target.value)} />
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Y offset</span>
+              <Input type="number" value={pl.y_offset ?? 0} oninput={(e) => updatePL('y_offset', e.target.value)} />
+            </label>
+          </div>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Decimal places</span>
+            <Input type="number" value={pl.decimal_rounding ?? 0} min={0} step={1}
+              oninput={(e) => updatePL('decimal_rounding', e.target.value)} />
+          </label>
+        {/if}
+      </section>
+
+      <!-- Size + rotation -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width</span>
+            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => update('width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Height</span>
+            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+
+      <!-- Course Markers — always visible when metric is course -->
+      {#if item.value === 'course'}
+      <section class="mb-4 space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Course Markers</p>
+          <button type="button" class="cursor-pointer text-xs text-primary hover:underline" onclick={addCourseMarker}>+ marker</button>
+        </div>
+        {#if courseMarkers().length === 0}
+          <p class="text-[10px] text-zinc-600 italic">No markers.</p>
+        {:else}
+          <div class="flex flex-wrap gap-1.5">
+            {#each courseMarkers() as marker, i (marker.id ?? i)}
+              <button
+                type="button"
+                class="cursor-pointer rounded-[6px] border px-2 py-1 text-[11px] transition-colors
+                  {(selectedCourseMarker()?.id ?? courseMarkers()[0]?.id) === marker.id
+                    ? 'border-primary bg-primary/10 text-zinc-100'
+                    : 'border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'}"
+                onclick={() => (app.selectedCourseMarkerId = marker.id)}
+              >
+                {marker.name || `Marker ${i + 1}`}
+              </button>
+            {/each}
+          </div>
+          {@const marker = selectedCourseMarker()}
+          {#if marker}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Name</span>
+              <Input value={marker.name ?? ''} oninput={(e) => updateCourseMarker('name', e.target.value)} />
+            </label>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Style</span>
+              <Select value={marker.style ?? 'checkered'} options={COURSE_MARKER_STYLES} onchange={(v) => updateCourseMarker('style', v)} />
+            </label>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Distance from start (m)</span>
+              <Input type="number" value={marker.distance ?? 0} min={0} step={10}
+                oninput={(e) => updateCourseMarker('distance', e.target.value)} />
+            </label>
+            {#if (marker.style ?? 'checkered') !== 'checkered'}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Color</span>
+              <ColorInput value={marker.color ?? '#ef4444'} vars={sceneVars} onchange={(v) => updateCourseMarker('color', v)} />
+            </label>
+            {/if}
+            <div class="grid grid-cols-2 gap-2">
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Width (px)</span>
+                <Input type="number" value={marker.width ?? 34} min={1} step={1}
+                  oninput={(e) => updateCourseMarker('width', e.target.value)} />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Height (px)</span>
+                <Input type="number" value={marker.height ?? 10} min={1} step={1}
+                  oninput={(e) => updateCourseMarker('height', e.target.value)} />
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Rotation (°)</span>
+                <Input type="number" value={marker.rotation ?? 0} step={1}
+                  oninput={(e) => updateCourseMarker('rotation', e.target.value)} />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+                <OpacityControl value={marker.opacity ?? 1}
+                  oninput={(e) => updateCourseMarker('opacity', e.target.value)} />
+              </label>
+            </div>
+            <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400"
+              onclick={() => removeCourseMarker(marker.id)}>Remove marker</button>
+          {/if}
+        {/if}
+      </section>
+      {/if}
+    {/if}
+
+    <!-- ═══ METER ═══ -->
+    {#if type === 'meter'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          onchange={(v) => update('value', v)}
+        />
+        {#if UNITS_BY_METRIC[item.value]}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+        </label>
+        {/if}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Min</span>
+            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'min')} placeholder="min / max / #" onchange={(e) => update('min', e.target.value)} />
+            </Tooltip>
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Max</span>
+            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'max')} placeholder="min / max / #" onchange={(e) => update('max', e.target.value)} />
+            </Tooltip>
+          </label>
+        </div>
+        {#if rangeWarning(item)}
+          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
+            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
+            <span>{rangeWarning(item)}</span>
+          </div>
+        {/if}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Direction</span>
+          <Select value={item.direction ?? 'up'} options={METER_DIRECTIONS} onchange={(v) => update('direction', v)} />
+        </label>
+        {#if showAdvanced}
+        <button
+          type="button"
+          onclick={applyMeterActivityRange}
+          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+        >
+          Set min/max from activity
+        </button>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Segments</span>
+            <Input type="number" value={item.segments ?? ''} min={0} step={1} placeholder="off"
+              oninput={(e) => update('segments', e.target.value)} />
+          </label>
+          {#if (item.segments ?? 0) >= 1}
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Gap (px)</span>
+            <Input type="number" value={item.gap ?? 0} min={0} step={1}
+              oninput={(e) => update('gap', e.target.value)} />
+          </label>
+          {/if}
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Corner radius (px)</span>
+          <Input type="number" value={item.radius ?? 0} min={0} step={1}
+            oninput={(e) => update('radius', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+
+      <!-- Fill: adapts to segmented vs continuous -->
+      {#if (item.segments ?? 0) >= 1}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-zinc-500">Gradient (min → max)</span>
+          <button type="button" class="cursor-pointer text-xs text-primary hover:underline"
+            onclick={addGradientStop}>+ stop</button>
+        </div>
+        {#if meterGradient().length === 0}
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Color</span>
+            <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
+          </label>
+        {/if}
+        {#each meterGradient() as stop, i (i)}
+          <div class="flex gap-2 items-center">
+            <ColorInput value={stop ?? '#ffffff'} vars={sceneVars}
+              onchange={(v) => updateGradientStop(i, v)} class="flex-1 min-w-0" />
+            <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
+              onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
+          </div>
+        {/each}
+      </section>
+      {:else}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Low value</span>
+          <ColorInput value={meterGradient()[0] ?? item.color ?? '#ffffff'} vars={sceneVars}
+            onchange={(v) => updateContinuousGradientStop(0, v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">High value</span>
+          <ColorInput value={meterGradient()[1] ?? item.color ?? '#ffffff'} vars={sceneVars}
+            onchange={(v) => updateContinuousGradientStop(1, v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
+            oninput={(e) => update('fill_opacity', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+
+      <!-- Background (track) -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Background</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.background ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('background', v || undefined)} />
+        </label>
+        {#if item.background}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.background_opacity ?? 1}
+            oninput={(e) => update('background_opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+
+      <!-- Border -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.border_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('border_color', v || undefined)} />
+        </label>
+        {#if item.border_color}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width (px)</span>
+            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
+              oninput={(e) => update('border_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
+              oninput={(e) => update('border_opacity', e.target.value)} />
+          </label>
+        </div>
+        {/if}
+      </section>
+
+      <!-- Scale (advanced) -->
+      {#if showAdvanced}
+      <section class="mb-4 space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Scale</p>
+          {#if scaleEnabled()}
+            <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400 transition-colors"
+              onclick={disableScale}>Remove</button>
+          {:else}
+            <button type="button" class="cursor-pointer text-xs text-primary hover:underline"
+              onclick={enableScale}>+ Enable</button>
+          {/if}
+        </div>
+        {#if scaleEnabled()}
+          <div class="space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-zinc-500">Labels (empty = auto)</span>
+              <button type="button" class="cursor-pointer text-xs text-primary hover:underline"
+                onclick={addScaleLabel}>+ add</button>
+            </div>
+            {#if (scaleLabels() ?? []).length === 0}
+              <p class="text-[10px] text-zinc-600 italic">Auto: min, mid, max</p>
+            {/if}
+            {#each (scaleLabels() ?? []) as val, i (i)}
+              <div class="flex gap-2 items-center">
+                <Input type="number" value={val} step="any"
+                  oninput={(e) => updateScaleLabel(i, e.target.value)}
+                  class="flex-1 font-mono text-xs" />
+                <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400 px-1"
+                  onclick={() => removeScaleLabel(i)} aria-label="Remove">✕</button>
+              </div>
+            {/each}
+          </div>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Label color</span>
+            <ColorInput value={item.scale_color ?? ''} vars={sceneVars} placeholder="fill color"
+              onchange={(v) => update('scale_color', v || undefined)} />
+          </label>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Suffix</span>
+            <Input value={item.scale_suffix ?? ''} placeholder="e.g. mph"
+              oninput={(e) => update('scale_suffix', e.target.value || undefined)} />
+          </label>
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Font</span>
+            <Select value={item.scale_font ?? ''} options={fontOpts(true)} onchange={(v) => update('scale_font', v || undefined)} />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Font size (px)</span>
+              <Input type="number" value={item.scale_font_size ?? 20} min={6} step={1}
+                oninput={(e) => update('scale_font_size', e.target.value)} />
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Offset (px)</span>
+              <Input type="number" value={item.scale_offset ?? 8} min={0} step={1}
+                oninput={(e) => update('scale_offset', e.target.value)} />
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Tick ext. (px)</span>
+              <Input type="number" value={item.scale_tick_length ?? 6} min={0} step={1}
+                oninput={(e) => update('scale_tick_length', e.target.value)} />
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Tick width (px)</span>
+              <Input type="number" value={item.scale_tick_width ?? 1} min={0} step={0.5}
+                oninput={(e) => update('scale_tick_width', e.target.value)} />
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs text-zinc-500">Extra ticks</span>
+              <Input type="number" value={item.scale_ticks ?? 0} min={0} step={1}
+                oninput={(e) => update('scale_ticks', e.target.value || undefined)} />
+            </label>
+          </div>
+        {/if}
+      </section>
+
+      <!-- Size + rotation (advanced) -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width</span>
+            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => update('width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Height</span>
+            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+    {/if}
+
+    <!-- ═══ GAUGE ═══ -->
+    {#if type === 'gauge'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
+        <Select
+          value={item.value ?? ''}
+          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          onchange={(v) => update('value', v)}
+        />
+        {#if UNITS_BY_METRIC[item.value]}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+        </label>
+        {/if}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Min</span>
+            <Tooltip content={rangeBoundTooltip(item, 'min')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'min')} placeholder="min / max / #" onchange={(e) => update('min', e.target.value)} />
+            </Tooltip>
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Max</span>
+            <Tooltip content={rangeBoundTooltip(item, 'max')} side="bottom" class="w-full">
+              <Input value={numVal(item, 'max')} placeholder="min / max / #" onchange={(e) => update('max', e.target.value)} />
+            </Tooltip>
+          </label>
+        </div>
+        {#if rangeWarning(item)}
+          <div class="flex items-start gap-1.5 rounded-[6px] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-300">
+            <AlertTriangle size={12} class="mt-0.5 shrink-0" />
+            <span>{rangeWarning(item)}</span>
+          </div>
+        {/if}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
+        </label>
+      </section>
+
+      <!-- Dial geometry + colors (advanced) -->
+      {#if showAdvanced}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Dial</p>
+        <button
+          type="button"
+          onclick={applyGaugeActivityRange}
+          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+        >
+          Set min/max from activity
+        </button>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Start angle (°)</span>
+            <Input type="number" value={item.start_angle ?? 135} step={1}
+              oninput={(e) => update('start_angle', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Sweep (°)</span>
+            <Input type="number" value={item.sweep_angle ?? 270} step={1}
+              oninput={(e) => update('sweep_angle', e.target.value)} />
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Arc width (px)</span>
+            <Input type="number" value={item.arc_width ?? 14} min={0} step={1}
+              oninput={(e) => update('arc_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Needle width (px)</span>
+            <Input type="number" value={item.needle_width ?? 6} min={0} step={1}
+              oninput={(e) => update('needle_width', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Track color</span>
+          <ColorInput value={item.arc_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('arc_color', v || undefined)} />
+        </label>
+        <div class="space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-zinc-500">Progress gradient (start → end)</span>
+            <button type="button" class="cursor-pointer text-xs text-primary hover:underline"
+              onclick={addGradientStop}>+ stop</button>
+          </div>
+          {#if meterGradient().length === 0}
+            <p class="text-[10px] text-zinc-600 italic">No stops — uses progress color.</p>
+          {/if}
+          {#each meterGradient() as stop, i (i)}
+            <div class="flex gap-2 items-center">
+              <ColorInput value={stop ?? '#ffffff'} vars={sceneVars}
+                onchange={(v) => updateGradientStop(i, v)} class="flex-1 min-w-0" />
+              <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
+                onclick={() => removeGradientStop(i)} aria-label="Remove stop">✕</button>
+            </div>
+          {/each}
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Progress color</span>
+          <ColorInput value={item.progress_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('progress_color', v || undefined)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Needle color</span>
+          <ColorInput value={item.needle_color ?? ''} vars={sceneVars} placeholder="base color"
+            onchange={(v) => update('needle_color', v || undefined)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Cap dot color</span>
+          <ColorInput value={item.cap_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('cap_color', v || undefined)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Cap radius (px)</span>
+          <Input type="number" value={item.cap_radius ?? ''} min={0} step={1} placeholder="auto"
+            oninput={(e) => update('cap_radius', e.target.value)} />
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={item.hide_track ?? false}
+            onchange={(e) => update('hide_track', e.target.checked || undefined)} class="rounded" />
+          <span class="text-xs text-zinc-400">Hide unfilled arc</span>
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Background color</span>
+          <ColorInput value={item.background_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('background_color', v || undefined)} />
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Background opacity</span>
+            <OpacityControl value={item.background_opacity ?? 0}
+              oninput={(e) => update('background_opacity', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Margin (px)</span>
+            <Input type="number" value={numVal(item, 'background_margin')} min={0} step={4}
+              oninput={(e) => update('background_margin', e.target.value || undefined)} />
+          </label>
+        </div>
+      </section>
+
+      <!-- Size + rotation (advanced) -->
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width</span>
+            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => update('width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Height</span>
+            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
+          </label>
+        </div>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+    {/if}
+
+    <!-- ═══ RECT ═══ -->
+    {#if type === 'rect'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width</span>
+            <Input type="number" step="1" value={numVal(item, 'width')} oninput={(e) => update('width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Height</span>
+            <Input type="number" step="1" value={numVal(item, 'height')} oninput={(e) => update('height', e.target.value)} />
+          </label>
+        </div>
+        {#if showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Corner radius (px)</span>
+          <Input type="number" value={item.radius ?? 0} min={0} step={1}
+            oninput={(e) => update('radius', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Element opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Fill</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.fill_opacity ?? item.opacity ?? 1}
+            oninput={(e) => update('fill_opacity', e.target.value)} />
+        </label>
+      </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Border</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Color</span>
+          <ColorInput value={item.border_color ?? ''} vars={sceneVars} placeholder="none"
+            onchange={(v) => update('border_color', v || undefined)} />
+        </label>
+        {#if item.border_color}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width (px)</span>
+            <Input type="number" value={item.border_width ?? 2} min={0.5} step={0.5}
+              oninput={(e) => update('border_width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+            <OpacityControl value={item.border_opacity ?? item.opacity ?? 1}
+              oninput={(e) => update('border_opacity', e.target.value)} />
+          </label>
+        </div>
+        {/if}
+      </section>
+    {/if}
+
+    <!-- ═══ IMAGE ═══ -->
+    {#if type === 'image'}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Asset</p>
+        <div class="flex items-center gap-2">
+          <span class="flex-1 truncate text-xs font-mono {item.file ? 'text-zinc-300' : 'text-zinc-600 italic'}">
+            {item.file || 'None selected'}
+          </span>
+          <button
+            onclick={() => (showAssetPicker = true)}
+            class="cursor-pointer shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-medium
+                   border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 transition-colors"
+          >
+            <FolderOpen size={11} />
+            Browse
+          </button>
+        </div>
+      </section>
+
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Size</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Width</span>
+            <Input type="number" step="1" value={numVal(item, 'width')}
+              oninput={(e) => updateImageSize('width', e.target.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-zinc-500">Height</span>
+            <Input type="number" step="1" value={numVal(item, 'height')}
+              oninput={(e) => updateImageSize('height', e.target.value)} />
+          </label>
+        </div>
+        {#if showAdvanced}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Rotation (°)</span>
+          <Input type="number" value={item.rotation ?? 0} min={-180} max={180} step={1}
+            oninput={(e) => update('rotation', e.target.value)} />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Opacity (0–1)</span>
+          <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
+        </label>
+        {/if}
+      </section>
+
+      {#if showAdvanced}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Pulse animation</p>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">BPM source</span>
+          <Select
+            value={item.pulse_metric ?? ''}
+            options={[{value:'',label:'Fixed BPM'},{value:'heartrate',label:'Heart rate (live)'}]}
+            onchange={(v) => update('pulse_metric', v || undefined)}
+          />
+        </label>
+        {#if !item.pulse_metric}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">BPM</span>
+          <Input type="number" value={numVal(item, 'pulse_bpm')} min={0} max={300} step={1}
+            placeholder="0 = off"
+            oninput={(e) => update('pulse_bpm', e.target.value || undefined)} />
+        </label>
+        {/if}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Amplitude (0–1)</span>
+          <Input type="number" value={item.pulse_amplitude ?? 0.15} min={0} max={1} step={0.05}
+            oninput={(e) => update('pulse_amplitude', e.target.value)} />
+        </label>
+      </section>
+      {/if}
+
+      {#if showAssetPicker}
+        <AssetPicker
+          current={selected()?.item.file ?? ''}
+          onselect={(name) => { applyAsset(name); showAssetPicker = false }}
+          oncancel={() => (showAssetPicker = false)}
+        />
+      {/if}
+    {/if}
+
+    <!-- Position — advanced for all types; click-and-drag is the primary interaction -->
+    {#if showAdvanced}
+    <section class="mb-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Position</p>
+        <button
+          onclick={() => app.updateElement(id, { locked: !item.locked })}
+          title={item.locked ? 'Unlock position' : 'Lock position'}
+          class="cursor-pointer p-1 rounded transition-colors {item.locked ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-zinc-300'}"
+        >
+          {#if item.locked}
+            <Lock size={13} />
+          {:else}
+            <LockOpen size={13} />
+          {/if}
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="space-y-1">
+          <span class="text-xs text-zinc-500">X</span>
+          <Input type="number" step="1" value={numVal(item, 'x')} oninput={(e) => update('x', e.target.value)} />
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs text-zinc-500">Y</span>
+          <Input type="number" step="1" value={numVal(item, 'y')} oninput={(e) => update('y', e.target.value)} />
+        </label>
+      </div>
+    </section>
+    {/if}
+
   {/if}
 </div>
