@@ -19,7 +19,6 @@
   import ActivityPickerModal from './components/overlays/ActivityPickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
   import NewTemplateDialog from './components/overlays/NewTemplateDialog.svelte'
-  import GenerateTemplateDialog from './components/overlays/GenerateTemplateDialog.svelte'
   import Button from './components/ui/Button.svelte'
   import Tooltip from './components/ui/Tooltip.svelte'
 
@@ -136,15 +135,22 @@
   let showSettings = $state(false)
   let showAbout = $state(false)
   let showNewTemplateDialog = $state(false)
-  let showGenerateDialog = $state(false)
+  let showAiChat = $state(false)
   let showActivityPicker = $state(false)
+
+  // Auto-switch to properties when user clicks an element while AI chat is open.
+  $effect(() => {
+    if ((app.selectedElementId || app.selectedGroupId) && showAiChat) {
+      showAiChat = false
+    }
+  })
 
   function closeDialogs() {
     showActivityPicker = false
     showSettings = false
     showAbout = false
     showNewTemplateDialog = false
-    showGenerateDialog = false
+    showAiChat = false
     app.showTemplatePicker = false
   }
 
@@ -173,9 +179,13 @@
     showNewTemplateDialog = true
   }
 
-  function openGenerateDialog() {
-    closeDialogs()
-    showGenerateDialog = true
+  function toggleAiChat() {
+    if (showAiChat) {
+      showAiChat = false
+    } else {
+      closeDialogs()
+      showAiChat = true
+    }
   }
 
   // Enforce mutual exclusion: any code path that sets showTemplatePicker = true
@@ -186,7 +196,7 @@
       showSettings = false
       showAbout = false
       showNewTemplateDialog = false
-      showGenerateDialog = false
+      showAiChat = false
     }
   })
 
@@ -218,7 +228,6 @@
       showSettings ||
       app.showTemplatePicker ||
       showNewTemplateDialog ||
-      showGenerateDialog ||
       showActivityPicker
 
     if (e.key === 'Escape' && showResolutionMenu) {
@@ -530,18 +539,6 @@
       }}
     />
   {/if}
-  {#if showGenerateDialog}
-    <GenerateTemplateDialog
-      hasCurrentTemplate={!!app.config}
-      ongenerate={async (prompt, { edit }) => {
-        await app.generateTemplate(prompt, { edit })
-        showGenerateDialog = false
-      }}
-      oncancel={() => {
-        showGenerateDialog = false
-      }}
-    />
-  {/if}
   {#if app.pendingDiscard}
     <ConfirmDialog
       title="Discard unsaved changes?"
@@ -606,12 +603,16 @@
         </button>
       </Tooltip>
 
-      <!-- Generate with AI -->
-      <Tooltip content="Generate a template with AI" side="bottom" delay={TOOLTIP_DELAY}>
+      <!-- AI assistant (sidebar toggle) -->
+      <Tooltip content={showAiChat ? 'Close AI assistant' : 'Open AI assistant'} side="bottom" delay={TOOLTIP_DELAY}>
         <button
-          onclick={openGenerateDialog}
-          class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer text-[#dc143c] hover:border-[#dc143c]/60 hover:text-[#dc143c]"
-          aria-label="Generate a template with AI"
+          onclick={toggleAiChat}
+          class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer transition-colors
+                 {showAiChat
+            ? 'border-[#dc143c]/60 bg-[#dc143c]/10 text-[#dc143c]'
+            : 'text-zinc-500 hover:border-[#dc143c]/40 hover:text-[#dc143c]'}"
+          aria-label={showAiChat ? 'Close AI assistant' : 'Open AI assistant'}
+          aria-pressed={showAiChat}
         ><Sparkles size={12} /></button>
       </Tooltip>
 
@@ -903,8 +904,8 @@
       <LeftSidebar />
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
-    {#if app.config && app.hasActivity}
-      <RightPanel />
+    {#if app.config && app.hasActivity || showAiChat}
+      <RightPanel aiChatOpen={showAiChat} onreopenAiChat={() => (showAiChat = true)} />
     {/if}
   </div>
 </div>
