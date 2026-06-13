@@ -19,6 +19,7 @@
   import ActivityPickerModal from './components/overlays/ActivityPickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
   import NewTemplateDialog from './components/overlays/NewTemplateDialog.svelte'
+  import GenerateTemplateDialog from './components/overlays/GenerateTemplateDialog.svelte'
   import Button from './components/ui/Button.svelte'
   import Tooltip from './components/ui/Tooltip.svelte'
 
@@ -35,6 +36,7 @@
     Play,
     RotateCcw,
     Save,
+    Sparkles,
     X,
   } from 'lucide-svelte'
   import { formatTime, estimateProResFileSize, TOOLTIP_DELAY } from './lib/utils.js'
@@ -134,6 +136,7 @@
   let showSettings = $state(false)
   let showAbout = $state(false)
   let showNewTemplateDialog = $state(false)
+  let showGenerateDialog = $state(false)
   let showActivityPicker = $state(false)
 
   function closeDialogs() {
@@ -141,6 +144,7 @@
     showSettings = false
     showAbout = false
     showNewTemplateDialog = false
+    showGenerateDialog = false
     app.showTemplatePicker = false
   }
 
@@ -169,6 +173,11 @@
     showNewTemplateDialog = true
   }
 
+  function openGenerateDialog() {
+    closeDialogs()
+    showGenerateDialog = true
+  }
+
   // Enforce mutual exclusion: any code path that sets showTemplatePicker = true
   // (including child components that bypass openTemplatePicker) must close other dialogs.
   $effect(() => {
@@ -177,6 +186,7 @@
       showSettings = false
       showAbout = false
       showNewTemplateDialog = false
+      showGenerateDialog = false
     }
   })
 
@@ -208,6 +218,7 @@
       showSettings ||
       app.showTemplatePicker ||
       showNewTemplateDialog ||
+      showGenerateDialog ||
       showActivityPicker
 
     if (e.key === 'Escape' && showResolutionMenu) {
@@ -519,6 +530,18 @@
       }}
     />
   {/if}
+  {#if showGenerateDialog}
+    <GenerateTemplateDialog
+      hasCurrentTemplate={!!app.config}
+      ongenerate={async (prompt, { edit }) => {
+        await app.generateTemplate(prompt, { edit })
+        showGenerateDialog = false
+      }}
+      oncancel={() => {
+        showGenerateDialog = false
+      }}
+    />
+  {/if}
   {#if app.pendingDiscard}
     <ConfirmDialog
       title="Discard unsaved changes?"
@@ -581,6 +604,15 @@
             >
           {/if}
         </button>
+      </Tooltip>
+
+      <!-- Generate with AI -->
+      <Tooltip content="Generate a template with AI" side="bottom" delay={TOOLTIP_DELAY}>
+        <button
+          onclick={openGenerateDialog}
+          class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer text-[#dc143c] hover:border-[#dc143c]/60 hover:text-[#dc143c]"
+          aria-label="Generate a template with AI"
+        ><Sparkles size={12} /></button>
       </Tooltip>
 
       <!-- Save — amber when modified -->

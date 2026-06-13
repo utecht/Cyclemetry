@@ -1630,6 +1630,75 @@ fn backend_overwrite_community_template(filename: String) -> Result<(), String> 
     Err("Only available in dev mode".to_string())
 }
 
+// ─── AI template generation ───────────────────────────────────────────────────
+
+/// Hosted proxy that holds the OpenRouter API key server-side. The desktop app
+/// only ever sees a prompt and the generated template — never the key.
+/// Override with `CYCLEMETRY_GENERATE_URL` for local website development.
+#[cfg(debug_assertions)]
+const GENERATE_TEMPLATE_URL: &str = "http://localhost:3000/api/generate-template";
+#[cfg(not(debug_assertions))]
+const GENERATE_TEMPLATE_URL: &str = "https://cyclemetry.walkersutton.com/api/generate-template";
+
+/// Create or edit a template from a natural-language prompt. Pass
+/// `current_template` to edit it in place; omit it to generate a new one.
+/// Returns the generated template JSON (authored at 4K) after validating that
+/// it deserializes into a renderable template.
+#[tauri::command]
+async fn backend_generate_template(
+    prompt: String,
+    current_template: Option<serde_json::Value>,
+) -> Result<String, String> {
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err("Prompt cannot be empty".to_string());
+    }
+
+    let url = std::env::var("CYCLEMETRY_GENERATE_URL")
+        .unwrap_or_else(|_| GENERATE_TEMPLATE_URL.to_string());
+
+    let mut body = serde_json::json!({ "prompt": prompt });
+    if let Some(current) = current_template {
+        body["currentTemplate"] = current;
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("cyclemetry-app")
+        .timeout(std::time::Duration::from_secs(90))
+        .build()
+        .map_err(|e| format!("Client error: {e}"))?;
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    let status = resp.status();
+    let payload: serde_json::Value = resp.json().await.map_err(|e| format!("Parse error: {e}"))?;
+
+    if !status.is_success() {
+        let msg = payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Template generation failed");
+        return Err(msg.to_string());
+    }
+
+    let template = payload
+        .get("template")
+        .cloned()
+        .ok_or("Response did not include a template")?;
+
+    // Validate that the generated JSON deserializes into a renderable template
+    // before handing it to the editor.
+    render::template::Template::from_value_scaled(template.clone(), None)
+        .map_err(|e| format!("Generated template was invalid: {e}"))?;
+
+    serde_json::to_string(&template).map_err(|e| e.to_string())
+}
+
 // ─── Native Rust renderer ─────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize)]
@@ -2156,6 +2225,7 @@ pub fn run() {
             backend_community_templates,
             backend_install_community_template,
             backend_overwrite_community_template,
+            backend_generate_template,
             backend_delete_template,
             backend_save_template_preview,
             backend_report_issue,

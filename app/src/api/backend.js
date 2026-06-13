@@ -107,6 +107,20 @@ export const importTemplate = (path) =>
 /** @returns {Promise<void>} */
 export const openTemplatesFolder = () => invoke('backend_open_templates')
 
+/**
+ * Generate or edit a template from a natural-language prompt. The OpenRouter
+ * API key lives on the hosted proxy, never in the app. Pass `currentTemplate`
+ * to edit it in place; omit it to create a new template.
+ * @param {string} prompt
+ * @param {import('./elementTypes.js').Template} [currentTemplate]
+ * @returns {Promise<import('./elementTypes.js').Template>}
+ */
+export const generateTemplate = (prompt, currentTemplate) =>
+  invoke('backend_generate_template', {
+    prompt,
+    currentTemplate: currentTemplate ?? null,
+  })
+
 // ─── Fonts ────────────────────────────────────────────────────────────────────
 
 /**
