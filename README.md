@@ -1,7 +1,7 @@
 <div align="center">
   <img src="resources/brand/logo192.png" width="68" alt="Cyclemetry">
   <h1>Cyclemetry</h1>
-  <p><strong>Open-source desktop app for creating cycling telemetry video overlays from GPX data.</strong><br>
+  <p><strong>Open-source desktop app for creating cycling telemetry video overlays from GPS data.</strong><br>
   Import a ride, design your overlay in a live editor, and export a finished video — no subscription, no cloud.</p>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-crimson?style=flat-square)](LICENSE)
