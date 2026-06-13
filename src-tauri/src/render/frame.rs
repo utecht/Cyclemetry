@@ -151,10 +151,11 @@ impl OverlayElement for LabelConfig {
         let (text_w, rect) =
             measure_text_with_letter_spacing(&font, &self.text, None, letter_spacing);
         let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+        let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
             x: draw_x + rect.left,
-            y: self.y as f32 + rect.top,
+            y: baseline + rect.top,
             w: rect.width(),
             h: rect.height(),
         })
@@ -185,10 +186,11 @@ impl OverlayElement for LabelConfig {
             let text_w =
                 measure_text_with_letter_spacing(&font, &self.text, Some(&paint), letter_spacing).0;
             let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+            let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
             draw_text_with_letter_spacing(
                 canvas,
                 &self.text,
-                (draw_x, self.y as f32),
+                (draw_x, baseline),
                 &font,
                 &paint,
                 letter_spacing,
@@ -254,10 +256,11 @@ impl OverlayElement for ValueConfig {
             .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
         let (text_w, rect) = font.measure_str(&text, None);
         let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+        let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
         Some(ElementBounds {
             id: self.id.clone(),
             x: draw_x + rect.left,
-            y: self.y as f32 + rect.top,
+            y: baseline + rect.top,
             w: rect.width(),
             h: rect.height(),
         })
@@ -288,7 +291,8 @@ impl OverlayElement for ValueConfig {
             paint.set_color(color);
             let text_w = font.measure_str(&display, Some(&paint)).0;
             let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
-            canvas.draw_str(&display, (draw_x, self.y as f32), &font, &paint);
+            let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
+            canvas.draw_str(&display, (draw_x, baseline), &font, &paint);
         }
     }
 }
@@ -1574,6 +1578,26 @@ fn align_x(base_x: f32, text_width: f32, align: Option<&str>) -> f32 {
     }
 }
 
+/// Convert an authored y into the Skia baseline per `vertical_align`.
+/// Uses font metrics (not per-frame glyph bounds) so the baseline stays put
+/// as the text changes. "middle" centers on cap height, which optically
+/// centers digits — the dominant case for metric values.
+fn align_baseline_y(base_y: f32, font: &Font, align: Option<&str>) -> f32 {
+    let (_, metrics) = font.metrics();
+    // cap_height is 0 when the typeface doesn't report it — approximate with ascent.
+    let cap = if metrics.cap_height > 0.0 {
+        metrics.cap_height
+    } else {
+        -metrics.ascent
+    };
+    match align.unwrap_or("baseline") {
+        "top" => base_y + cap,
+        "middle" => base_y + cap / 2.0,
+        "bottom" => base_y - metrics.descent,
+        _ => base_y, // "baseline" default
+    }
+}
+
 fn measure_text_with_letter_spacing(
     font: &Font,
     text: &str,
@@ -1933,8 +1957,8 @@ mod tests {
         let raw = serde_json::json!({
             "scene": { "width": 100, "height": 100, "layers": ["plot-0", "label-0"] },
             "elements": [
-                { "type": "label", "id": "label-0", "text": "A", "x": 0.0, "y": 0.0 },
-                { "type": "value", "id": "value-0", "value": "speed", "x": 0.0, "y": 0.0 },
+                { "type": "label", "id": "label-0", "text": "A", "x": 0, "y": 0 },
+                { "type": "value", "id": "value-0", "value": "speed", "x": 0, "y": 0 },
                 { "type": "plot", "id": "plot-0", "value": "elevation",
                   "x": 0, "y": 0, "width": 10, "height": 10 }
             ]
@@ -1942,5 +1966,37 @@ mod tests {
         let t = Template::from_value(raw).unwrap();
         // plot-0 (idx 2), label-0 (idx 0) listed first; value-0 (idx 1) trails.
         assert_eq!(t.layer_order(), vec![2, 0, 1]);
+    }
+
+    /// Anchored elements get their x/y rewritten from the target's box; the
+    /// anchor offset rides on top. Text elements pin their (x, y) origin to
+    /// the resolved point; box elements offset by self_point (default center).
+    #[test]
+    fn anchors_resolve_to_target_box_points() {
+        let raw = serde_json::json!({
+            "scene": { "width": 1000, "height": 1000 },
+            "elements": [
+                { "type": "gauge", "id": "gauge-0", "value": "speed",
+                  "x": 100, "y": 200, "width": 300, "height": 300, "min": 0, "max": 50 },
+                { "type": "value", "id": "value-0", "value": "speed", "x": 0, "y": 0,
+                  "anchor": { "target": "gauge-0", "offset_y": -10.0 } },
+                { "type": "image", "id": "image-0", "file": "bolt.svg",
+                  "x": 0, "y": 0, "width": 50, "height": 50,
+                  "anchor": { "target": "gauge-0", "point": "bottom" } }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let (vx, vy) = match &t.elements[1] {
+            crate::render::template::Element::Value(c) => (c.x, c.y),
+            _ => unreachable!(),
+        };
+        // Gauge center (250, 350) + offset (0, -10).
+        assert_eq!((vx, vy), (250, 340));
+        let (ix, iy) = match &t.elements[2] {
+            crate::render::template::Element::Image(c) => (c.x, c.y),
+            _ => unreachable!(),
+        };
+        // Gauge bottom-center (250, 500); image centers its own 50×50 box there.
+        assert_eq!((ix, iy), (225, 475));
     }
 }

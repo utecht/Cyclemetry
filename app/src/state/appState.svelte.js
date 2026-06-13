@@ -103,6 +103,9 @@ export function createAppState() {
 
   // ── Transient ────────────────────────────────────────────────────────────────
   let copiedElement = $state(null) // the copied element object — in-memory clipboard
+  // Preview frame rate is fully automatic — the CenterCanvas tuner adapts it to
+  // measured render throughput (balancing preview smoothness against resource
+  // use). Persisted only as a sensible starting point; it's re-tuned each session.
   let previewFps = $state(parseInt(localStorage.getItem('previewFps') ?? '5'))
   let benchmarking = $state(false)
   let lastRenderFps = $state(
@@ -248,10 +251,8 @@ export function createAppState() {
         : offsetForVideoStart(gpxStartTime, draft, config?.scene?.start ?? 0)
       video = { ...draft, userOffsetSec: initialOffset }
       videoUnderlayVisible = true
-      // Bump preview FPS so the overlay animation tracks the video instead
-      // of snapping every 200ms. Only when the user is at the default (5);
-      // a deliberate non-default choice is preserved.
-      if (previewFps === 5) previewFps = 15
+      // Preview FPS is fully automatic — the render-throughput tuner manages it,
+      // so there's nothing to bump here when a video underlay loads.
     } catch (e) {
       errorMessage = `Could not read video: ${e?.message ?? e}`
     }
@@ -502,8 +503,10 @@ export function createAppState() {
     updateElement(id, { x: Math.round(x), y: Math.round(y) })
   }
 
-  // Apply position moves ({ id, x, y }) to a config, returning the next config
-  // (same ref if nothing changed). Shared by the three drag entry points.
+  // Apply position moves to a config, returning the next config (same ref if
+  // nothing changed). Shared by the three drag entry points. A move is either
+  // { id, x, y } for free elements or { id, anchor } for anchored ones, whose
+  // position lives in the anchor offset (Rust derives x/y from the target).
   function applyMoves(base, moves) {
     if (!base?.elements || moves.length === 0) return base
     const elements = [...base.elements]
@@ -511,7 +514,9 @@ export function createAppState() {
     for (const m of moves) {
       const i = elements.findIndex((e) => e.id === m.id)
       if (i < 0) continue
-      elements[i] = { ...elements[i], x: Math.round(m.x), y: Math.round(m.y) }
+      elements[i] = m.anchor
+        ? { ...elements[i], anchor: m.anchor }
+        : { ...elements[i], x: Math.round(m.x), y: Math.round(m.y) }
       touched = true
     }
     return touched ? { ...base, elements } : base
@@ -686,21 +691,52 @@ export function createAppState() {
     return id
   }
 
+  // Deleting an anchor target would leave its dependents dangling (Rust falls
+  // back to their stale authored x/y) — bake the resolved position into x/y
+  // and drop the anchor instead, so survivors stay where they were drawn.
+  const ANCHOR_POINT_FRACS = {
+    'top-left': [0, 0],
+    top: [0.5, 0],
+    'top-right': [1, 0],
+    left: [0, 0.5],
+    center: [0.5, 0.5],
+    right: [1, 0.5],
+    'bottom-left': [0, 1],
+    bottom: [0.5, 1],
+    'bottom-right': [1, 1],
+  }
+  function detachAnchorsToRemoved(elements, removedIds) {
+    const all = config?.elements ?? []
+    return elements.map((el) => {
+      const a = el.anchor
+      if (!a?.target || !removedIds.includes(a.target)) return el
+      const t = all.find((e) => e.id === a.target)
+      const rest = { ...el }
+      delete rest.anchor
+      if (!t || t.width == null || t.height == null) return rest
+      const [fx, fy] = ANCHOR_POINT_FRACS[a.point ?? 'center'] ?? [0.5, 0.5]
+      let x = (t.x ?? 0) + t.width * fx + (a.offset_x ?? 0)
+      let y = (t.y ?? 0) + t.height * fy + (a.offset_y ?? 0)
+      if (el.type === 'rect' || el.type === 'image') {
+        const [sfx, sfy] = ANCHOR_POINT_FRACS[a.self_point ?? 'center'] ?? [
+          0.5, 0.5,
+        ]
+        x -= (el.width ?? 0) * sfx
+        y -= (el.height ?? 0) * sfy
+      }
+      return { ...rest, x: Math.round(x), y: Math.round(y) }
+    })
+  }
+
   function removeElement(id) {
-    if (!config?.elements) return
-    const elements = config.elements.filter((e) => e.id !== id)
-    const groups = (config.scene?.groups ?? []).map((g) => ({
-      ...g,
-      element_ids: g.element_ids.filter((eid) => eid !== id),
-    }))
-    commitConfig({ ...config, elements, scene: { ...config.scene, groups } })
-    if (selectedElementId === id) selectOnly(null)
+    removeElements([id])
   }
 
   function removeElements(ids) {
     if (!config?.elements || ids.length === 0) return
-    const elements = config.elements.filter((e) => !ids.includes(e.id))
+    let elements = config.elements.filter((e) => !ids.includes(e.id))
     if (elements.length === config.elements.length) return
+    elements = detachAnchorsToRemoved(elements, ids)
 
     const groups = (config.scene?.groups ?? []).map((g) => ({
       ...g,

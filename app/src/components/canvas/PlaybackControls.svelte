@@ -8,7 +8,6 @@
     start = 0,                  // overlay window start (sceneStart)
     end = 1,                    // overlay window end (sceneEnd)
     playing = $bindable(false),
-    previewFps = $bindable(5),
     buffered = [],   // array of seconds that are ready in cache
     onseek,
     distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }

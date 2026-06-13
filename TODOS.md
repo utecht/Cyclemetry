@@ -13,6 +13,9 @@
   (e.g. 16:9 / 9:16 / 1:1) and pick the closest variant for the chosen output.
 
 - [ ] **Composite elements.** A "composite" is a first-class UI concept that wraps a `scene.editor.groups` group behind a simpler interface. The user sees one thing (e.g. "Speed widget") instead of the 2–3 raw elements that make it up.
+  - **Architecture (decided 2026-06): composites are built on the anchor primitive, not a new Rust element type.** Anchoring is the mechanism — `anchor: { target, point, self_point, offset_x, offset_y }` on label/value/rect/image pins an element to a point on a box element (plot/meter/gauge/rect/image), resolved by `Template::resolve_anchors()` before every render/preview/measure, with `vertical_align` keeping text optically centered as values change per frame. A composite is then just authoring sugar: a group whose members ship with anchors pre-wired. This avoids a combinatorial set of bespoke Rust composite variants and makes "expand" nearly a no-op (it already IS elements).
+  - **Done:** the anchor primitive — schema + Rust resolve pre-pass, vertical text alignment, WYSIWYG support (dragging a target floats anchored followers live; dragging an anchored element commits to its offset; detach/delete bakes resolved x/y), Anchor section in the properties panel with per-point text-alignment presets.
+  - **Remaining:** composite presets ("Insert → Gauge with value" creates the group with anchors pre-wired) + the compact composite panel.
   - Composites ARE groups — no new data model needed on disk
   - The composite editor surface is **intentionally smaller than the sum of its parts** — exposes only high-level controls (position, metric, color scheme), not every sub-element property. If "Expand" feels like a power-user escape hatch, the abstraction level is right.
   - "Expand to elements" is non-destructive: removes the `composite` flag, group becomes a normal group, all elements become individually editable

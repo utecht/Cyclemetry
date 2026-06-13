@@ -57,6 +57,43 @@ pub struct GroupConfig {
     pub element_ids: Vec<String>,
 }
 
+/// Pins an element's position to a point on another element's bounding box.
+/// A pre-pass (`Template::resolve_anchors`) rewrites the element's `x`/`y`
+/// before rendering, so anchored elements track their target automatically.
+/// Targets must be box elements (plot/meter/gauge/rect/image) — text bounds
+/// vary per frame and can't be anchored to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnchorConfig {
+    /// Id of the target element whose box supplies the anchor point.
+    pub target: String,
+    /// Point on the target box: "center" (default), "top-left", "top",
+    /// "top-right", "left", "right", "bottom-left", "bottom", "bottom-right".
+    pub point: Option<String>,
+    /// For box elements: which point of *this* element lands on the target
+    /// point. Default "center". Text elements ignore this — their glyph
+    /// placement around the resolved point follows `text_align` /
+    /// `vertical_align` instead.
+    pub self_point: Option<String>,
+    /// Offset in template px applied after the anchor point is resolved.
+    pub offset_x: Option<f32>,
+    pub offset_y: Option<f32>,
+}
+
+/// Fractional position of a named anchor point within a unit box.
+fn point_frac(name: &str) -> (f32, f32) {
+    match name {
+        "top-left" => (0.0, 0.0),
+        "top" => (0.5, 0.0),
+        "top-right" => (1.0, 0.0),
+        "left" => (0.0, 0.5),
+        "right" => (1.0, 0.5),
+        "bottom-left" => (0.0, 1.0),
+        "bottom" => (0.5, 1.0),
+        "bottom-right" => (1.0, 1.0),
+        _ => (0.5, 0.5), // "center" and anything unrecognised
+    }
+}
+
 fn default_fps() -> u32 {
     30
 }
@@ -102,11 +139,13 @@ impl Element {
                 c.y = (c.y as f64 * factor).round() as i32;
                 c.font_size = c.font_size.map(|v| v * f32f);
                 c.letter_spacing = c.letter_spacing.map(|v| v * f32f);
+                scale_anchor(&mut c.anchor, f32f);
             }
             Element::Value(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
                 c.y = (c.y as f64 * factor).round() as i32;
                 c.font_size = c.font_size.map(|v| v * f32f);
+                scale_anchor(&mut c.anchor, f32f);
             }
             Element::Plot(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
@@ -168,14 +207,69 @@ impl Element {
                 c.height = (c.height as f64 * factor).round() as u32;
                 c.radius = c.radius.map(|v| v * f32f);
                 c.border_width = c.border_width.map(|v| v * f32f);
+                scale_anchor(&mut c.anchor, f32f);
             }
             Element::Image(c) => {
                 c.x = (c.x as f64 * factor).round() as i32;
                 c.y = (c.y as f64 * factor).round() as i32;
                 c.width = (c.width as f64 * factor).round() as u32;
                 c.height = (c.height as f64 * factor).round() as u32;
+                scale_anchor(&mut c.anchor, f32f);
             }
         }
+    }
+
+    pub fn anchor(&self) -> Option<&AnchorConfig> {
+        match self {
+            Element::Label(c) => c.anchor.as_ref(),
+            Element::Value(c) => c.anchor.as_ref(),
+            Element::Rect(c) => c.anchor.as_ref(),
+            Element::Image(c) => c.anchor.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Static bounding box usable as an anchor target, or `None` for text
+    /// elements whose bounds vary per frame.
+    fn anchor_box(&self) -> Option<(f32, f32, f32, f32)> {
+        match self {
+            Element::Plot(c) => Some((c.x as f32, c.y as f32, c.width as f32, c.height as f32)),
+            Element::Meter(c) => Some((c.x as f32, c.y as f32, c.width as f32, c.height as f32)),
+            Element::Gauge(c) => Some((c.x as f32, c.y as f32, c.width as f32, c.height as f32)),
+            Element::Rect(c) => Some((c.x as f32, c.y as f32, c.width as f32, c.height as f32)),
+            Element::Image(c) => Some((c.x as f32, c.y as f32, c.width as f32, c.height as f32)),
+            _ => None,
+        }
+    }
+
+    /// Place this element so its anchor reference lands on point `(px, py)`.
+    /// Text elements treat the point as their (x, y) origin — `text_align` /
+    /// `vertical_align` position the glyphs around it. Box elements offset by
+    /// `self_point` (default center) against their own size.
+    fn place_at(&mut self, px: f32, py: f32, self_point: Option<&str>) {
+        let (x, y) = match self {
+            Element::Label(_) | Element::Value(_) => (px, py),
+            _ => {
+                let (_, _, w, h) = self.anchor_box().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                let (fx, fy) = point_frac(self_point.unwrap_or("center"));
+                (px - w * fx, py - h * fy)
+            }
+        };
+        let (x, y) = (x.round() as i32, y.round() as i32);
+        match self {
+            Element::Label(c) => (c.x, c.y) = (x, y),
+            Element::Value(c) => (c.x, c.y) = (x, y),
+            Element::Rect(c) => (c.x, c.y) = (x, y),
+            Element::Image(c) => (c.x, c.y) = (x, y),
+            _ => {}
+        }
+    }
+}
+
+fn scale_anchor(anchor: &mut Option<AnchorConfig>, factor: f32) {
+    if let Some(a) = anchor {
+        a.offset_x = a.offset_x.map(|v| v * factor);
+        a.offset_y = a.offset_y.map(|v| v * factor);
     }
 }
 
@@ -195,6 +289,11 @@ pub struct LabelConfig {
     pub decimal_rounding: Option<i32>,
     /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
     pub text_align: Option<String>,
+    /// Vertical alignment relative to y. "baseline" (default) | "top" |
+    /// "middle" | "bottom". "middle" centers on cap height, which optically
+    /// centers digits and stays stable as the text changes per frame.
+    pub vertical_align: Option<String>,
+    pub anchor: Option<AnchorConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +335,11 @@ pub struct ValueConfig {
     pub time_target: Option<f64>,
     /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
     pub text_align: Option<String>,
+    /// Vertical alignment relative to y. "baseline" (default) | "top" |
+    /// "middle" | "bottom". "middle" centers on cap height, which optically
+    /// centers digits and stays stable as the text changes per frame.
+    pub vertical_align: Option<String>,
+    pub anchor: Option<AnchorConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,6 +581,7 @@ pub struct RectConfig {
     pub radius: Option<f32>,
     /// Clockwise rotation in degrees around the element center. Default 0.
     pub rotation: Option<f32>,
+    pub anchor: Option<AnchorConfig>,
 }
 
 /// A static image asset (PNG, WebP, or SVG) placed at an absolute position.
@@ -502,6 +607,7 @@ pub struct ImageConfig {
     pub pulse_bpm: Option<f64>,
     /// Peak scale added on each beat (e.g. 0.2 = 20% larger). Default 0.15.
     pub pulse_amplitude: Option<f32>,
+    pub anchor: Option<AnchorConfig>,
 }
 
 impl PlotConfig {
@@ -628,7 +734,45 @@ impl Template {
             }
         }
 
+        template.resolve_anchors();
         Ok(template)
+    }
+
+    /// Rewrite the `x`/`y` of every anchored element from its target's box.
+    /// Runs after scaling so all coordinates are in output space. Chains
+    /// (rect anchored to a rect anchored to a gauge) resolve over multiple
+    /// passes; cycles and invalid targets keep their authored position.
+    fn resolve_anchors(&mut self) {
+        let mut pending: Vec<usize> = (0..self.elements.len())
+            .filter(|&i| self.elements[i].anchor().is_some())
+            .collect();
+
+        while !pending.is_empty() {
+            let mut next = Vec::new();
+            for &i in &pending {
+                let anchor = self.elements[i].anchor().unwrap().clone();
+                let target_idx = self
+                    .elements
+                    .iter()
+                    .position(|e| e.id() == anchor.target && e.id() != self.elements[i].id());
+                let Some(j) = target_idx else { continue }; // dangling target
+                if pending.contains(&j) || next.contains(&j) {
+                    next.push(i); // target not settled yet — retry next pass
+                    continue;
+                }
+                let Some((bx, by, bw, bh)) = self.elements[j].anchor_box() else {
+                    continue; // text target unsupported
+                };
+                let (fx, fy) = point_frac(anchor.point.as_deref().unwrap_or("center"));
+                let px = bx + bw * fx + anchor.offset_x.unwrap_or(0.0);
+                let py = by + bh * fy + anchor.offset_y.unwrap_or(0.0);
+                self.elements[i].place_at(px, py, anchor.self_point.as_deref());
+            }
+            if next.len() == pending.len() {
+                break; // pure cycle — nothing resolvable
+            }
+            pending = next;
+        }
     }
 
     /// Element indices in back-to-front draw order: explicit `scene.layers`

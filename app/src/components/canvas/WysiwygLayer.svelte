@@ -31,6 +31,47 @@
     return app.config?.elements?.find((e) => e.id === id) ?? null
   }
 
+  // prettier-ignore
+  const POINT_FRACS = {
+    'top-left': [0, 0], top: [0.5, 0], 'top-right': [1, 0],
+    left: [0, 0.5], center: [0.5, 0.5], right: [1, 0.5],
+    'bottom-left': [0, 1], bottom: [0.5, 1], 'bottom-right': [1, 1],
+  }
+
+  // Authored-space (x, y) origin for an anchored element, mirroring the Rust
+  // resolve pre-pass. Only used for pre-measure fallback bounds — once a frame
+  // arrives, the renderer's measured bounds (already anchor-resolved) win.
+  function anchoredXY(el) {
+    const a = el.anchor
+    if (!a?.target) return null
+    const t = elById(a.target)
+    if (!t || t.width == null || t.height == null) return null
+    const [fx, fy] = POINT_FRACS[a.point ?? 'center'] ?? [0.5, 0.5]
+    let x = (t.x ?? 0) + t.width * fx + (a.offset_x ?? 0)
+    let y = (t.y ?? 0) + t.height * fy + (a.offset_y ?? 0)
+    if (el.type === 'rect' || el.type === 'image') {
+      const [sfx, sfy] = POINT_FRACS[a.self_point ?? 'center'] ?? [0.5, 0.5]
+      x -= (el.width ?? 0) * sfx
+      y -= (el.height ?? 0) * sfy
+    }
+    return { x, y }
+  }
+
+  // Fallback box origin for text elements: resolves anchors and shifts the
+  // approximate box per text_align / vertical_align (config x is the
+  // alignment point, y the baseline).
+  function textFallbackXY(el, fs, w) {
+    const ax = anchoredXY(el)
+    let x = ax?.x ?? el.x ?? 100
+    const y = ax?.y ?? el.y ?? 200
+    if (el.text_align === 'center') x -= w / 2
+    else if (el.text_align === 'right') x -= w
+    const va = el.vertical_align
+    const top =
+      va === 'top' ? y : va === 'middle' ? y - fs / 2 : va === 'bottom' ? y - fs : y - fs * 0.8
+    return { x, y: top }
+  }
+
   // Sticky measurement cache: a new frame's measuredElements may omit an
   // element briefly (e.g. while the post-edit re-render is in flight). Reusing
   // the last-known measurement keeps the selection box the size of the text
@@ -75,24 +116,13 @@
         const text = el.text ?? 'LABEL'
         const charCount = Array.from(text).length
         const letterSpacing = el.letter_spacing ?? 0
-        byId[id] = boundsFor(id) ?? fb({
-          id,
-          x: el.x ?? 100,
-          y: (el.y ?? 100) - fs * 0.8,           // baseline → visual top
-          w: Math.max(charCount * fs * 0.58 + Math.max(charCount - 1, 0) * letterSpacing, fs),
-          h: fs,
-        })
+        const w = Math.max(charCount * fs * 0.58 + Math.max(charCount - 1, 0) * letterSpacing, fs)
+        byId[id] = boundsFor(id) ?? fb({ id, ...textFallbackXY(el, fs, w), w, h: fs })
       } else if (el.type === 'value') {
         const fs = el.font_size ?? 48
         // ~3.5 chars at 0.58em average — covers typical metric values like
         // "120", "25.4", "1:42". Real bounds replace this on the next frame.
-        byId[id] = boundsFor(id) ?? fb({
-          id,
-          x: el.x ?? 100,
-          y: (el.y ?? 200) - fs * 0.8,
-          w: fs * 2,
-          h: fs,
-        })
+        byId[id] = boundsFor(id) ?? fb({ id, ...textFallbackXY(el, fs, fs * 2), w: fs * 2, h: fs })
       } else if (el.type === 'plot' || el.type === 'meter' || el.type === 'gauge') {
         byId[id] = boundsFor(id) ?? fb({
           id,
@@ -101,9 +131,10 @@
           h: el.height ?? 150,
         })
       } else if (el.type === 'rect' || el.type === 'image') {
+        const ax = anchoredXY(el)
         byId[id] = boundsFor(id) ?? fb({
           id,
-          x: el.x ?? 100, y: el.y ?? 100,
+          x: ax?.x ?? el.x ?? 100, y: ax?.y ?? el.y ?? 100,
           w: el.width ?? 300,
           h: el.height ?? 200,
         })
@@ -218,11 +249,32 @@
     for (const sid of ids) {
       const item = elById(sid)
       if (!item || item.locked) continue
-      positions.set(sid, { id: sid, x: item.x ?? 0, y: item.y ?? 0 })
+      positions.set(sid, {
+        id: sid,
+        x: item.x ?? 0, y: item.y ?? 0,
+        ox: item.anchor?.offset_x ?? 0, oy: item.anchor?.offset_y ?? 0,
+      })
       const elData = elements.find(e => e.id === sid)
       if (elData) baseElements.set(sid, { id: sid, x: elData.x, y: elData.y, w: elData.w, h: elData.h })
     }
-    dragBase = { preDragConfig: JSON.stringify(app.config), positions, baseElements }
+    // Elements anchored (directly or via a chain) to anything being dragged
+    // ride along visually — Rust re-derives their position on the commit
+    // render, so they get snaps + live offsets but no config writes.
+    const followerIds = new SvelteSet()
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const el of app.config?.elements ?? []) {
+        const target = el.anchor?.target
+        if (!target || positions.has(el.id) || followerIds.has(el.id)) continue
+        if (!positions.has(target) && !followerIds.has(target)) continue
+        followerIds.add(el.id)
+        const elData = elements.find(e => e.id === el.id)
+        if (elData) baseElements.set(el.id, { id: el.id, x: elData.x, y: elData.y, w: elData.w, h: elData.h })
+        grew = true
+      }
+    }
+    dragBase = { preDragConfig: JSON.stringify(app.config), positions, baseElements, followerIds }
     buildDragSnaps([...baseElements.keys()])
   }
 
@@ -267,34 +319,54 @@
     }
   }
 
-  // dx/dy are in output space; config x/y are authored — use the pre-drag
-  // authored position so repeated calls with the same delta stay idempotent.
-  function moveFor(id, dx, dy) {
-    const base = dragBase?.positions.get(id)
-    const s = authorScale || 1
-    if (base) return { id, x: base.x + dx / s, y: base.y + dy / s }
+  // dx/dy are in output space; config coords are authored — use the pre-drag
+  // snapshot so repeated calls with the same delta stay idempotent. Anchored
+  // elements commit the delta to their anchor offset (Rust derives x/y from
+  // the target); if their target is also in the drag set, no write at all —
+  // they follow automatically.
+  function moveFor(id, dx, dy, draggedIds) {
     const item = elById(id)
     if (!item) return null
+    const s = authorScale || 1
+    const base = dragBase?.positions.get(id)
+    if (item.anchor?.target) {
+      if (draggedIds.has(item.anchor.target)) return null
+      const ox = base?.ox ?? item.anchor.offset_x ?? 0
+      const oy = base?.oy ?? item.anchor.offset_y ?? 0
+      return {
+        id,
+        anchor: { ...item.anchor, offset_x: Math.round(ox + dx / s), offset_y: Math.round(oy + dy / s) },
+      }
+    }
+    if (base) return { id, x: base.x + dx / s, y: base.y + dy / s }
     return { id, x: (item.x ?? 0) + dx / s, y: (item.y ?? 0) + dy / s }
   }
 
   function handleDrag(id, dx, dy) {
     ensureDragBase(id)
-    // Float the cropped real pixels under the cursor. No live re-render: a
+    // Float the cropped real pixels under the cursor; group members and
+    // anchored followers ride along via groupOffsetFor. No live re-render: a
     // server-side render can't keep up with a drag, and queuing them only
     // delays the single commit render we want immediately on drop.
-    liveGroup = isGroupDrag(id) ? { leaderId: id, dx, dy } : null
+    liveGroup = { leaderId: id, dx, dy }
     moveDragSnaps(dx, dy)
   }
 
   function handleDragEnd(id, dx, dy) {
     ensureDragBase(id)
     const ids = isGroupDrag(id) ? [...selectedSet] : [id]
-    const moves = ids.map(sid => moveFor(sid, dx, dy)).filter(Boolean)
+    const idSet = new Set(ids)
+    const moves = ids.map(sid => moveFor(sid, dx, dy, idSet)).filter(Boolean)
 
     // Record the drag offset so boundsFor can return stickyMeasured+offset
-    // (precise shape at new position) instead of the approximate config fallback.
+    // (precise shape at new position) instead of the approximate config
+    // fallback. Followers and write-skipped anchored members moved too.
     for (const m of moves) dragOffsets.set(m.id, { dx, dy })
+    for (const sid of dragBase?.followerIds ?? []) dragOffsets.set(sid, { dx, dy })
+    for (const sid of ids) {
+      const target = elById(sid)?.anchor?.target
+      if (target && idSet.has(target)) dragOffsets.set(sid, { dx, dy })
+    }
 
     // Freeze the snapshot at the drop point; it stays until the fresh frame
     // arrives (cleared by the measuredElements effect), so no blank gap.
@@ -305,8 +377,10 @@
   }
 
   function groupOffsetFor(id) {
-    if (liveGroup && liveGroup.leaderId !== id && selectedSet.has(id)) {
-      return { dx: liveGroup.dx, dy: liveGroup.dy }
+    if (liveGroup && liveGroup.leaderId !== id) {
+      if (selectedSet.size > 1 && selectedSet.has(id) && selectedSet.has(liveGroup.leaderId))
+        return { dx: liveGroup.dx, dy: liveGroup.dy }
+      if (dragBase?.followerIds?.has(id)) return { dx: liveGroup.dx, dy: liveGroup.dy }
     }
     return { dx: 0, dy: 0 }
   }
