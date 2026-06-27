@@ -261,6 +261,9 @@ export const getActivityMetricRange = (
  */
 export const probeVideo = (path) => invoke('probe_video', { path })
 
+/** @returns {Promise<string>} HTTP URL for streaming the video file */
+export const videoSrcUrl = (path) => invoke('video_src_url', { path })
+
 /**
  * @param {File} file
  * @returns {Promise<string>} stored gpx filename

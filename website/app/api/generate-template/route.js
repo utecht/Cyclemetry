@@ -94,7 +94,9 @@ export async function POST(request) {
   }
 
   const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+    request.headers.get('x-real-ip') ??
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    'unknown'
   if (!checkRateLimit(ip)) {
     return NextResponse.json(
       { error: 'Too many requests. Try again later.' },
@@ -118,6 +120,12 @@ export async function POST(request) {
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return NextResponse.json(
       { error: 'Prompt is too long.' },
+      { status: 400 },
+    )
+  }
+  if (currentTemplate && JSON.stringify(currentTemplate).length > 32000) {
+    return NextResponse.json(
+      { error: 'Current template is too large.' },
       { status: 400 },
     )
   }

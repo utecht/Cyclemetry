@@ -1249,6 +1249,220 @@ async fn probe_video(path: String) -> Result<render::video::VideoProbe, String> 
         .map_err(|e| format!("Probe task join error: {e}"))?
 }
 
+// ─── Video streaming server ────────────────────────────────────────────────────
+//
+// WebKitGTK (Linux) does not reliably support the `asset://` custom protocol
+// for HTML5 video — range requests are mishandled and the <video> element
+// fails silently. A plain HTTP/1.1 server on localhost gives WebKitGTK a
+// well-understood transport with proper range support for seeking.
+//
+// The server starts lazily on the first `video_src_url` call. File paths are
+// base64url-encoded in the URL to avoid path-separator and percent-encoding
+// ambiguity on all platforms.
+
+const VIDEO_SERVER_HOST: &str = "127.0.0.1";
+const VIDEO_CHUNK_SIZE: usize = 65536;
+
+static VIDEO_SERVER_PORT: OnceLock<u16> = OnceLock::new();
+/// Paths registered via `video_src_url`; only these are served by the HTTP server.
+static VIDEO_ALLOWED_PATHS: OnceLock<Mutex<std::collections::HashSet<std::path::PathBuf>>> =
+    OnceLock::new();
+
+fn video_allowed_paths() -> &'static Mutex<std::collections::HashSet<std::path::PathBuf>> {
+    VIDEO_ALLOWED_PATHS.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+
+async fn ensure_video_server() -> u16 {
+    if let Some(&p) = VIDEO_SERVER_PORT.get() {
+        return p;
+    }
+    let listener = tokio::net::TcpListener::bind(format!("{VIDEO_SERVER_HOST}:0"))
+        .await
+        .expect("bind video server");
+    let port = listener.local_addr().unwrap().port();
+    if VIDEO_SERVER_PORT.set(port).is_ok() {
+        tokio::spawn(video_server_loop(listener));
+    }
+    VIDEO_SERVER_PORT.get().copied().unwrap_or(port)
+}
+
+/// Accept connections in a loop and spawn a handler task per connection.
+async fn video_server_loop(listener: tokio::net::TcpListener) {
+    loop {
+        if let Ok((conn, _)) = listener.accept().await {
+            tokio::spawn(handle_video_conn(conn));
+        }
+    }
+}
+
+async fn handle_video_conn(stream: tokio::net::TcpStream) {
+    use base64::Engine;
+    use std::io::SeekFrom;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
+
+    let (reader, mut writer) = stream.into_split();
+    let mut buf = BufReader::new(reader);
+
+    // Parse request line: "GET /<base64path> HTTP/1.1"
+    let mut line = String::new();
+    if buf.read_line(&mut line).await.is_err() {
+        return;
+    }
+    let parts: Vec<&str> = line.trim().splitn(3, ' ').collect();
+    if parts.len() < 2 {
+        return;
+    }
+    let url_path = parts[1].trim_start_matches('/');
+    let file_path = match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(url_path) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
+
+    // Only serve paths that were explicitly registered via video_src_url.
+    {
+        let allowed = video_allowed_paths().lock().unwrap();
+        if !allowed.contains(std::path::Path::new(&file_path)) {
+            return;
+        }
+    }
+
+    // Read headers — stop at the blank separator line
+    let mut range_start: u64 = 0;
+    let mut range_end: Option<u64> = None;
+    loop {
+        let mut header = String::new();
+        if buf.read_line(&mut header).await.is_err() {
+            break;
+        }
+        let trimmed = header.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        let lower = trimmed.to_lowercase();
+        if let Some(val) = lower.strip_prefix("range: bytes=") {
+            if let Some((s, e)) = val.split_once('-') {
+                range_start = s.parse().unwrap_or(0);
+                range_end = e.parse().ok();
+            }
+        }
+    }
+
+    let path = std::path::Path::new(&file_path);
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
+        Err(_) => {
+            let _ = writer
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            return;
+        }
+    };
+    let file_size = match file.metadata().await {
+        Ok(m) => m.len(),
+        Err(_) => {
+            let _ = writer
+                .write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await;
+            return;
+        }
+    };
+
+    let content_type = match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .as_deref()
+    {
+        Some("mp4") | Some("m4v") => "video/mp4",
+        Some("mov") => "video/quicktime",
+        Some("avi") => "video/x-msvideo",
+        Some("mkv") => "video/x-matroska",
+        Some("webm") => "video/webm",
+        _ => "video/mp4",
+    };
+
+    if file_size == 0 {
+        let _ = writer
+            .write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: 0\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n").as_bytes())
+            .await;
+        return;
+    }
+
+    let start = range_start;
+    let end = range_end.unwrap_or(file_size - 1).min(file_size - 1);
+
+    if start > end || start >= file_size {
+        let _ = writer
+            .write_all(
+                format!("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{file_size}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await;
+        return;
+    }
+
+    let length = end - start + 1;
+    let is_partial = range_start > 0 || range_end.is_some();
+
+    if start > 0 {
+        if file.seek(SeekFrom::Start(start)).await.is_err() {
+            return;
+        }
+    }
+
+    let status = if is_partial {
+        "206 Partial Content"
+    } else {
+        "200 OK"
+    };
+    let range_header = if is_partial {
+        format!("Content-Range: bytes {start}-{end}/{file_size}\r\n")
+    } else {
+        String::new()
+    };
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n{range_header}\r\n"
+    );
+    if writer.write_all(head.as_bytes()).await.is_err() {
+        return;
+    }
+
+    let mut remaining = length;
+    let mut chunk = vec![0u8; VIDEO_CHUNK_SIZE];
+    while remaining > 0 {
+        let to_read = (chunk.len() as u64).min(remaining) as usize;
+        match file.read(&mut chunk[..to_read]).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if writer.write_all(&chunk[..n]).await.is_err() {
+                    break;
+                }
+                remaining -= n as u64;
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+/// Return an `http://127.0.0.1:{port}/<base64path>` URL that the webview can
+/// stream via plain HTTP/1.1 with full range-request support.
+#[tauri::command]
+async fn video_src_url(path: String) -> Result<String, String> {
+    use base64::Engine;
+    video_allowed_paths()
+        .lock()
+        .unwrap()
+        .insert(std::path::PathBuf::from(&path));
+    let port = ensure_video_server().await;
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(path.as_bytes());
+    Ok(format!("http://{VIDEO_SERVER_HOST}:{port}/{encoded}"))
+}
+
 /// Return total activity distance and the overlay window bounds in metres.
 /// Used by the frontend to render the distance-reference slider.
 #[tauri::command]
@@ -1640,6 +1854,18 @@ const GENERATE_TEMPLATE_URL: &str = "http://localhost:3000/api/generate-template
 #[cfg(not(debug_assertions))]
 const GENERATE_TEMPLATE_URL: &str = "https://cyclemetry.walkersutton.com/api/generate-template";
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent("cyclemetry-app")
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .expect("http client")
+    })
+}
+
 /// Create or edit a template from a natural-language prompt. Pass
 /// `current_template` to edit it in place; omit it to generate a new one.
 /// Returns the generated template JSON (authored at 4K) after validating that
@@ -1662,13 +1888,7 @@ async fn backend_generate_template(
         body["currentTemplate"] = current;
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("cyclemetry-app")
-        .timeout(std::time::Duration::from_secs(90))
-        .build()
-        .map_err(|e| format!("Client error: {e}"))?;
-
-    let resp = client
+    let resp = http_client()
         .post(&url)
         .json(&body)
         .send()
@@ -2222,6 +2442,7 @@ pub fn run() {
             backend_dev_clear_cache,
             backend_upload,
             probe_video,
+            video_src_url,
             backend_community_templates,
             backend_install_community_template,
             backend_overwrite_community_template,
