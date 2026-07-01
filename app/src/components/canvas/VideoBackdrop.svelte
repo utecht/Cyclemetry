@@ -18,7 +18,7 @@
    * the checkered background re-emerges.
    */
   import { getContext } from 'svelte'
-  import { convertFileSrc } from '@tauri-apps/api/core'
+  import * as backend from '@/api/backend.js'
   import { videoStartOnAxis as computeStartOnAxis } from '@/lib/videoAlignment.js'
 
   let { playing = false } = $props()
@@ -26,11 +26,34 @@
   const app = getContext('app')
 
   let videoEl = $state(null)
+  let videoError = $state(null)
 
   let video = $derived(app.video)
-  let src = $derived(
-    video?.path && !video.missing ? convertFileSrc(video.path) : null,
-  )
+
+  // Resolve to a local HTTP URL served by Rust so WebKitGTK (Linux) gets
+  // proper range-request support for seeking. A generation counter prevents
+  // stale async results from overwriting a newer path.
+  let src = $state(null)
+  let _srcGen = 0
+  $effect(() => {
+    const path = video?.path
+    const missing = video?.missing
+    if (!path || missing) {
+      src = null
+      videoError = null
+      return
+    }
+    const gen = ++_srcGen
+    videoError = null
+    backend
+      .videoSrcUrl(path)
+      .then((url) => {
+        if (gen === _srcGen) src = url
+      })
+      .catch((err) => {
+        if (gen === _srcGen) videoError = err?.message ?? 'Could not load video'
+      })
+  })
   let startOnAxis = $derived(computeStartOnAxis(app.gpxStartTime, video))
   let endOnAxis = $derived(startOnAxis + (video?.duration ?? 0))
   let inRange = $derived(
@@ -73,6 +96,14 @@
     }
   })
 
+  function onVideoError(e) {
+    const code = e?.target?.error?.code
+    videoError =
+      code === 4
+        ? 'Video codec not supported. On Linux, install GStreamer plugins:\nsudo apt install gstreamer1.0-libav gstreamer1.0-plugins-bad'
+        : 'Could not load video — the file may be corrupt or use an unsupported format.'
+  }
+
   // Video drives selectedSecond during playback. Skip when not the master
   // clock to avoid feedback loops (sync effect would then re-seek, etc.).
   function onTimeupdate() {
@@ -94,7 +125,13 @@
     playsinline
     preload="auto"
     ontimeupdate={onTimeupdate}
+    onerror={onVideoError}
     class="absolute inset-0 w-full h-full object-cover pointer-events-none rounded-lg"
     style:visibility={inRange ? 'visible' : 'hidden'}
   ></video>
+{/if}
+{#if videoError}
+  <div class="absolute bottom-2 left-2 right-2 rounded bg-zinc-900/95 px-3 py-2 text-[11px] text-red-400 leading-snug whitespace-pre-line pointer-events-none">
+    {videoError}
+  </div>
 {/if}

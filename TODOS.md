@@ -1,5 +1,9 @@
 # TODOS
 
+## Bugs (P0)
+
+- [ ] **Pre-existing test failure: `render::frame::tests::layer_order_honors_explicit_ids_then_array_order`** — panics with `invalid type: floating point 0.0, expected i32` in `frame.rs`. Not caused by any branch change; exists on main. Fix the test or the schema mismatch it's catching. Noticed on branch `claude/template-creation-text-prompts-o1ow08` during `/ship`.
+
 ## Later
 
 - [ ] **Finalize the donation backend for the Fund the App page.** `website/content/fund.json` currently points `donateUrl` at `https://github.com/sponsors/walkersutton` as a **placeholder**. GitHub Sponsors can't be tied to a repo — it targets an account — so to make donations read as "Cyclemetry" not "Walker Sutton" we'd need a `cyclemetry` GitHub org (heavier; org goals are monthly-subscription oriented). Leaning toward **Ko-fi** (`ko-fi.com/cyclemetry`) instead: branded page, built-in one-time goal bar, low fees. Once chosen: update `donateUrl` in `fund.json`, and update the `raised`/`supporters`/`lastUpdated` totals by hand as donations arrive. The page renders its own $99/year progress graphic from that JSON, so the platform only needs to accept money under the Cyclemetry name.

@@ -982,6 +982,42 @@ export function createAppState() {
     showSuccess(`Created "${templateDisplayName(filename)}"`)
   }
 
+  // Generate a template from a text prompt (or edit the current one). The
+  // result loads into the editor as an unsaved draft — the user saves it
+  // normally afterward. `edit: true` sends the current template so the model
+  // modifies it in place.
+  async function generateTemplate(prompt, { edit = false } = {}) {
+    const trimmed = (prompt ?? '').trim()
+    if (!trimmed) return
+    const current =
+      edit && config ? stripDefaults(toEditorFormat(config)) : null
+    const result = await backend.generateTemplate(trimmed, current)
+    const next = migrateConfig(result)
+    // start/end are activity-specific timeline bounds, not template config —
+    // preserve the user's current window (same as loadTemplate).
+    if (next?.scene) {
+      const currentStart = config?.scene?.start ?? 0
+      const currentEnd = config?.scene?.end ?? activityDuration
+      next.scene = {
+        ...next.scene,
+        start: currentStart,
+        end: currentEnd > currentStart ? currentEnd : activityDuration,
+      }
+    }
+    if (edit && config && loadedTemplateFilename) {
+      // Undoable edit of the loaded template; leaves it modified for save.
+      commitConfig(next)
+    } else {
+      // Fresh draft — unsaved until the user names and saves it.
+      config = next
+      loadedTemplateFilename = null
+      selectOnly(null)
+      resetHistory()
+      pristineConfig = null
+    }
+    showSuccess(edit ? 'Template updated' : 'Template generated')
+  }
+
   async function fetchTemplates() {
     try {
       templates = await backend.listTemplates()
@@ -1325,6 +1361,7 @@ export function createAppState() {
     saveTemplate,
     saveTemplateAs,
     newTemplate,
+    generateTemplate,
     revertTemplate,
   }
 }
