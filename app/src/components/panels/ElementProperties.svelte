@@ -612,6 +612,117 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
     app.updateElement(s.id, { scale_labels: (scaleLabels() ?? []).filter((_, idx) => idx !== i) })
   }
 
+  // ── Anchoring ──────────────────────────────────────────────────────────────
+  // Anchored elements derive x/y from a point on a target element's box (the
+  // Rust pre-pass resolves it before every render). Labels/values/rects/images
+  // can be anchored; box elements (plot/meter/gauge/rect/image) are targets.
+  const ANCHORABLE_TYPES = ['label', 'value', 'rect', 'image']
+  const ANCHOR_TARGET_TYPES = ['plot', 'meter', 'gauge', 'rect', 'image']
+  const ANCHOR_POINTS = [
+    { value: 'top-left', label: 'Top left' },
+    { value: 'top', label: 'Top' },
+    { value: 'top-right', label: 'Top right' },
+    { value: 'left', label: 'Left' },
+    { value: 'center', label: 'Center' },
+    { value: 'right', label: 'Right' },
+    { value: 'bottom-left', label: 'Bottom left' },
+    { value: 'bottom', label: 'Bottom' },
+    { value: 'bottom-right', label: 'Bottom right' },
+  ]
+  // prettier-ignore
+  const POINT_FRACS = {
+    'top-left': [0, 0], top: [0.5, 0], 'top-right': [1, 0],
+    left: [0, 0.5], center: [0.5, 0.5], right: [1, 0.5],
+    'bottom-left': [0, 1], bottom: [0.5, 1], 'bottom-right': [1, 1],
+  }
+  // Text alignment presets per anchor point: keep the text inside the target
+  // box (anchor to "left" edge → text grows rightward). Users can override
+  // via the Alignment selects afterwards.
+  const ANCHOR_TEXT_ALIGN = { 'top-left': 'left', left: 'left', 'bottom-left': 'left', 'top-right': 'right', right: 'right', 'bottom-right': 'right' }
+  const ANCHOR_VERTICAL_ALIGN = { 'top-left': 'top', top: 'top', 'top-right': 'top', 'bottom-left': 'bottom', bottom: 'bottom', 'bottom-right': 'bottom' }
+
+  function anchorTargetOpts() {
+    const s = selected()
+    if (!s) return []
+    const els = app.config?.elements ?? []
+    // An element whose anchor chain already reaches us can't be our target.
+    const chainHitsSelf = (el) => {
+      let cur = el
+      const seen = []
+      while (cur?.anchor?.target && !seen.includes(cur.id)) {
+        if (cur.anchor.target === s.id) return true
+        seen.push(cur.id)
+        cur = els.find((e) => e.id === cur.anchor.target)
+      }
+      return false
+    }
+    return els
+      .filter((e) => ANCHOR_TARGET_TYPES.includes(e.type) && e.id !== s.id && !chainHitsSelf(e))
+      .map((e) => ({ value: e.id, label: e.id }))
+  }
+
+  function textAlignPresets(type, point) {
+    if (type !== 'label' && type !== 'value') return {}
+    return {
+      text_align: ANCHOR_TEXT_ALIGN[point] ?? 'center',
+      vertical_align: ANCHOR_VERTICAL_ALIGN[point] ?? 'middle',
+    }
+  }
+
+  function setAnchorTarget(v) {
+    const s = selected()
+    if (!s) return
+    if (!v) {
+      detachAnchor()
+      return
+    }
+    const point = s.item.anchor?.point ?? 'center'
+    app.updateElement(s.id, {
+      anchor: { ...s.item.anchor, target: v, point, offset_x: 0, offset_y: 0 },
+      ...textAlignPresets(s.type, point),
+    })
+  }
+
+  function setAnchorPoint(v) {
+    const s = selected()
+    if (!s) return
+    app.updateElement(s.id, {
+      anchor: { ...s.item.anchor, point: v },
+      ...textAlignPresets(s.type, v),
+    })
+  }
+
+  function setAnchorOffset(axis, raw) {
+    const s = selected()
+    if (!s) return
+    const n = raw === '' ? 0 : Math.round(Number(raw))
+    if (!Number.isFinite(n)) return
+    app.updateElement(s.id, { anchor: { ...s.item.anchor, [axis]: n } })
+  }
+
+  // Remove the anchor, baking the resolved position into x/y so the element
+  // doesn't jump. Mirrors the Rust resolve math.
+  function detachAnchor() {
+    const s = selected()
+    if (!s) return
+    const a = s.item.anchor
+    const t = (app.config?.elements ?? []).find((e) => e.id === a?.target)
+    const updates = { anchor: undefined }
+    if (a && t && t.width != null && t.height != null) {
+      const [fx, fy] = POINT_FRACS[a.point ?? 'center'] ?? [0.5, 0.5]
+      let x = (t.x ?? 0) + t.width * fx + (a.offset_x ?? 0)
+      let y = (t.y ?? 0) + t.height * fy + (a.offset_y ?? 0)
+      if (s.type === 'rect' || s.type === 'image') {
+        const [sfx, sfy] = POINT_FRACS[a.self_point ?? 'center'] ?? [0.5, 0.5]
+        x -= (s.item.width ?? 0) * sfx
+        y -= (s.item.height ?? 0) * sfy
+      }
+      updates.x = Math.round(x)
+      updates.y = Math.round(y)
+    }
+    app.updateElement(s.id, updates)
+  }
+
   // Progressive disclosure: most overlays reuse the same colors/fonts/line
   // weights, so detailed/structural controls hide behind "Advanced".
   let showAdvanced = $state(false)
@@ -719,6 +830,14 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             value={item.text_align ?? 'left'}
             options={[{value:'left',label:'Left'},{value:'center',label:'Center'},{value:'right',label:'Right'}]}
             onchange={(v) => update('text_align', v)}
+          />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Vertical alignment</span>
+          <Select
+            value={item.vertical_align ?? 'baseline'}
+            options={[{value:'baseline',label:'Baseline'},{value:'top',label:'Top'},{value:'middle',label:'Middle'},{value:'bottom',label:'Bottom'}]}
+            onchange={(v) => update('vertical_align', v === 'baseline' ? undefined : v)}
           />
         </label>
         <label class="space-y-1 block">
@@ -887,6 +1006,14 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             value={item.text_align ?? 'left'}
             options={[{value:'left',label:'Left'},{value:'center',label:'Center'},{value:'right',label:'Right'}]}
             onchange={(v) => update('text_align', v)}
+          />
+        </label>
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Vertical alignment</span>
+          <Select
+            value={item.vertical_align ?? 'baseline'}
+            options={[{value:'baseline',label:'Baseline'},{value:'top',label:'Top'},{value:'middle',label:'Middle'},{value:'bottom',label:'Bottom'}]}
+            onchange={(v) => update('vertical_align', v === 'baseline' ? undefined : v)}
           />
         </label>
         <label class="space-y-1 block">
@@ -1727,6 +1854,38 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
       {/if}
     {/if}
 
+    <!-- Anchor — pin this element to a point on another element's box -->
+    {#if ANCHORABLE_TYPES.includes(type)}
+    <section class="mb-4 space-y-2">
+      <p class="text-[10px] uppercase tracking-wider text-zinc-600">Anchor</p>
+      <label class="space-y-1 block">
+        <span class="text-xs text-zinc-500">Anchor to</span>
+        <Select
+          value={item.anchor?.target ?? ''}
+          options={[{ value: '', label: 'None' }, ...anchorTargetOpts()]}
+          onchange={(v) => setAnchorTarget(v)}
+        />
+      </label>
+      {#if item.anchor}
+      <label class="space-y-1 block">
+        <span class="text-xs text-zinc-500">Point</span>
+        <Select value={item.anchor.point ?? 'center'} options={ANCHOR_POINTS} onchange={(v) => setAnchorPoint(v)} />
+      </label>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="space-y-1">
+          <span class="text-xs text-zinc-500">Offset X</span>
+          <Input type="number" step="1" value={item.anchor.offset_x ?? 0} oninput={(e) => setAnchorOffset('offset_x', e.target.value)} />
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs text-zinc-500">Offset Y</span>
+          <Input type="number" step="1" value={item.anchor.offset_y ?? 0} oninput={(e) => setAnchorOffset('offset_y', e.target.value)} />
+        </label>
+      </div>
+      <p class="text-[10px] text-zinc-600 italic">Follows {item.anchor.target} — dragging on the canvas adjusts the offset.</p>
+      {/if}
+    </section>
+    {/if}
+
     <!-- Position — advanced for all types; click-and-drag is the primary interaction -->
     {#if showAdvanced}
     <section class="mb-4 space-y-2">
@@ -1744,6 +1903,9 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           {/if}
         </button>
       </div>
+      {#if item.anchor}
+      <p class="text-[10px] text-zinc-600 italic">Position is derived from the anchor — use its offset to fine-tune.</p>
+      {:else}
       <div class="grid grid-cols-2 gap-2">
         <label class="space-y-1">
           <span class="text-xs text-zinc-500">X</span>
@@ -1754,6 +1916,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <Input type="number" step="1" value={numVal(item, 'y')} oninput={(e) => update('y', e.target.value)} />
         </label>
       </div>
+      {/if}
     </section>
     {/if}
 

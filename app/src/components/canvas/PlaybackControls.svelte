@@ -8,7 +8,6 @@
     start = 0,                  // overlay window start (sceneStart)
     end = 1,                    // overlay window end (sceneEnd)
     playing = $bindable(false),
-    previewFps = $bindable(5),
     buffered = [],   // array of seconds that are ready in cache
     onseek,
     distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }
@@ -94,47 +93,18 @@
   // right. Visualizing the broader activity context isn't useful here; we
   // only set reference points that the value element renders inside the
   // overlay.
+  // Reference-bar bounds. The thumb position itself is driven natively by the
+  // input's value/min/max; these only feed the min/max attributes below.
   let distOverlayStart = $derived(distanceInfo?.overlay_start_m ?? 0)
   let distOverlayEnd = $derived(distanceInfo?.overlay_end_m ?? 1)
-  let distOverlayRange = $derived(
-    Math.max(0.0001, distOverlayEnd - distOverlayStart),
-  )
-  let distDotPct = $derived(
-    distanceInfo && customDistanceM !== null
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((customDistanceM - distOverlayStart) / distOverlayRange) * 100,
-          ),
-        )
-      : 0,
-  )
-  let timeDotPct = $derived(
-    customTimeS !== null && duration > 0
-      ? Math.max(0, Math.min(100, (customTimeS / duration) * 100))
-      : 0,
-  )
-
-  let markerDotPct = $derived(
-    distanceInfo && markerDistanceM !== null
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((markerDistanceM - distOverlayStart) / distOverlayRange) * 100,
-          ),
-        )
-      : 0,
-  )
   let markerShapeClass = $derived(
     markerStyle === 'circle'
-      ? 'marker-range marker-circle'
+      ? 'marker-circle'
       : markerStyle === 'rectangle'
-        ? 'marker-range marker-rectangle'
-        : 'marker-range marker-checkered'
+        ? 'marker-rectangle'
+        : 'marker-checkered'
   )
-  let markerCss = $derived(`--marker-pct: ${markerDotPct}%; --marker-color: ${markerColor || '#ef4444'}`)
+  let markerCss = $derived(`--cm-thumb: ${markerColor || '#ef4444'}`)
 </script>
 
 <div class="flex flex-col gap-2 px-4 py-3 border-t border-zinc-800">
@@ -164,7 +134,7 @@
       value={smoothPlayhead}
       oninput={onScrub}
       style="--pct: {pct}%"
-      class="scrub-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
+      class="cm-slider cm-slider--filled absolute inset-x-0 h-full w-full"
     />
   </div>
 
@@ -181,8 +151,8 @@
           step={10}
           value={customDistanceM}
           oninput={onDistanceScrub}
-          style="--dist-pct: {distDotPct}%"
-          class="dist-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
+          style="--cm-thumb: #f59e0b"
+          class="cm-slider absolute inset-x-0 h-full w-full"
           title="Custom distance reference: {customDistanceM >= 1000 ? (customDistanceM / 1000).toFixed(1) + ' km' : Math.round(customDistanceM) + ' m'}"
         />
       </div>
@@ -202,8 +172,8 @@
           step={1}
           value={customTimeS}
           oninput={onTimeScrub}
-          style="--time-pct: {timeDotPct}%"
-          class="time-range absolute inset-x-0 h-full w-full appearance-none bg-transparent"
+          style="--cm-thumb: #10b981"
+          class="cm-slider absolute inset-x-0 h-full w-full"
           title="Custom time reference: {formatTime(customTimeS)}"
         />
       </div>
@@ -224,7 +194,7 @@
           value={markerDistanceM}
           oninput={onMarkerScrub}
           style={markerCss}
-          class="{markerShapeClass} absolute inset-x-0 h-full w-full appearance-none bg-transparent"
+          class="cm-slider {markerShapeClass} absolute inset-x-0 h-full w-full"
           title="Course marker: {markerDistanceM >= 1000 ? (markerDistanceM / 1000).toFixed(1) + ' km' : Math.round(markerDistanceM) + ' m'}"
         />
       </div>
@@ -274,90 +244,21 @@
 </div>
 
 <style>
-  /* Default cursor for the full input hit area; the visible track + thumb
-     pseudo-elements override to pointer below, so the cursor only changes
-     when the user is over the actual draggable surface. */
-  .scrub-range {
-    cursor: default;
-  }
-  .scrub-range::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--primary);
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    margin-top: -4px;
-  }
-  .scrub-range::-webkit-slider-runnable-track {
-    height: 4px;
-    cursor: pointer;
-    background: linear-gradient(
-      to right,
-      var(--primary) calc(var(--pct, 0%)),
-      #3f3f46 calc(var(--pct, 0%))
-    );
-    border-radius: 9999px;
-  }
-
-  .dist-range,
-  .time-range,
-  .marker-range {
-    cursor: default;
-  }
-  .dist-range::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #F59E0B;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    margin-top: -4px;
-  }
-  .dist-range::-webkit-slider-runnable-track {
-    height: 4px;
-    cursor: pointer;
-    background: transparent;
-    border-radius: 9999px;
-  }
-
-  .time-range::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #10B981;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    margin-top: -4px;
-  }
-  .time-range::-webkit-slider-runnable-track {
-    height: 4px;
-    cursor: pointer;
-    background: transparent;
-    border-radius: 9999px;
-  }
-
-  .marker-range::-webkit-slider-thumb {
-    appearance: none;
+  /* Course-marker thumb shape variants. These ride on top of the shared
+     `.cm-slider` grip (global index.css) and only override its shape so the
+     thumb previews the actual on-screen marker style. Color and border come
+     from the shared grip via `--cm-thumb`. The Svelte scope class raises
+     specificity above the global single-class rule, so these win. */
+  .marker-circle::-webkit-slider-thumb {
     width: 14px;
     height: 14px;
+    margin-top: -6px;
     border-radius: 50%;
-    border: 1px solid #18181b;
-    background: var(--marker-color, #ef4444);
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    margin-top: -5px;
   }
   .marker-checkered::-webkit-slider-thumb {
     width: 16px;
     height: 12px;
+    margin-top: -5px;
     border-radius: 2px;
     background-color: #fff;
     background-image:
@@ -371,12 +272,7 @@
   .marker-rectangle::-webkit-slider-thumb {
     width: 16px;
     height: 12px;
+    margin-top: -5px;
     border-radius: 2px;
-  }
-  .marker-range::-webkit-slider-runnable-track {
-    height: 4px;
-    cursor: pointer;
-    background: transparent;
-    border-radius: 9999px;
   }
 </style>

@@ -103,7 +103,7 @@
     }}
     onkeyup={endRangeEdit}
     oninput={(e) => emit(e.target.value)}
-    class="opacity-slider h-7 min-w-0 flex-1"
+    class="cm-slider cm-slider--filled h-7 min-w-0 flex-1"
   />
   <Input
     type="text"
@@ -116,32 +116,3 @@
     class="w-16 px-2 text-right tabular-nums"
   />
 </div>
-
-<style>
-  .opacity-slider {
-    appearance: none;
-    background: transparent;
-    cursor: pointer;
-  }
-  .opacity-slider:focus {
-    outline: none;
-  }
-  .opacity-slider::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 9999px;
-    background: linear-gradient(
-      to right,
-      var(--primary) calc(var(--pct, 0%)),
-      #3f3f46 calc(var(--pct, 0%))
-    );
-  }
-  .opacity-slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--primary);
-    margin-top: -4px;
-    cursor: pointer;
-  }
-</style>

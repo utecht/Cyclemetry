@@ -64,6 +64,15 @@ export function estimateProResFileSize(
   return `~${formatFileSize((pixelsPerExport * bps) / 8)}`
 }
 
+// Native file-open dialog filters match extensions case-sensitively on some
+// platforms (GTK/Linux turns them into `*.mp4` globs), so a camera file named
+// `.MP4`/`.MOV`/`.GPX` gets hidden from the picker. Expand each extension into
+// its lower- and upper-case forms so both are selectable. The backend already
+// normalizes case once a file is chosen.
+export function dialogExtensions(exts) {
+  return [...new Set(exts.flatMap((e) => [e.toLowerCase(), e.toUpperCase()]))]
+}
+
 export const TOOLTIP_DELAY = 300
 
 export function parseLocalStorage(key, fallback = null) {

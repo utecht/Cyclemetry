@@ -34,12 +34,22 @@
   let configDebounce = null
   let previewGeneration = 0
 
+  // Rolling render-latency samples (ms) used by the Auto frame-rate tuner.
+  // Plain array — intentionally non-reactive; we don't want UI re-runs per sample.
+  let renderLatencies = []
+  let autoFpsCooldownUntil = 0
+
   const PREFETCH_AHEAD = 5
   const MAX_CACHE = 30
   const MAX_CONCURRENT = 3
   const PREVIEW_SLOW_MS = 8000
   const PREVIEW_HARD_TIMEOUT_MS = 45000
   const MAX_VIEWER_ZOOM = 10
+  // Auto preview-rate bounds. Capped well below 30fps: the preview only needs to
+  // read smoothly, and a higher rate burns CPU/GPU re-rendering frames the eye
+  // can't distinguish on sparse telemetry. Floor keeps it from feeling choppy.
+  const MIN_PREVIEW_FPS = 2
+  const MAX_PREVIEW_FPS = 15
 
   let previewFps = $derived(app.previewFps ?? 1)
 
@@ -94,8 +104,10 @@
           PREVIEW_HARD_TIMEOUT_MS,
         )
       })
+      const renderStart = performance.now()
       let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, previewW, previewH), timeout])
       if (generation !== previewGeneration) return
+      recordRenderLatency(performance.now() - renderStart)
       if (data?.image) {
         console.debug('[tpl-diag] fetchFrame got image', { frameIdx, elements: data.elements?.length })
         fetchError = null
@@ -144,6 +156,46 @@
       if (hardTimer) clearTimeout(hardTimer)
       pending.delete(frameIdx)
     }
+  }
+
+  function recordRenderLatency(ms) {
+    if (!(ms > 0)) return
+    renderLatencies.push(ms)
+    if (renderLatencies.length > 10) renderLatencies.shift()
+    maybeAutoTuneFps()
+  }
+
+  function median(arr) {
+    if (!arr.length) return 0
+    const s = [...arr].sort((a, b) => a - b)
+    const m = Math.floor(s.length / 2)
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+  }
+
+  // Derive a sustainable preview frame rate from measured render latency. With
+  // up to MAX_CONCURRENT renders in flight, throughput ≈ MAX_CONCURRENT / latency;
+  // we keep an 80% margin and clamp to MIN_PREVIEW_FPS–MAX_PREVIEW_FPS to balance
+  // smoothness against resource use. Hysteresis + a cooldown stop it flapping
+  // (each fps change rebuilds the frame buffer). While playing we only step DOWN —
+  // raising fps mid-play would clear the buffer and stutter; we step up only when
+  // idle, where the rebuild is invisible.
+  function maybeAutoTuneFps() {
+    if (renderLatencies.length < 3) return
+    const med = median(renderLatencies)
+    if (med <= 0) return
+    const sustainable = (MAX_CONCURRENT * 1000) / med
+    const target = Math.max(
+      MIN_PREVIEW_FPS,
+      Math.min(MAX_PREVIEW_FPS, Math.round(sustainable * 0.8)),
+    )
+    const current = app.previewFps ?? 1
+    if (target === current) return
+    const now = performance.now()
+    if (now < autoFpsCooldownUntil) return
+    if (Math.abs(target - current) / current < 0.25) return
+    if (playing && target > current) return
+    app.previewFps = target
+    autoFpsCooldownUntil = now + 1500
   }
 
   // Re-fetch when config, gpx, or previewFps changes — debounced so a burst of
@@ -196,6 +248,9 @@
     const frameIdx = secToFrameIdx(app.selectedSecond, fps, start)
     const frame = cache.get(frameIdx)
     if (frame) currentFrameData = frame
+    // When the renderer falls behind during playback the previous frame stays
+    // on screen; on sparse telemetry that hold is imperceptible, and the auto
+    // tuner backs off the frame rate on its own — so there's nothing to surface.
     untrack(() => { for (let i = 0; i < PREFETCH_AHEAD; i++) fetchFrame(frameIdx + i) })
   })
 
@@ -840,7 +895,6 @@
     start={sceneStart}
     end={sceneEnd}
     bind:playing
-    bind:previewFps={app.previewFps}
     buffered={bufferedSeconds}
     onseek={seek}
     distanceInfo={(showDistanceBar || showCourseMarkerBar) ? distanceInfo : null}

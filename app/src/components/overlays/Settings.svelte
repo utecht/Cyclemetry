@@ -7,8 +7,6 @@
 
   let { onclose } = $props()
 
-  const PREVIEW_FPS_OPTIONS = [1, 5, 10, 15, 30]
-
   let effectiveOutputDir = $derived(app.effectiveOutputDir)
   let outputDirLabel = $derived(formatHomePath(effectiveOutputDir))
 
@@ -86,34 +84,6 @@
               >Reset</button
             >
           {/if}
-        </div>
-      </div>
-
-      <!-- Preview FPS -->
-      <div class="space-y-2">
-        <p
-          class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
-        >
-          Preview Frame Rate
-        </p>
-        <p class="text-[11px] text-zinc-500">
-          Frames per second used when scrubbing the playback timeline.
-        </p>
-        <div class="flex gap-1.5">
-          {#each PREVIEW_FPS_OPTIONS as fps (fps)}
-            {@const active = app.previewFps === fps}
-            <button
-              onclick={() => {
-                app.previewFps = fps
-              }}
-              class="cursor-pointer flex-1 rounded-lg border py-2 text-xs font-medium transition-colors
-                {active
-                ? 'border-zinc-400 text-zinc-100 bg-zinc-700'
-                : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}"
-            >
-              {fps} fps
-            </button>
-          {/each}
         </div>
       </div>
     </div>

@@ -254,3 +254,54 @@ body {
     10px -10px,
     -10px 0px;
 }
+
+/* ── Range sliders ────────────────────────────────────────────────────────
+   One standardized slider shared across the app (opacity, scrub, distance,
+   time, course-marker). Every instance has identical geometry — a tall
+   rounded-rectangle grip handle (matching the overlay time-range handles in
+   the left sidebar) on a 4px rounded track — and differs only by its
+   semantic color, supplied via CSS variables:
+     --cm-fill   filled-track + default grip color (default: crimson accent)
+     --cm-thumb  grip color override (for bare sliders whose track is hidden)
+     --cm-track  unfilled-track color
+     --pct       filled-track extent (filled variant only)
+   Add `.cm-slider--filled` to render the progress gradient; bare sliders
+   leave the track transparent and layer their own background bar behind. */
+.cm-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+  --cm-track: #3f3f46;
+}
+.cm-slider:focus {
+  outline: none;
+}
+.cm-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: transparent;
+}
+.cm-slider--filled::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--cm-fill, var(--primary)) calc(var(--pct, 0%)),
+    var(--cm-track) calc(var(--pct, 0%))
+  );
+}
+.cm-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 18px;
+  margin-top: -8px;
+  border-radius: 6px;
+  background: var(--cm-thumb, var(--cm-fill, var(--primary)));
+  border: 1px solid #09090b;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 80ms ease-out;
+}
+.cm-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}

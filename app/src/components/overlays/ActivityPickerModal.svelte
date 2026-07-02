@@ -4,6 +4,7 @@
   import * as backend from '@/api/backend.js'
   import { X, Trash2, FolderOpen, Activity } from 'lucide-svelte'
   import Tooltip from '@/components/ui/Tooltip.svelte'
+  import { dialogExtensions } from '@/lib/utils.js'
 
   const app = getContext('app')
   let { onload, onclose } = $props()
@@ -99,7 +100,12 @@
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: 'Activity (GPX, FIT, TCX)', extensions: ['gpx', 'fit', 'tcx'] }],
+        filters: [
+          {
+            name: 'Activity (GPX, FIT, TCX)',
+            extensions: dialogExtensions(['gpx', 'fit', 'tcx']),
+          },
+        ],
         title: 'Select Activity File',
       })
       if (!selected) return
