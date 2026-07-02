@@ -3,6 +3,7 @@
   import { Check, Upload, X } from 'lucide-svelte'
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
   import { listAssets, importAsset } from '../../api/backend.js'
+  import { dialogExtensions } from '../../lib/utils.js'
 
   let {
     current = '',
@@ -38,7 +39,9 @@
     uploadError = null
     const path = await openFileDialog({
       multiple: false,
-      filters: [{ name: 'Images', extensions: ['png', 'webp', 'svg'] }],
+      filters: [
+        { name: 'Images', extensions: dialogExtensions(['png', 'webp', 'svg']) },
+      ],
     })
     if (!path) return
     uploading = true

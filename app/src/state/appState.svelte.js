@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import * as backend from '../api/backend.js'
-import { parseLocalStorage } from '../lib/utils.js'
+import { parseLocalStorage, dialogExtensions } from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 import { stripDefaults } from '../lib/stripDefaults.js'
 import { normalizeElementUpdates } from '../lib/templateSchema.js'
@@ -264,7 +264,7 @@ export function createAppState() {
       filters: [
         {
           name: 'Video',
-          extensions: [
+          extensions: dialogExtensions([
             'mp4',
             'mov',
             'm4v',
@@ -273,7 +273,7 @@ export function createAppState() {
             'avi',
             '360',
             'insv',
-          ],
+          ]),
         },
       ],
       title: 'Select reference video',
@@ -1075,7 +1075,9 @@ export function createAppState() {
   async function addCustomFont() {
     const selected = await open({
       multiple: false,
-      filters: [{ name: 'Fonts', extensions: ['ttf', 'otf'] }],
+      filters: [
+        { name: 'Fonts', extensions: dialogExtensions(['ttf', 'otf']) },
+      ],
     })
     if (!selected) return null
     try {
