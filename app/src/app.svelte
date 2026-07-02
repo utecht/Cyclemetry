@@ -35,6 +35,7 @@
     Play,
     RotateCcw,
     Save,
+    Sparkles,
     X,
   } from 'lucide-svelte'
   import { formatTime, estimateProResFileSize, TOOLTIP_DELAY } from './lib/utils.js'
@@ -134,13 +135,22 @@
   let showSettings = $state(false)
   let showAbout = $state(false)
   let showNewTemplateDialog = $state(false)
+  let showAiChat = $state(false)
   let showActivityPicker = $state(false)
+
+  // Auto-switch to properties when user clicks an element while AI chat is open.
+  $effect(() => {
+    if ((app.selectedElementId || app.selectedGroupId) && showAiChat) {
+      showAiChat = false
+    }
+  })
 
   function closeDialogs() {
     showActivityPicker = false
     showSettings = false
     showAbout = false
     showNewTemplateDialog = false
+    showAiChat = false
     app.showTemplatePicker = false
   }
 
@@ -169,6 +179,15 @@
     showNewTemplateDialog = true
   }
 
+  function toggleAiChat() {
+    if (showAiChat) {
+      showAiChat = false
+    } else {
+      closeDialogs()
+      showAiChat = true
+    }
+  }
+
   // Enforce mutual exclusion: any code path that sets showTemplatePicker = true
   // (including child components that bypass openTemplatePicker) must close other dialogs.
   $effect(() => {
@@ -177,6 +196,7 @@
       showSettings = false
       showAbout = false
       showNewTemplateDialog = false
+      showAiChat = false
     }
   })
 
@@ -583,6 +603,19 @@
         </button>
       </Tooltip>
 
+      <!-- AI assistant (sidebar toggle) -->
+      <Tooltip content={showAiChat ? 'Close AI assistant' : 'Open AI assistant'} side="bottom" delay={TOOLTIP_DELAY}>
+        <button
+          onclick={toggleAiChat}
+          class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer transition-colors
+                 {showAiChat
+            ? 'border-[#dc143c]/60 bg-[#dc143c]/10 text-[#dc143c]'
+            : 'text-zinc-500 hover:border-[#dc143c]/40 hover:text-[#dc143c]'}"
+          aria-label={showAiChat ? 'Close AI assistant' : 'Open AI assistant'}
+          aria-pressed={showAiChat}
+        ><Sparkles size={12} /></button>
+      </Tooltip>
+
       <!-- Save — amber when modified -->
       {#if app.isTemplateModified}
         <Tooltip content="Save template" side="bottom" delay={TOOLTIP_DELAY}>
@@ -871,8 +904,8 @@
       <LeftSidebar />
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
-    {#if app.config && app.hasActivity}
-      <RightPanel />
+    {#if app.config && app.hasActivity || showAiChat}
+      <RightPanel aiChatOpen={showAiChat} onreopenAiChat={() => (showAiChat = true)} />
     {/if}
   </div>
 </div>
