@@ -88,12 +88,13 @@ Videos made with Cyclemetry. Click any thumbnail to watch on YouTube.
 ## Star History
 
 <div align="center">
-  <a href="https://star-history.com/#walkersutton/cyclemetry&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=walkersutton/cyclemetry&type=Date&theme=dark" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=walkersutton/cyclemetry&type=Date" />
-    </picture>
-  </a>
+<a href="https://www.star-history.com/?type=date&repos=walkersutton%2Fcyclemetry">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=walkersutton/cyclemetry&type=date&theme=dark&legend=top-left&sealed_token=C_wPtdJfn-R4duwKvzICzM-Z5oamESqYb2tQ4JkTkhxxihEDmua5myAqphau9WoqW5RQLqLLqzV3qprj2-IJ7JWedYd3xrlUY93fsrlOuxM5Gd_j953g3D2uTieTtRkGnaiIWS5oCsj82P2cRqcpK-wq8Bwoz11pGYri6OdHTAzfxSF3gK_ikzrm-ere" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=walkersutton/cyclemetry&type=date&legend=top-left&sealed_token=C_wPtdJfn-R4duwKvzICzM-Z5oamESqYb2tQ4JkTkhxxihEDmua5myAqphau9WoqW5RQLqLLqzV3qprj2-IJ7JWedYd3xrlUY93fsrlOuxM5Gd_j953g3D2uTieTtRkGnaiIWS5oCsj82P2cRqcpK-wq8Bwoz11pGYri6OdHTAzfxSF3gK_ikzrm-ere" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=walkersutton/cyclemetry&type=date&legend=top-left&sealed_token=C_wPtdJfn-R4duwKvzICzM-Z5oamESqYb2tQ4JkTkhxxihEDmua5myAqphau9WoqW5RQLqLLqzV3qprj2-IJ7JWedYd3xrlUY93fsrlOuxM5Gd_j953g3D2uTieTtRkGnaiIWS5oCsj82P2cRqcpK-wq8Bwoz11pGYri6OdHTAzfxSF3gK_ikzrm-ere" />
+ </picture>
+</a>
 </div>
 
 ## Developing
