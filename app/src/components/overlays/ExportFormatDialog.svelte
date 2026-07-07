@@ -39,7 +39,7 @@
       oncancel?.()
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (!calibrating) onconfirm?.(selected)
+      onconfirm?.(selected)
     }
   }
 </script>
@@ -189,11 +189,8 @@
       </button>
       <button
         onclick={() => onconfirm?.(selected)}
-        disabled={!!calibrating}
-        title={calibrating ? 'Waiting for the test render to finish' : null}
         class="text-xs px-3 py-1.5 rounded border border-primary/70 bg-primary/15 text-zinc-100
-               hover:border-primary hover:bg-primary/25 cursor-pointer transition-colors
-               disabled:opacity-50 disabled:cursor-default"
+               hover:border-primary hover:bg-primary/25 cursor-pointer transition-colors"
       >
         Render
       </button>
