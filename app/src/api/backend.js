@@ -402,6 +402,10 @@ export const nativeGenerateDemoCrop = (
  * @param {string} [outputDir]
  * @param {number} [targetWidth]
  * @param {number} [targetHeight]
+ * @param {'prores' | 'qtrle' | 'stitched'} [exportFormat]
+ * @param {{videoPath: string, videoIn: number}} [stitch] — source footage for
+ *   a stitched export; videoIn is seconds into the footage where the overlay's
+ *   first frame lands
  * @returns {Promise<RenderStarted>}
  */
 export const nativeStartRender = (
@@ -410,6 +414,8 @@ export const nativeStartRender = (
   outputDir,
   targetWidth,
   targetHeight,
+  exportFormat,
+  stitch,
 ) =>
   invoke('native_render', {
     config,
@@ -417,6 +423,9 @@ export const nativeStartRender = (
     outputDir: outputDir ?? null,
     targetWidth: targetWidth ?? null,
     targetHeight: targetHeight ?? null,
+    exportFormat: exportFormat ?? null,
+    stitchVideoPath: stitch?.videoPath ?? null,
+    stitchVideoIn: stitch?.videoIn ?? null,
   })
 
 /** @returns {Promise<RenderProgress>} */
@@ -444,6 +453,35 @@ export const nativeBenchmark = (
     config,
     gpxFilename,
     frames,
+    targetWidth: targetWidth ?? null,
+    targetHeight: targetHeight ?? null,
+  })
+
+/**
+ * Short real export (render + FFmpeg encode) of the first few timeline
+ * seconds to a throwaway file — measures wall time and encoded size so
+ * time/size estimates reflect this machine and codec.
+ * @param {import('./elementTypes.js').Template} config
+ * @param {string} gpxFilename
+ * @param {'prores' | 'qtrle'} exportFormat
+ * @param {number} [seconds]
+ * @param {number} [targetWidth]
+ * @param {number} [targetHeight]
+ * @returns {Promise<{frames: number, elapsed_ms: number, bytes: number}>}
+ */
+export const nativeCalibrateExport = (
+  config,
+  gpxFilename,
+  exportFormat,
+  seconds,
+  targetWidth,
+  targetHeight,
+) =>
+  invoke('native_calibrate_export', {
+    config,
+    gpxFilename,
+    exportFormat,
+    seconds: seconds ?? null,
     targetWidth: targetWidth ?? null,
     targetHeight: targetHeight ?? null,
   })

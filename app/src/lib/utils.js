@@ -45,23 +45,31 @@ export function exportBitsPerPixelSecond(
 // Midpoint guess for never-rendered sparse cycling overlays on ProRes 4444.
 // Real content lives in a wide band (~0.25–0.8); after a single render the
 // calibrated value supersedes this.
-const DEFAULT_BITS_PER_PIXEL_SECOND = 0.5
+export const DEFAULT_BITS_PER_PIXEL_SECOND = 0.5
 
-// ProRes 4444 is content-dependent, but a wide range is more noise than signal
-// in a tooltip — return a single best-guess number and let calibration sharpen
-// it as renders accumulate. `calibration` is { bps, n } or null.
-export function estimateProResFileSize(
+// Stitched (H.264) prior — matches the encoder's own bitrate target of
+// w·h·fps·0.12 bits/sec (see stitched_quality_args in render/scene.rs), so the
+// estimate lines up with what videotoolbox actually produces before any real
+// export has calibrated it.
+export const DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND = 0.12
+
+// Codec output is content-dependent, but a wide range is more noise than
+// signal in a tooltip — return a single best-guess number and let calibration
+// sharpen it as renders accumulate. `calibration` is { bps, n } or null,
+// already resolved for the chosen export format by the caller; `fallbackBps`
+// is the prior to use until then.
+export function estimateExportFileSize(
   width,
   height,
   fps,
   durationSecs,
   calibration = null,
+  fallbackBps = DEFAULT_BITS_PER_PIXEL_SECOND,
 ) {
   const pixelsPerExport = width * height * fps * durationSecs
   if (!(pixelsPerExport > 0)) return null
-  const bps =
-    calibration?.bps > 0 ? calibration.bps : DEFAULT_BITS_PER_PIXEL_SECOND
-  return `~${formatFileSize((pixelsPerExport * bps) / 8)}`
+  const bps = calibration?.bps > 0 ? calibration.bps : fallbackBps
+  return formatFileSize((pixelsPerExport * bps) / 8)
 }
 
 // Native file-open dialog filters match extensions case-sensitively on some

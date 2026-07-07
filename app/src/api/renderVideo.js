@@ -1,12 +1,20 @@
 import * as backend from './backend.js'
 import { exportBitsPerPixelSecond } from '../lib/utils.js'
+import { videoStartOnAxis } from '../lib/videoAlignment.js'
 
 const ETA_REANCHOR_MS = 30_000
 const ETA_MIN_SAMPLE_SECONDS = 5
 const ETA_MAX_UPWARD_ADJUST_SECONDS = 15
 
 export default async function renderVideo(state) {
-  const { config, gpxFilename, outputDir, outputWidth, outputHeight } = state
+  const {
+    config,
+    gpxFilename,
+    outputDir,
+    outputWidth,
+    outputHeight,
+    exportFormat,
+  } = state
   if (!config?.scene) throw new Error('No valid config available')
   if (!gpxFilename) throw new Error('No GPX file selected')
   const start = config.scene.start ?? 0
@@ -17,6 +25,31 @@ export default async function renderVideo(state) {
     )
 
   const fps = config.scene.fps ?? 30
+
+  // Stitched export: composite the overlay onto the reference video. The
+  // export window is the overlap of the scene range and the video's extent on
+  // the timeline, so the overlay and footage cover the same wall-clock span.
+  let renderConfig = config
+  let renderStart = start
+  let renderEnd = end
+  let stitch = null
+  if (exportFormat === 'stitched') {
+    const video = state.video
+    if (!video?.path || video.missing)
+      throw new Error('Stitched export needs a video — load one first')
+    const videoStart = videoStartOnAxis(state.gpxStartTime, video)
+    renderStart = Math.max(start, videoStart)
+    renderEnd = Math.min(end, videoStart + (video.duration ?? 0))
+    if (!(renderEnd > renderStart))
+      throw new Error(
+        'The export range does not overlap the video — adjust the timeline range or move the video on the timeline',
+      )
+    renderConfig = {
+      ...config,
+      scene: { ...config.scene, start: renderStart, end: renderEnd },
+    }
+    stitch = { videoPath: video.path, videoIn: renderStart - videoStart }
+  }
 
   state.renderProgress = {
     current: 0,
@@ -31,11 +64,13 @@ export default async function renderVideo(state) {
 
   try {
     const startData = await backend.nativeStartRender(
-      config,
+      renderConfig,
       gpxFilename,
       outputDir,
       outputWidth,
       outputHeight,
+      exportFormat,
+      stitch,
     )
     const outputPath = startData.output_path
 
@@ -111,9 +146,7 @@ export default async function renderVideo(state) {
             if (p.error) reject(new Error(p.error))
             else {
               if (p.frames_rendered > 0 && elapsed > 0) {
-                const fps = p.frames_rendered / elapsed
-                state.lastRenderFps = fps
-                localStorage.setItem('lastRenderFps', fps.toFixed(4))
+                state.recordRenderFps(exportFormat, p.frames_rendered / elapsed)
               }
               resolve()
             }
@@ -132,9 +165,9 @@ export default async function renderVideo(state) {
         outputWidth,
         outputHeight,
         fps,
-        end - start,
+        renderEnd - renderStart,
       )
-      state.recordExportSizeEstimate(bitsPerPixelSecond)
+      state.recordExportSizeEstimate(bitsPerPixelSecond, exportFormat)
     } catch {
       /* file-size calibration is best-effort */
     }

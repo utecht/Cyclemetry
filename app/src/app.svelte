@@ -12,6 +12,7 @@
   import CenterCanvas from './components/layout/CenterCanvas.svelte'
   import RightPanel from './components/layout/RightPanel.svelte'
   import RenderProgressOverlay from './components/overlays/RenderProgressOverlay.svelte'
+  import RenderStatusChip from './components/overlays/RenderStatusChip.svelte'
   import ErrorToast from './components/overlays/ErrorToast.svelte'
   import UpdateBanner from './components/overlays/UpdateBanner.svelte'
   import Settings from './components/overlays/Settings.svelte'
@@ -20,6 +21,7 @@
   import ActivityPickerModal from './components/overlays/ActivityPickerModal.svelte'
   import ConfirmDialog from './components/overlays/ConfirmDialog.svelte'
   import NewTemplateDialog from './components/overlays/NewTemplateDialog.svelte'
+  import ExportFormatDialog from './components/overlays/ExportFormatDialog.svelte'
   import Button from './components/ui/Button.svelte'
   import Tooltip from './components/ui/Tooltip.svelte'
 
@@ -39,7 +41,13 @@
     Sparkles,
     X,
   } from 'lucide-svelte'
-  import { formatTime, estimateProResFileSize, TOOLTIP_DELAY } from './lib/utils.js'
+  import {
+    formatTime,
+    estimateExportFileSize,
+    DEFAULT_BITS_PER_PIXEL_SECOND,
+    DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND,
+    TOOLTIP_DELAY,
+  } from './lib/utils.js'
   import { wallClockApplicable } from './lib/videoAlignment.js'
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -64,6 +72,48 @@
     { label: '1080p Vertical', w: 1080, h: 1920 },
     { label: 'Square', w: 1080, h: 1080 },
   ]
+
+  // Export options: two transparent-overlay codecs (both .mov — ProRes 4444
+  // is smaller and hardware-accelerated but consumer editors like Premiere
+  // Elements on Windows can't decode it; Animation/qtrle is the compatible
+  // fallback), plus a stitched export that burns the overlay onto the
+  // reference video for a finished, shareable MP4. The stitched option only
+  // appears once a video is loaded — with no footage there's nothing to burn
+  // onto, so offering it would just dead-end into a file picker.
+  let hasVideoLoaded = $derived(!!app.video?.path && !app.video.missing)
+  let EXPORT_FORMATS = $derived([
+    {
+      value: 'prores',
+      label: 'ProRes 4444',
+      container: '.mov',
+      transparent: true,
+      bestFor: 'Pro editors',
+      summary: 'Transparent overlay for pro editors.',
+      desc: 'Overlay only, on a transparent background — layer it onto your own edit. Smaller files, but needs a pro editor: Premiere Pro, Final Cut, or DaVinci Resolve.',
+    },
+    {
+      value: 'qtrle',
+      label: 'Animation (RLE)',
+      container: '.mov',
+      transparent: true,
+      bestFor: 'Any editor',
+      summary: 'Transparent overlay that plays in any editor.',
+      desc: 'Overlay only, on a transparent background — plays in any editor, including ones without ProRes support like Premiere Elements on Windows. Slightly larger files.',
+    },
+    ...(hasVideoLoaded
+      ? [
+          {
+            value: 'stitched',
+            label: 'Video with overlay',
+            container: '.mp4',
+            transparent: false,
+            bestFor: 'Sharing',
+            summary: 'Overlay burned onto your video — ready to share.',
+            desc: `Burns the overlay directly onto ${videoBasename(app.video.path)} — a finished video, ready to share. No editor needed.`,
+          },
+        ]
+      : []),
+  ])
 
   // True when the user is in custom-resolution mode. Initialised to true when
   // the persisted dims don't match any preset (e.g. loaded from a prior session).
@@ -229,10 +279,18 @@
       showSettings ||
       app.showTemplatePicker ||
       showNewTemplateDialog ||
-      showActivityPicker
+      showActivityPicker ||
+      showExportFormatDialog
 
     if (e.key === 'Escape' && showResolutionMenu) {
       showResolutionMenu = false
+      return
+    }
+
+    // Escape minimizes the render dialog back to the header status chip
+    // (the render keeps running).
+    if (e.key === 'Escape' && app.renderingVideo && renderExpanded) {
+      renderExpanded = false
       return
     }
 
@@ -409,13 +467,60 @@
     }
   }
 
-  async function handleRender() {
+  // Render is a two-step flow: the button opens the export-format dialog,
+  // confirming there starts the actual render.
+  let showExportFormatDialog = $state(false)
+  // Whether the full render-progress dialog is open. Renders show the ambient
+  // header chip by default; expanding opens the dialog on demand.
+  let renderExpanded = $state(false)
+
+  function handleRender() {
     if (rendering || !app.hasActivity) return
+    showExportFormatDialog = true
+  }
+
+  // Measure any codec that has no same-machine numbers yet, one at a time
+  // (the native calibrator is single-flight). Bails if a real render starts.
+  async function warmUpExportEstimates() {
+    for (const f of EXPORT_FORMATS) {
+      if (app.renderingVideo) return
+      if (exportTestAvailableFor(f.value)) {
+        await app.calibrateExportEstimate(f.value)
+      }
+    }
+  }
+
+  // Warm up export estimates in the background, well before the user is likely
+  // to open the export dialog, so its cards already show real time & size
+  // numbers with no waiting. Re-arms whenever a new activity or template is
+  // loaded; exportTestAvailableFor goes false after a successful measurement,
+  // so an already-measured codec is skipped and this won't repeat needlessly.
+  const EXPORT_WARMUP_DELAY_MS = 2500
+  $effect(() => {
+    // Coarse triggers only — read the identity of what's loaded, not the
+    // deeply-reactive config, so template edits don't re-arm on every keystroke.
+    const ready = app.hasActivity
+    void app.loadedTemplateFilename
+    if (!ready) return
+    const timer = setTimeout(warmUpExportEstimates, EXPORT_WARMUP_DELAY_MS)
+    return () => clearTimeout(timer)
+  })
+
+  async function startRender(format) {
+    showExportFormatDialog = false
+    if (rendering || !app.hasActivity) return
+    if (format === 'stitched' && (!app.video?.path || app.video.missing)) {
+      // Stitching needs footage — pick it now; bail if the user cancels.
+      await app.pickAndLoadVideo()
+      if (!app.video?.path || app.video.missing) return
+    }
+    app.exportFormat = format
     if (!hasRenderedOnce) {
       hasRenderedOnce = true
       localStorage.setItem(RENDERED_ONCE_KEY, 'true')
     }
     rendering = true
+    renderExpanded = false
     try {
       const result = await renderVideo(app)
       if (result?.cancelled) console.log('Render cancelled')
@@ -437,33 +542,46 @@
   // Estimate render wall-clock time from the last recorded render FPS.
   // Re-evaluates whenever renderingVideo or config changes, so it picks up
   // the freshly-stored FPS right after a render finishes.
-  let renderEstimateSecs = $derived.by(() => {
+  function renderEstimateSecsFor(format) {
     if (app.renderingVideo || !app.config?.scene || !app.hasActivity)
       return null
     const fps = app.config.scene.fps ?? 30
     const start = app.config.scene.start ?? 0
     const end = app.config.scene.end ?? app.timelineDuration
     if (start >= end) return null
-    const renderFps = app.lastRenderFps
+    const renderFps = app.renderFpsFor(format)
     if (!renderFps || renderFps <= 0) return null
     return Math.round(((end - start) * fps) / renderFps)
-  })
+  }
 
-  let renderFileSizeEst = $derived.by(() => {
+  function renderFileSizeEstFor(format) {
     if (!app.config?.scene || !app.hasActivity) return null
     const fps = app.config.scene.fps ?? 30
     const start = app.config.scene.start ?? 0
     const end = app.config.scene.end ?? app.timelineDuration
     const duration = end - start
     if (duration <= 0) return null
-    return estimateProResFileSize(
+    const calibration = app.exportSizeCalibrationFor(format)
+    // qtrle (lossless RLE) has no reliable prior — its size swings wildly with
+    // overlay content, so it shows nothing and offers a quick test render
+    // instead. ProRes and stitched (H.264) both have solid built-in priors.
+    if (!calibration && format === 'qtrle') return null
+    const fallbackBps =
+      format === 'stitched'
+        ? DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND
+        : DEFAULT_BITS_PER_PIXEL_SECOND
+    return estimateExportFileSize(
       app.outputWidth,
       app.outputHeight,
       fps,
       duration,
-      app.exportSizeCalibration,
+      calibration,
+      fallbackBps,
     )
-  })
+  }
+
+  let renderEstimateSecs = $derived(renderEstimateSecsFor(app.exportFormat))
+  let renderFileSizeEst = $derived(renderFileSizeEstFor(app.exportFormat))
 
   let renderTooltip = $derived.by(() => {
     if (!app.config) return 'Load a template first'
@@ -475,6 +593,33 @@
     if (renderFileSizeEst != null) lines.push(`~${renderFileSizeEst} output`)
     return lines.length > 0 ? lines.join('\n') : null
   })
+
+  // Per-card estimates for the export dialog — render time and file size as
+  // separate labeled fields, so the codecs compare at a glance without
+  // clicking between them.
+  function exportTimeEstimateFor(format) {
+    const secs = renderEstimateSecsFor(format)
+    return secs != null ? `~${formatTime(secs)}` : null
+  }
+
+  function exportSizeEstimateFor(format) {
+    const size = renderFileSizeEstFor(format)
+    return size != null ? `~${size}` : null
+  }
+
+  // A codec with no same-machine measurement gets a "quick test" offer on its
+  // card instead of estimates derived from the other codec. Stitched is
+  // excluded: a test render can't include the source footage, so its numbers
+  // only come from real exports.
+  function exportTestAvailableFor(format) {
+    if (format === 'stitched') return false
+    if (!app.hasActivity || !app.config?.scene || app.renderingVideo)
+      return false
+    return (
+      renderEstimateSecsFor(format) == null ||
+      renderFileSizeEstFor(format) == null
+    )
+  }
 
   let gpxLabel = $derived.by(() => {
     if (!app.gpxFilename) return 'Load Activity'
@@ -501,7 +646,11 @@
 >
   <ErrorToast />
   <UpdateBanner />
-  <RenderProgressOverlay />
+  <RenderProgressOverlay
+    expanded={renderExpanded}
+    format={EXPORT_FORMATS.find((f) => f.value === app.exportFormat) ?? null}
+    onminimize={() => (renderExpanded = false)}
+  />
   {#if showSettings}
     <Settings
       onclose={() => {
@@ -524,6 +673,23 @@
       onload={loadActivityFromPickerOrMenu}
       onclose={() => {
         showActivityPicker = false
+      }}
+    />
+  {/if}
+  {#if showExportFormatDialog}
+    <ExportFormatDialog
+      formats={EXPORT_FORMATS}
+      initial={EXPORT_FORMATS.some((f) => f.value === app.exportFormat)
+        ? app.exportFormat
+        : EXPORT_FORMATS[0].value}
+      timeFor={exportTimeEstimateFor}
+      sizeFor={exportSizeEstimateFor}
+      testAvailableFor={exportTestAvailableFor}
+      calibrating={app.calibratingFormat}
+      oncalibrate={(fmt) => app.calibrateExportEstimate(fmt)}
+      onconfirm={startRender}
+      oncancel={() => {
+        showExportFormatDialog = false
       }}
     />
   {/if}
@@ -634,7 +800,11 @@
         </Tooltip>
 
         <!-- Revert to last saved -->
-        <Tooltip content="Revert to last saved" side="bottom" delay={TOOLTIP_DELAY}>
+        <Tooltip
+          content="Revert to last saved"
+          side="bottom"
+          delay={TOOLTIP_DELAY}
+        >
           <button
             onclick={handleRevertClick}
             class="hdr-btn hdr-btn-icon shrink-0"
@@ -649,7 +819,8 @@
             onclick={overwriteRepoTemplate}
             class="hdr-btn hdr-btn-icon shrink-0 border-sky-500/60 bg-sky-500/10 text-sky-400
                    hover:border-sky-400 hover:bg-sky-500/20 hover:text-sky-300 cursor-pointer"
-          >⬆</button>
+            >⬆</button
+          >
         </Tooltip>
       {/if}
     </div>
@@ -687,7 +858,11 @@
       </Tooltip>
     {:else if app.video.missing}
       <div class="flex items-center gap-1 shrink-0">
-        <Tooltip content="Locate replacement video" side="bottom" delay={TOOLTIP_DELAY}>
+        <Tooltip
+          content="Locate replacement video"
+          side="bottom"
+          delay={TOOLTIP_DELAY}
+        >
           <button
             onclick={() => app.pickAndLoadVideo()}
             class="hdr-btn px-2.5 gap-1.5 max-w-[160px] border-red-800/60 text-red-300 hover:border-red-600/60 hover:bg-red-900/30 hover:text-red-200"
@@ -711,7 +886,9 @@
             title={app.video.path}
           >
             <Film size={12} class="text-zinc-500 shrink-0" />
-            <span class="truncate text-zinc-200">{videoBasename(app.video.path)}</span>
+            <span class="truncate text-zinc-200"
+              >{videoBasename(app.video.path)}</span
+            >
           </button>
         </Tooltip>
         {#if canUseRecordingTime}
@@ -722,14 +899,21 @@
           >
         {/if}
         <Tooltip
-          content={app.videoUnderlayVisible ? 'Hide video underlay' : 'Show video underlay'}
+          content={app.videoUnderlayVisible
+            ? 'Hide video underlay'
+            : 'Show video underlay'}
           side="bottom"
           delay={TOOLTIP_DELAY}
         >
           <button
-            onclick={() => app.setVideoUnderlayVisible(!app.videoUnderlayVisible)}
-            class="hdr-btn hdr-btn-icon shrink-0 {app.videoUnderlayVisible ? '' : 'text-zinc-500'}"
-            aria-label={app.videoUnderlayVisible ? 'Hide video underlay' : 'Show video underlay'}
+            onclick={() =>
+              app.setVideoUnderlayVisible(!app.videoUnderlayVisible)}
+            class="hdr-btn hdr-btn-icon shrink-0 {app.videoUnderlayVisible
+              ? ''
+              : 'text-zinc-500'}"
+            aria-label={app.videoUnderlayVisible
+              ? 'Hide video underlay'
+              : 'Show video underlay'}
             aria-pressed={app.videoUnderlayVisible}
           >
             {#if app.videoUnderlayVisible}
@@ -754,7 +938,11 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div class="relative shrink-0" onclick={(e) => e.stopPropagation()}>
-        <Tooltip content="Choose output resolution" side="bottom" delay={TOOLTIP_DELAY}>
+        <Tooltip
+          content="Choose output resolution"
+          side="bottom"
+          delay={TOOLTIP_DELAY}
+        >
           <button
             type="button"
             onclick={() => {
@@ -882,22 +1070,26 @@
 
     <div class="flex-1"></div>
 
-    <!-- Render button -->
+    <!-- Render button / ambient render status -->
     <div class="flex items-center gap-2">
-      <Tooltip content={renderTooltip} side="bottom" align="end">
-        <Button
-          onclick={handleRender}
-          disabled={!app.config || !app.hasActivity || app.renderingVideo}
-          class="gap-1.5 min-w-[104px] border border-primary/70 bg-primary/15 text-zinc-100 hover:border-primary hover:bg-primary/25 {onboardingStep ===
-            0 && !hasRenderedOnce
-            ? 'onboarding-glow'
-            : ''}"
-          size="sm"
-        >
-          <Play size={13} />
-          {app.renderingVideo ? 'Rendering…' : 'Render Video'}
-        </Button>
-      </Tooltip>
+      {#if app.renderingVideo}
+        <RenderStatusChip onexpand={() => (renderExpanded = true)} />
+      {:else}
+        <Tooltip content={renderTooltip} side="bottom" align="end">
+          <Button
+            onclick={handleRender}
+            disabled={!app.config || !app.hasActivity}
+            class="gap-1.5 min-w-[104px] border border-primary/70 bg-primary/15 text-zinc-100 hover:border-primary hover:bg-primary/25 {onboardingStep ===
+              0 && !hasRenderedOnce
+              ? 'onboarding-glow'
+              : ''}"
+            size="sm"
+          >
+            <Play size={13} />
+            Render Video
+          </Button>
+        </Tooltip>
+      {/if}
     </div>
   </header>
 
@@ -907,7 +1099,7 @@
       <LeftSidebar />
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
-    {#if app.config && app.hasActivity || showAiChat}
+    {#if (app.config && app.hasActivity) || showAiChat}
       <RightPanel
         aiChatOpen={showAiChat}
         onreopenAiChat={() => (showAiChat = true)}

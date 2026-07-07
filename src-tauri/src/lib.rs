@@ -408,7 +408,11 @@ fn assets_search_dirs_vec() -> Vec<String> {
     dirs
 }
 
-fn resolve_output_path(template_json: &serde_json::Value, output_dir: Option<&str>) -> String {
+fn resolve_output_path(
+    template_json: &serde_json::Value,
+    output_dir: Option<&str>,
+    extension: &str,
+) -> String {
     let stem = template_json
         .pointer("/scene/overlay_filename")
         .and_then(|v| v.as_str())
@@ -420,7 +424,7 @@ fn resolve_output_path(template_json: &serde_json::Value, output_dir: Option<&st
         .unwrap_or_default()
         .as_secs();
     let (y, mo, d, h, mi) = unix_to_ymdhm(now);
-    let filename = format!("{stem}_{y}{mo:02}{d:02}_{h:02}{mi:02}.mov");
+    let filename = format!("{stem}_{y}{mo:02}{d:02}_{h:02}{mi:02}.{extension}");
 
     let dir = match output_dir {
         Some(d) if !d.is_empty() => {
@@ -1975,14 +1979,37 @@ async fn native_render(
     output_dir: Option<String>,
     target_width: Option<u32>,
     target_height: Option<u32>,
+    export_format: Option<String>,
+    stitch_video_path: Option<String>,
+    stitch_video_in: Option<f64>,
     state: tauri::State<'_, SharedRenderState>,
 ) -> Result<String, String> {
     log::info!(
-        "native_render: requested gpx={gpx_filename}, output_dir={:?}, target={:?}x{:?}",
+        "native_render: requested gpx={gpx_filename}, output_dir={:?}, target={:?}x{:?}, format={:?}, stitch={:?}@{:?}s",
         output_dir,
         target_width,
-        target_height
+        target_height,
+        export_format,
+        stitch_video_path,
+        stitch_video_in
     );
+    let export_format = export_format
+        .as_deref()
+        .map(render::scene::ExportFormat::from_str_lossy)
+        .unwrap_or_default();
+    let stitch = stitch_video_path.map(|video_path| render::scene::StitchOptions {
+        video_path,
+        video_in: stitch_video_in.unwrap_or(0.0),
+    });
+    if export_format == render::scene::ExportFormat::Stitched {
+        match &stitch {
+            None => return Err("Stitched export requires a source video".to_string()),
+            Some(s) if !std::path::Path::new(&s.video_path).exists() => {
+                return Err(format!("Source video not found: {}", s.video_path));
+            }
+            _ => {}
+        }
+    }
     let target = match (target_width, target_height) {
         (Some(w), Some(h)) => Some((w, h)),
         _ => None,
@@ -1996,7 +2023,12 @@ async fn native_render(
         template.scene.height,
         template.scene.fps
     );
-    let output_path = resolve_output_path(&config, output_dir.as_deref());
+    let output_ext = if export_format == render::scene::ExportFormat::Stitched {
+        "mp4"
+    } else {
+        "mov"
+    };
+    let output_path = resolve_output_path(&config, output_dir.as_deref(), output_ext);
     let fonts_dir = resolve_fonts_dir();
     let (gpx_path, _) = resolve_gpx_path(&gpx_filename)?;
     log::info!("native_render: resolved gpx={gpx_path}, output={output_path}");
@@ -2028,6 +2060,8 @@ async fn native_render(
                 &output_path,
                 &fonts_dir,
                 &assets_dirs,
+                export_format,
+                stitch.as_ref(),
                 &progress_clone,
             )
         }))
@@ -2358,6 +2392,87 @@ async fn native_benchmark(
     .map_err(|e| format!("Join error: {e}"))?
 }
 
+/// Runs a short real export — full pipeline including the FFmpeg encode — to a
+/// throwaway temp file and reports measured wall time and encoded size. The
+/// frontend uses this to calibrate render-time and file-size estimates for a
+/// codec on this machine, instead of deriving them from another codec's
+/// numbers via hardcoded ratios.
+#[tauri::command]
+async fn native_calibrate_export(
+    config: serde_json::Value,
+    gpx_filename: String,
+    export_format: String,
+    seconds: Option<f64>,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
+) -> Result<String, String> {
+    let format = render::scene::ExportFormat::from_str_lossy(&export_format);
+    if format == render::scene::ExportFormat::Stitched {
+        // Estimating a stitched export would need the source footage too;
+        // its numbers come from real exports instead.
+        return Err("Calibration is not supported for stitched export".to_string());
+    }
+    let target = match (target_width, target_height) {
+        (Some(w), Some(h)) => Some((w, h)),
+        _ => None,
+    };
+    let mut template = render::template::Template::from_value_scaled(config, target)
+        .map_err(|e| format!("Template parse error: {e}"))?;
+    // Clip the scene window to a short slice at the overlay start: same
+    // template, resolution, and crop as the real export — just brief.
+    let seconds = seconds.unwrap_or(3.0).clamp(1.0, 10.0);
+    let start = template.scene.start.unwrap_or(0.0);
+    let end = template
+        .scene
+        .end
+        .map_or(start + seconds, |e| e.min(start + seconds));
+    template.scene.start = Some(start);
+    template.scene.end = Some(end.max(start + 1.0));
+
+    let fonts_dir = resolve_fonts_dir();
+    let (gpx_path, _) = resolve_gpx_path(&gpx_filename)?;
+    let assets_dirs_owned = assets_search_dirs_vec();
+
+    tokio::task::spawn_blocking(move || {
+        let output_path = std::env::temp_dir()
+            .join(format!("cyclemetry-calibrate-{export_format}.mov"))
+            .to_string_lossy()
+            .into_owned();
+        let progress = render::scene::RenderProgress::new();
+        let assets_dirs: Vec<&str> = assets_dirs_owned.iter().map(String::as_str).collect();
+        let t0 = std::time::Instant::now();
+        let result = render::scene::render_video(
+            &gpx_path,
+            &template,
+            &output_path,
+            &fonts_dir,
+            &assets_dirs,
+            format,
+            None,
+            &progress,
+        );
+        let elapsed_ms = t0.elapsed().as_millis() as u64;
+        let bytes = std::fs::metadata(&output_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let _ = std::fs::remove_file(&output_path);
+        let _ = std::fs::remove_file(format!("{output_path}.placement.txt"));
+        result?;
+        let (frames, _) = progress.snapshot();
+        if frames == 0 || bytes == 0 {
+            return Err("Test render produced no output".to_string());
+        }
+        Ok(serde_json::json!({
+            "frames": frames,
+            "elapsed_ms": elapsed_ms,
+            "bytes": bytes,
+        })
+        .to_string())
+    })
+    .await
+    .map_err(|e| format!("Join error: {e}"))?
+}
+
 // ─── Recent GPX state ─────────────────────────────────────────────────────────
 
 type SharedRecentGpx = Arc<Mutex<Vec<String>>>;
@@ -2420,6 +2535,7 @@ pub fn run() {
             native_cancel,
             native_demo,
             native_benchmark,
+            native_calibrate_export,
             backend_list_templates,
             backend_get_template,
             backend_save_template,

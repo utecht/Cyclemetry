@@ -1,6 +1,10 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import * as backend from '../api/backend.js'
-import { parseLocalStorage, dialogExtensions } from '../lib/utils.js'
+import {
+  parseLocalStorage,
+  dialogExtensions,
+  exportBitsPerPixelSecond,
+} from '../lib/utils.js'
 import { elementTypeName } from '../lib/elementTypes.js'
 import { stripDefaults } from '../lib/stripDefaults.js'
 import { normalizeElementUpdates } from '../lib/templateSchema.js'
@@ -19,17 +23,31 @@ if (import.meta.env.DEV && sessionStorage.getItem('dev_reset') === '1') {
 // ProRes 4444 bitrate varies wildly with overlay density, so calibration is
 // keyed by template. The empty-string slot is the cross-template fallback used
 // before a given template has been rendered.
+
+// Timeline seconds rendered by the export-estimate test render — long enough
+// to amortize FFmpeg/cache startup, short enough to stay a "quick test".
+const CALIBRATION_SECONDS = 4
+
 function loadExportSizeCalibration() {
   const empty = { templates: {} }
   const stored = parseLocalStorage('exportSizeCalibration')
-  if (stored && typeof stored === 'object' && stored.templates) return stored
+  if (stored && typeof stored === 'object' && stored.templates) {
+    // Migrate v1 per-template entries ({ bps, n }) to per-format
+    // ({ prores: { bps, n } }) — all pre-format-picker renders were ProRes.
+    const templates = {}
+    for (const [key, val] of Object.entries(stored.templates)) {
+      templates[key] = val?.bps > 0 ? { prores: val } : val
+    }
+    return { templates }
+  }
 
   // Migrate the pre-per-template single-value key, if present.
   const legacy = parseFloat(
     localStorage.getItem('exportSizeBitsPerPixelSecond') ?? '',
   )
   localStorage.removeItem('exportSizeBitsPerPixelSecond')
-  if (legacy > 0) return { templates: { '': { bps: legacy, n: 1 } } }
+  if (legacy > 0)
+    return { templates: { '': { prores: { bps: legacy, n: 1 } } } }
   return empty
 }
 
@@ -93,6 +111,10 @@ export function createAppState() {
   let outputHeight = $state(
     parseInt(localStorage.getItem('outputHeight') ?? '2160'),
   )
+  // Export format: 'prores' (ProRes 4444, default) or 'qtrle' (QuickTime
+  // Animation), both transparent-overlay .mov files; or 'stitched' — an H.264
+  // .mp4 with the overlay composited onto the reference video.
+  let exportFormat = $state(localStorage.getItem('exportFormat') ?? 'prores')
   // Snapshot of `config` as it was last loaded/saved. Used to detect unsaved
   // template edits. Output resolution lives outside `config`, so switching a
   // 1080p template into a 4K view never marks it modified.
@@ -111,6 +133,10 @@ export function createAppState() {
   let lastRenderFps = $state(
     parseFloat(localStorage.getItem('lastRenderFps') ?? '') || null,
   )
+  // Wall-clock render throughput from real exports, keyed by codec — qtrle's
+  // software encode can pace differently than hardware ProRes. `lastRenderFps`
+  // stays the codec-agnostic fallback (benchmarks measure render-only).
+  let renderFpsByFormat = $state(parseLocalStorage('renderFpsByFormat') ?? {})
   let exportSizeCalibration = $state(loadExportSizeCalibration())
   let renderingVideo = $state(false)
   let currentPreviewImage = $state(null) // data:image/png;base64,... from latest preview frame
@@ -179,6 +205,9 @@ export function createAppState() {
     localStorage.setItem('outputHeight', String(outputHeight))
   })
   $effect(() => {
+    localStorage.setItem('exportFormat', exportFormat)
+  })
+  $effect(() => {
     if (pristineConfig != null)
       localStorage.setItem('pristineConfig', pristineConfig)
     else localStorage.removeItem('pristineConfig')
@@ -191,6 +220,9 @@ export function createAppState() {
       'exportSizeCalibration',
       JSON.stringify(exportSizeCalibration),
     )
+  })
+  $effect(() => {
+    localStorage.setItem('renderFpsByFormat', JSON.stringify(renderFpsByFormat))
   })
 
   function templateSnapshot(value) {
@@ -349,28 +381,113 @@ export function createAppState() {
     return { bps: prev.bps * (1 - alpha) + sample * alpha, n: nextN }
   }
 
-  function recordExportSizeEstimate(actualBitsPerPixelSecond) {
+  function calibrationFormat(format) {
+    if (format === 'qtrle' || format === 'stitched') return format
+    return 'prores'
+  }
+
+  function recordExportSizeEstimate(actualBitsPerPixelSecond, format) {
     if (!(actualBitsPerPixelSecond >= MIN_VALID_BPS)) return
     if (!(actualBitsPerPixelSecond <= MAX_VALID_BPS)) return
+    const fmt = calibrationFormat(format ?? exportFormat)
     const key = loadedTemplateFilename ?? ''
     const templates = exportSizeCalibration.templates ?? {}
+    const blend = (slot) => ({
+      ...slot,
+      [fmt]: blendCalibration(slot?.[fmt], actualBitsPerPixelSecond),
+    })
     exportSizeCalibration = {
       templates: {
         ...templates,
-        [key]: blendCalibration(templates[key], actualBitsPerPixelSecond),
+        [key]: blend(templates[key]),
         // The empty-key slot doubles as the cross-template fallback used for
         // never-rendered templates.
-        ...(key === ''
-          ? {}
-          : { '': blendCalibration(templates[''], actualBitsPerPixelSecond) }),
+        ...(key === '' ? {} : { '': blend(templates['']) }),
       },
     }
   }
 
-  function currentExportSizeCalibration() {
+  // Size calibration comes only from real exports (or the quick test render)
+  // in the same codec — the qtrle/ProRes ratio varies too much with overlay
+  // content and machine to hardcode a cross-codec conversion.
+  function currentExportSizeCalibration(format = exportFormat) {
     const templates = exportSizeCalibration.templates ?? {}
     const key = loadedTemplateFilename ?? ''
-    return templates[key] ?? templates[''] ?? null
+    const fmt = calibrationFormat(format)
+    return templates[key]?.[fmt] ?? templates['']?.[fmt] ?? null
+  }
+
+  // Real renders record wall throughput per codec. `lastRenderFps` is left to
+  // the benchmark (render-only, codec-agnostic) and legacy sessions — it
+  // approximates ProRes wall speed, where hardware encode overlaps rendering.
+  function recordRenderFps(format, fps) {
+    if (!(fps > 0)) return
+    renderFpsByFormat = {
+      ...renderFpsByFormat,
+      [calibrationFormat(format)]: fps,
+    }
+  }
+
+  // Best throughput guess for `format`: its own recorded renders (real
+  // exports or the quick test render). The render-only benchmark
+  // (`lastRenderFps`) approximates ProRes wall speed, where hardware encode
+  // overlaps rendering — it says nothing about qtrle's software encode, so an
+  // unmeasured qtrle returns null and the export dialog offers a test render
+  // instead of a made-up number.
+  function renderFpsFor(format) {
+    const fmt = calibrationFormat(format)
+    const own = renderFpsByFormat[fmt]
+    if (own > 0) return own
+    // ProRes and stitched both bottleneck on frame rendering, with hardware
+    // encode (ProRes / videotoolbox H.264) overlapping — so the render-only
+    // benchmark and any measured ProRes throughput approximate both. qtrle's
+    // software encode is unrelated, so it stays null and offers a test render.
+    if (fmt === 'prores' || fmt === 'stitched') {
+      if (lastRenderFps > 0) return lastRenderFps
+      if (renderFpsByFormat.prores > 0) return renderFpsByFormat.prores
+    }
+    return null
+  }
+
+  // Which codec the quick test render is currently measuring, or null. The
+  // export dialog shows progress on the matching option card.
+  let calibratingFormat = $state(null)
+
+  // Short real export — CALIBRATION_SECONDS of timeline, render + encode to a
+  // throwaway file — measuring wall speed and encoded size for `format` on
+  // this machine. Records both so the export dialog shows real numbers.
+  async function calibrateExportEstimate(format) {
+    if (renderingVideo || calibratingFormat) return
+    // Stitched can't be test-rendered — it would need the source footage too.
+    // Its numbers come from real exports instead.
+    if (format === 'stitched') return
+    if (!config?.scene || !gpxFilename || activityDuration <= 0) return
+    calibratingFormat = calibrationFormat(format)
+    try {
+      const r = await backend.nativeCalibrateExport(
+        config,
+        gpxFilename,
+        calibratingFormat,
+        CALIBRATION_SECONDS,
+        outputWidth,
+        outputHeight,
+      )
+      if (r.frames > 0 && r.elapsed_ms > 0)
+        recordRenderFps(format, (r.frames / r.elapsed_ms) * 1000)
+      const fps = config.scene.fps ?? 30
+      const bps = exportBitsPerPixelSecond(
+        r.bytes,
+        outputWidth,
+        outputHeight,
+        fps,
+        r.frames / fps,
+      )
+      if (bps) recordExportSizeEstimate(bps, format)
+    } catch (e) {
+      errorMessage = `Test render failed: ${e?.message ?? e}`
+    } finally {
+      calibratingFormat = null
+    }
   }
 
   function resolvePendingDiscard(ok) {
@@ -1267,6 +1384,12 @@ export function createAppState() {
     set outputHeight(v) {
       outputHeight = v
     },
+    get exportFormat() {
+      return exportFormat
+    },
+    set exportFormat(v) {
+      exportFormat = v
+    },
     get previewFps() {
       return previewFps
     },
@@ -1385,10 +1508,14 @@ export function createAppState() {
     set lastRenderFps(v) {
       lastRenderFps = v
     },
-    get exportSizeCalibration() {
-      return currentExportSizeCalibration()
-    },
+    exportSizeCalibrationFor: currentExportSizeCalibration,
     recordExportSizeEstimate,
+    recordRenderFps,
+    renderFpsFor,
+    get calibratingFormat() {
+      return calibratingFormat
+    },
+    calibrateExportEstimate,
     get benchmarking() {
       return benchmarking
     },
