@@ -19,6 +19,53 @@ use crate::render::activity::Activity;
 use crate::render::frame::{SceneCache, render_frame};
 use crate::render::template::Template;
 
+/// Export codec/output, chosen by the user at render time.
+///
+/// ProRes 4444 is the default: visually lossless, hardware-accelerated on
+/// macOS, and native in professional NLEs. QuickTime Animation (qtrle) is
+/// lossless RGBA and decodes in consumer editors that lack ProRes support
+/// (e.g. Adobe Premiere Elements on Windows), at ~1.1–1.9× the file size.
+/// Both keep transparency and live in a `.mov` container.
+///
+/// Stitched is different in kind: it composites the overlay onto the user's
+/// ride footage and emits a finished H.264 `.mp4` — no editor needed. It
+/// requires a [`StitchOptions`] describing the source video.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExportFormat {
+    #[default]
+    ProRes4444,
+    QtRle,
+    Stitched,
+}
+
+impl ExportFormat {
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s {
+            "qtrle" => ExportFormat::QtRle,
+            "prores" => ExportFormat::ProRes4444,
+            "stitched" => ExportFormat::Stitched,
+            other => {
+                log::warn!("unknown export format '{other}', defaulting to ProRes 4444");
+                ExportFormat::ProRes4444
+            }
+        }
+    }
+}
+
+/// Source footage for a stitched export.
+///
+/// The frontend owns timeline alignment (camera wall clock + user offset), so
+/// it hands over plain video-relative timing: `video_in` is where, in seconds
+/// from the start of the footage file, the overlay's first rendered frame
+/// lands. The frontend also clamps the scene window to the footage extent
+/// before rendering, so the overlay and the trimmed footage cover the same
+/// wall-clock span.
+#[derive(Debug, Clone)]
+pub struct StitchOptions {
+    pub video_path: String,
+    pub video_in: f64,
+}
+
 pub struct RenderProgress {
     pub frames_rendered: Arc<AtomicU64>,
     pub total_frames: Arc<AtomicU64>,
@@ -53,11 +100,20 @@ pub fn render_video(
     output_path: &str,
     fonts_dir: &str,
     assets_dirs: &[&str],
+    export_format: ExportFormat,
+    stitch: Option<&StitchOptions>,
     progress: &RenderProgress,
 ) -> Result<(), String> {
     log::info!(
         "render_video: start gpx={gpx_path}, output={output_path}, assets_dirs={assets_dirs:?}"
     );
+    let stitch = match (export_format, stitch) {
+        (ExportFormat::Stitched, None) => {
+            return Err("Stitched export requires a source video".to_string());
+        }
+        (ExportFormat::Stitched, some) => some,
+        _ => None,
+    };
 
     // --- Load and prepare activity data ---
     log::info!("render_video: loading activity");
@@ -132,16 +188,28 @@ pub fn render_video(
 
     // --- Spawn FFmpeg ---
     let ffmpeg_bin = resolve_ffmpeg();
-    let encoder = select_ffmpeg_encoder(&ffmpeg_bin)?;
+    let encoder = select_ffmpeg_encoder(&ffmpeg_bin, export_format)?;
     log::info!(
         "render_video: spawning FFmpeg from {ffmpeg_bin} with {} ({})",
         encoder.codec,
         encoder.mode
     );
     let mut cmd = ffmpeg_command(&ffmpeg_bin);
+    cmd.args(["-loglevel", "warning"]);
+    if let Some(st) = stitch {
+        // Input 0: source footage, trimmed to the export window. `-ss` before
+        // `-i` seeks frame-accurately when re-encoding.
+        let duration = total_frames as f64 / template.scene.fps as f64;
+        cmd.args([
+            "-ss",
+            &format!("{:.3}", st.video_in.max(0.0)),
+            "-t",
+            &format!("{duration:.3}"),
+            "-i",
+            &st.video_path,
+        ]);
+    }
     cmd.args([
-        "-loglevel",
-        "warning",
         "-f",
         "rawvideo",
         // Skia renders BGRA8888 natively; feeding bgra means FFmpeg does
@@ -154,16 +222,47 @@ pub fn render_video(
         &template.scene.fps.to_string(),
         "-i",
         "-",
-        "-c:v",
-        &encoder.codec,
-        "-profile:v",
-        "4444",
-        "-y",
-        output_path,
-    ])
-    .stdin(Stdio::piped())
-    .stdout(Stdio::null())
-    .stderr(Stdio::piped());
+    ]);
+    if stitch.is_some() {
+        // Composite: footage scaled (letterboxed if aspect differs) to the
+        // overlay canvas, cropped overlay placed at its canvas offset on top.
+        // The overlay pipe runs at scene fps; `overlay` repeats its last frame
+        // between updates, so higher-fps footage keeps its native cadence.
+        let (cw, ch) = ((full_w + 1) & !1, (full_h + 1) & !1);
+        let (ox, oy) = crop.as_ref().map_or((0, 0), |c| (c.x, c.y));
+        let filter = format!(
+            "[0:v]scale={cw}:{ch}:force_original_aspect_ratio=decrease,\
+             pad={cw}:{ch}:-1:-1[bg];[bg][1:v]overlay={ox}:{oy}[out]"
+        );
+        cmd.args([
+            "-filter_complex",
+            &filter,
+            "-map",
+            "[out]",
+            "-map",
+            "0:a?",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ]);
+    }
+    cmd.args(["-c:v", &encoder.codec])
+        .args(encoder_output_args(&encoder.codec));
+    if stitch.is_some() {
+        cmd.args(stitched_quality_args(
+            &encoder.codec,
+            full_w,
+            full_h,
+            template.scene.fps,
+        ));
+        // faststart moves the moov atom up front so the file streams/scrubs
+        // immediately when shared.
+        cmd.args(["-movflags", "+faststart"]);
+    }
+    cmd.args(["-y", output_path])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
     let mut ffmpeg = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg ({ffmpeg_bin}): {e}"))?;
@@ -430,8 +529,11 @@ pub fn render_video(
 
     // Cropped output is smaller than the footage canvas — record exactly where
     // it must be positioned so it isn't guessed-at in the editor later.
+    // Stitched exports bake the placement in, so no sidecar is needed.
     if let Some(c) = crop {
-        write_placement_sidecar(output_path, c, full_w, full_h);
+        if stitch.is_none() {
+            write_placement_sidecar(output_path, c, full_w, full_h);
+        }
     }
 
     Ok(())
@@ -611,13 +713,54 @@ pub(crate) fn ffmpeg_command(ffmpeg_bin: &str) -> Command {
     }
 }
 
-/// Select the best alpha-preserving ProRes encoder this FFmpeg can actually run.
+/// Per-codec output arguments appended after `-c:v <codec>`.
 ///
-/// Cyclemetry exports transparent overlays as ProRes 4444. Windows/Linux GPU
-/// encoders generally accelerate H.264/HEVC/AV1, not ProRes 4444 with alpha, so
-/// `prores_ks` remains the portable fallback unless FFmpeg gains another working
-/// ProRes hardware encoder on those platforms.
-fn select_ffmpeg_encoder(ffmpeg_bin: &str) -> Result<FfmpegEncoder, String> {
+/// ProRes needs `-profile:v 4444` to select the alpha-carrying profile.
+/// qtrle needs an explicit `-pix_fmt argb` — it's the only qtrle pixel format
+/// with alpha, and relying on FFmpeg's automatic selection risks a build
+/// silently picking `rgb24` and dropping the alpha channel.
+/// H.264 (stitched export) gets `yuv420p` — the only universally-decodable
+/// H.264 pixel format (QuickTime and browsers reject 4:2:2 and up).
+fn encoder_output_args(codec: &str) -> &'static [&'static str] {
+    if codec.starts_with("prores") {
+        &["-profile:v", "4444"]
+    } else if codec == "qtrle" {
+        &["-pix_fmt", "argb"]
+    } else if codec.starts_with("h264") || codec == "libx264" {
+        &["-pix_fmt", "yuv420p"]
+    } else {
+        &[]
+    }
+}
+
+/// Quality arguments for the stitched H.264 encode.
+///
+/// `h264_videotoolbox` is bitrate-driven and its default is far too low for
+/// sports footage — target ~0.12 bits per pixel per frame (≈30 Mbps for
+/// 4K30), in the ballpark of action-camera sources. libx264 does better
+/// quality-per-bit with CRF, so it gets that instead.
+fn stitched_quality_args(codec: &str, w: u32, h: u32, fps: u32) -> Vec<String> {
+    if codec == "libx264" {
+        return ["-crf", "18", "-preset", "veryfast"]
+            .map(String::from)
+            .to_vec();
+    }
+    let bits_per_sec = (w as f64 * h as f64 * fps as f64 * 0.12) as u64;
+    vec!["-b:v".to_string(), bits_per_sec.to_string()]
+}
+
+/// Select the encoder for the requested export format that this FFmpeg can
+/// actually run.
+///
+/// ProRes 4444: Windows/Linux GPU encoders generally accelerate
+/// H.264/HEVC/AV1, not ProRes 4444 with alpha, so `prores_ks` remains the
+/// portable fallback unless FFmpeg gains another working ProRes hardware
+/// encoder on those platforms.
+///
+/// QuickTime Animation (`qtrle`): software-only, built into every FFmpeg.
+///
+/// Stitched (H.264): `h264_videotoolbox` on macOS, `libx264` elsewhere.
+fn select_ffmpeg_encoder(ffmpeg_bin: &str, format: ExportFormat) -> Result<FfmpegEncoder, String> {
     if let Ok(codec) = std::env::var("CYCLEMETRY_FFMPEG_CODEC") {
         let codec = codec.trim();
         if !codec.is_empty() {
@@ -631,6 +774,15 @@ fn select_ffmpeg_encoder(ffmpeg_bin: &str) -> Result<FfmpegEncoder, String> {
         }
     }
 
+    if format == ExportFormat::QtRle {
+        preflight_ffmpeg_encoder(ffmpeg_bin, "qtrle")
+            .map_err(|e| format!("FFmpeg qtrle preflight failed: {e}"))?;
+        return Ok(FfmpegEncoder {
+            codec: "qtrle".to_string(),
+            mode: "software",
+        });
+    }
+
     let encoders = match available_ffmpeg_encoders(ffmpeg_bin) {
         Ok(encoders) => Some(encoders),
         Err(e) => {
@@ -638,6 +790,40 @@ fn select_ffmpeg_encoder(ffmpeg_bin: &str) -> Result<FfmpegEncoder, String> {
             None
         }
     };
+
+    if format == ExportFormat::Stitched {
+        let should_try_videotoolbox = encoders
+            .as_ref()
+            .map(|e| e.contains("h264_videotoolbox"))
+            .unwrap_or_else(|| cfg!(target_os = "macos"));
+        if should_try_videotoolbox {
+            match preflight_ffmpeg_encoder(ffmpeg_bin, "h264_videotoolbox") {
+                Ok(()) => {
+                    return Ok(FfmpegEncoder {
+                        codec: "h264_videotoolbox".to_string(),
+                        mode: "hardware",
+                    });
+                }
+                Err(e) => {
+                    log::warn!(
+                        "render_video: h264_videotoolbox is present but failed preflight; \
+                         falling back to libx264: {e}"
+                    );
+                }
+            }
+        }
+        if encoder_is_listed(encoders.as_ref(), "libx264") {
+            preflight_ffmpeg_encoder(ffmpeg_bin, "libx264")
+                .map_err(|e| format!("FFmpeg libx264 preflight failed: {e}"))?;
+            return Ok(FfmpegEncoder {
+                codec: "libx264".to_string(),
+                mode: "software",
+            });
+        }
+        return Err(
+            "FFmpeg does not provide a working H.264 encoder for stitched export.".to_string(),
+        );
+    }
 
     let should_try_videotoolbox = encoders
         .as_ref()
@@ -731,12 +917,9 @@ fn preflight_ffmpeg_encoder(ffmpeg_bin: &str, codec: &str) -> Result<(), String>
         "1",
         "-c:v",
         codec,
-        "-profile:v",
-        "4444",
-        "-f",
-        "null",
-        "-",
     ])
+    .args(encoder_output_args(codec))
+    .args(["-f", "null", "-"])
     .stdin(Stdio::piped())
     .stdout(Stdio::null())
     .stderr(Stdio::piped());
@@ -805,5 +988,57 @@ mod tests {
         assert!(encoders.contains("h264_videotoolbox"));
         assert!(encoders.contains("prores_ks"));
         assert!(encoders.contains("prores_videotoolbox"));
+    }
+
+    #[test]
+    fn parses_export_format() {
+        assert_eq!(
+            ExportFormat::from_str_lossy("prores"),
+            ExportFormat::ProRes4444
+        );
+        assert_eq!(ExportFormat::from_str_lossy("qtrle"), ExportFormat::QtRle);
+        assert_eq!(
+            ExportFormat::from_str_lossy("stitched"),
+            ExportFormat::Stitched
+        );
+        // Unknown values fall back to the default rather than failing a render.
+        assert_eq!(
+            ExportFormat::from_str_lossy("bogus"),
+            ExportFormat::ProRes4444
+        );
+    }
+
+    #[test]
+    fn encoder_output_args_preserve_alpha() {
+        // ProRes needs the 4444 profile — the only alpha-carrying profile.
+        assert_eq!(
+            encoder_output_args("prores_videotoolbox"),
+            ["-profile:v", "4444"]
+        );
+        assert_eq!(encoder_output_args("prores_ks"), ["-profile:v", "4444"]);
+        // qtrle needs argb forced — auto-selection could pick rgb24 (no alpha).
+        assert_eq!(encoder_output_args("qtrle"), ["-pix_fmt", "argb"]);
+        // Stitched H.264 must be yuv420p or QuickTime/browsers won't play it.
+        assert_eq!(
+            encoder_output_args("h264_videotoolbox"),
+            ["-pix_fmt", "yuv420p"]
+        );
+        assert_eq!(encoder_output_args("libx264"), ["-pix_fmt", "yuv420p"]);
+    }
+
+    #[test]
+    fn stitched_quality_args_by_codec() {
+        // videotoolbox needs an explicit bitrate (its default is too low);
+        // 4K30 at 0.12 bits/pixel/frame ≈ 30 Mbps.
+        assert_eq!(
+            stitched_quality_args("h264_videotoolbox", 3840, 2160, 30),
+            ["-b:v", "29859840"]
+        );
+        // libx264 is CRF-driven instead.
+        assert!(
+            stitched_quality_args("libx264", 3840, 2160, 30)
+                .join(" ")
+                .contains("-crf")
+        );
     }
 }

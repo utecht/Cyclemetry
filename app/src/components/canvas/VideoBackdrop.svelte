@@ -121,12 +121,11 @@
   <video
     bind:this={videoEl}
     {src}
-    muted
     playsinline
     preload="auto"
     ontimeupdate={onTimeupdate}
     onerror={onVideoError}
-    class="absolute inset-0 w-full h-full object-cover pointer-events-none rounded-lg"
+    class="absolute inset-0 w-full h-full object-contain pointer-events-none rounded-lg"
     style:visibility={inRange ? 'visible' : 'hidden'}
   ></video>
 {/if}
