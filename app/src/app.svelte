@@ -6,6 +6,7 @@
   import * as backend from './api/backend.js'
   import loadGpx from './api/gpxUtils.js'
   import renderVideo from './api/renderVideo.js'
+  import { AI_ASSISTANT_ENABLED } from './lib/featureFlags.js'
 
   import LeftSidebar from './components/layout/LeftSidebar.svelte'
   import CenterCanvas from './components/layout/CenterCanvas.svelte'
@@ -603,18 +604,20 @@
         </button>
       </Tooltip>
 
-      <!-- AI assistant (sidebar toggle) -->
-      <Tooltip content={showAiChat ? 'Close AI assistant' : 'Open AI assistant'} side="bottom" delay={TOOLTIP_DELAY}>
-        <button
-          onclick={toggleAiChat}
-          class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer transition-colors
+      {#if AI_ASSISTANT_ENABLED}
+        <!-- AI assistant (sidebar toggle) -->
+        <Tooltip content={showAiChat ? 'Close AI assistant' : 'Open AI assistant'} side="bottom" delay={TOOLTIP_DELAY}>
+          <button
+            onclick={toggleAiChat}
+            class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer transition-colors
                  {showAiChat
-            ? 'border-[#dc143c]/60 bg-[#dc143c]/10 text-[#dc143c]'
-            : 'text-zinc-500 hover:border-[#dc143c]/40 hover:text-[#dc143c]'}"
-          aria-label={showAiChat ? 'Close AI assistant' : 'Open AI assistant'}
-          aria-pressed={showAiChat}
-        ><Sparkles size={12} /></button>
-      </Tooltip>
+              ? 'border-[#dc143c]/60 bg-[#dc143c]/10 text-[#dc143c]'
+              : 'text-zinc-500 hover:border-[#dc143c]/40 hover:text-[#dc143c]'}"
+            aria-label={showAiChat ? 'Close AI assistant' : 'Open AI assistant'}
+            aria-pressed={showAiChat}
+          ><Sparkles size={12} /></button>
+        </Tooltip>
+      {/if}
 
       <!-- Save — amber when modified -->
       {#if app.isTemplateModified}
@@ -905,7 +908,11 @@
     {/if}
     <CenterCanvas onopenactivity={handleOpenGpx} />
     {#if app.config && app.hasActivity || showAiChat}
-      <RightPanel aiChatOpen={showAiChat} onreopenAiChat={() => (showAiChat = true)} />
+      <RightPanel
+        aiChatOpen={showAiChat}
+        onreopenAiChat={() => (showAiChat = true)}
+        aiAssistantEnabled={AI_ASSISTANT_ENABLED}
+      />
     {/if}
   </div>
 </div>
