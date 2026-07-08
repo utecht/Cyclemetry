@@ -1212,7 +1212,10 @@ export function createAppState() {
     const selected = await open({
       multiple: false,
       filters: [
-        { name: 'Fonts', extensions: dialogExtensions(['ttf', 'otf']) },
+        {
+          name: 'Fonts',
+          extensions: dialogExtensions(['ttf', 'otf', 'woff', 'woff2']),
+        },
       ],
     })
     if (!selected) return null

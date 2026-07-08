@@ -39,6 +39,7 @@ chrono = { version = "0.4", features = ["serde"] }
 fitparser = "0.6"
 resvg = "0.44"
 image-webp = "0.1.3"
+wuff = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.3"

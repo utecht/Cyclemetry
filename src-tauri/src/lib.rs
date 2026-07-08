@@ -900,7 +900,13 @@ fn backend_list_fonts() -> Vec<FontItem> {
     items
 }
 
-/// Copy a user-picked .ttf/.otf into the user fonts dir; returns updated list.
+/// Import a user-picked font into the user fonts dir; returns updated list.
+///
+/// `.ttf`/`.otf` are copied as-is. `.woff`/`.woff2` are web fonts whose glyph
+/// tables are compressed inside a WOFF container — Skia's `new_from_data` only
+/// parses raw SFNT, so we decompress to SFNT bytes here and store those. The
+/// original name is preserved (e.g. `MyFont.woff2` -> `MyFont.woff2.ttf`) so a
+/// converted web font never collides with a real `MyFont.ttf`.
 #[tauri::command]
 fn backend_import_font(path: String) -> Result<Vec<FontItem>, String> {
     let src = Path::new(&path);
@@ -908,15 +914,36 @@ fn backend_import_font(path: String) -> Result<Vec<FontItem>, String> {
         .extension()
         .and_then(|e| e.to_str())
         .map(|s| s.to_lowercase());
-    if !matches!(ext.as_deref(), Some("ttf") | Some("otf")) {
-        return Err("Font must be a .ttf or .otf file".into());
-    }
     let name = src
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "Invalid font filename".to_string())?;
-    let dest = fonts_user_dir().join(name);
-    std::fs::copy(src, &dest).map_err(|e| format!("Could not import font: {e}"))?;
+    let user_dir = fonts_user_dir();
+
+    match ext.as_deref() {
+        Some("ttf") | Some("otf") => {
+            let dest = user_dir.join(name);
+            std::fs::copy(src, &dest).map_err(|e| format!("Could not import font: {e}"))?;
+        }
+        Some("woff") | Some("woff2") => {
+            let bytes = std::fs::read(src).map_err(|e| format!("Could not read font: {e}"))?;
+            let sfnt = if ext.as_deref() == Some("woff2") {
+                wuff::decompress_woff2(&bytes)
+            } else {
+                wuff::decompress_woff1(&bytes)
+            }
+            .map_err(|e| format!("Could not decode web font: {e:?}"))?;
+            // SFNT version tag `OTTO` means CFF/OpenType outlines -> .otf.
+            let sfnt_ext = if sfnt.starts_with(b"OTTO") {
+                "otf"
+            } else {
+                "ttf"
+            };
+            let dest = user_dir.join(format!("{name}.{sfnt_ext}"));
+            std::fs::write(&dest, &sfnt).map_err(|e| format!("Could not import font: {e}"))?;
+        }
+        _ => return Err("Font must be a .ttf, .otf, .woff, or .woff2 file".into()),
+    }
     Ok(backend_list_fonts())
 }
 

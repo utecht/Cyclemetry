@@ -31,6 +31,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-updater",
  "tokio",
+ "wuff",
 ]
 
 [[package]]
@@ -6403,6 +6404,18 @@ dependencies = [
  "windows-core 0.61.2",
  "windows-version",
  "x11-dl",
+]
+
+[[package]]
+name = "wuff"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d77cd3107d02dc860d9377a7e28a60e2a77c6d1964f4119999b03dd95f007719"
+dependencies = [
+ "arrayvec",
+ "brotli-decompressor",
+ "bytes",
+ "flate2",
 ]
 
 [[package]]
