@@ -1,6 +1,6 @@
 ---
 title: v0.3.0
-description: Cyclemetry v0.3.0 release notes.
+description: Cyclemetry v0.3.0 release notes — export format dialog, time-of-day and lean angle metrics, and a revamped properties panel.
 ---
 
 import { Callout } from 'nextra/components'
@@ -13,54 +13,37 @@ import { Callout } from 'nextra/components'
   Download from [GitHub Releases](https://github.com/walkersutton/cyclemetry/releases/tag/v0.3.0)
 </Callout>
 
-## Features
+## What's New
 
-- Generate templates from text prompts via OpenRouter
-- Add video "Cycling POV | Veleia Romana Climb. Power, Gradient & 2,000 Years of History" by Paolo Tagliaferri
+### Export Format Dialog
+
+Rendering now opens an export dialog where you choose your codec, with per-codec render-time estimates so you can trade quality against speed before you commit.
+
+### New Metrics
+
+- **Time of day** for value overlays, with automatic timezone detection and DST-correct offsets computed from the activity's GPS timestamps.
+- **Lean angle** support for value-driven elements.
+- **Course plot** overlay, alongside gauge refinements.
+- **Letter spacing** control for text elements.
+
+### Revamped Properties Panel
+
+The right sidebar properties have been reorganized with a clearer hierarchy and a basic/advanced split, so common controls stay up front and advanced options are tucked away until you need them.
+
+## Editor Improvements
+
+- Metric dropdowns now only show metrics that actually have data in the loaded activity
+- Collapsible Overlay Timeline and Scene sections in the left sidebar
+- Added a mini map to the activity picker
+- Higher-resolution zoom, plus zoom and reset-zoom polish
+- Option to hide the video underlay
+- Smoother opacity slider behavior and better dialog positioning
 
 ## Bug Fixes
 
 - Allow uppercase file extensions in native file pickers
-- Linux video preview via local HTTP range-request server
-
-## Improvements
-
-- Fix star history
-- Remove redundant "Properties" header from right panel
-- Fix blocking render on test
-- Add export format dialog with per-codec render estimates
-- Hide AI assistant behind a feature flag
-- Ignoreeee
-- Chat panel
-- Unify thumbs
-- Framerate ish
-- Update README.md
-- Revamp right sidebar properties with clear hierarchy and basic/advanced split
-- Fix positioning of dialogs, add mini map to activity picker, et al
-- Adding time metric support to value overlays. The time-of-day timezone picker auto-detects and computes DST-correct offsets   from the activity's GPS timestamps. '
-- Made the left sidebar's Overlay Timeline and Scene sections collapsible.
-- Added metric filtering so only metrics with activity data show in dropdowns
-- Add lean angle support
-- Buff zoom resolution
-- CI pretty please
-- Fix CI et al
-- Clean logs
-- Update README with Star History and Development sections
-- Support letter spacing
-- Fix missing __TAURI_BUNDLE_TYPE marker
-- Tweak gauge and add course plot
-- Cursor pointer on update banner
-- Create template button
-- Refernece name tweak
-- Normalize types
-- Optionally hide video underaly
-- Opacity slider UX buffs
-- Zoom / reset zoom tweak
-- Better release workflow
-- Formatting style consensus
-- Mucho better norcal
-- Maybe fix build warnings?
-- Improve template pushing for dev
+- Fixed Linux video preview via a local HTTP range-request server
+- Fixed a render that could block during testing
 
 ## Upgrading
 
