@@ -103,6 +103,17 @@ export function createAppState() {
   let loadedTemplateFilename = $state(
     localStorage.getItem('loadedTemplateFilename') ?? null,
   )
+  // Rider weight for the W/kg (power_to_weight) metric. Deliberately kept out of
+  // the template/scene config so it is never saved into or shared via a template
+  // (weight is sensitive personal data). Stored only on this device, and passed
+  // to the renderer as a separate argument.
+  const storedRiderWeight = parseFloat(
+    localStorage.getItem('riderWeight') ?? '',
+  )
+  let riderWeight = $state(
+    Number.isFinite(storedRiderWeight) ? storedRiderWeight : null,
+  )
+  let riderWeightUnit = $state(localStorage.getItem('riderWeightUnit') ?? 'kg')
   let outputDir = $state(localStorage.getItem('outputDir') ?? null)
   let defaultOutputDir = $state(null)
   let outputWidth = $state(
@@ -197,6 +208,14 @@ export function createAppState() {
   $effect(() => {
     if (outputDir) localStorage.setItem('outputDir', outputDir)
     else localStorage.removeItem('outputDir')
+  })
+  $effect(() => {
+    if (riderWeight != null && Number.isFinite(riderWeight))
+      localStorage.setItem('riderWeight', String(riderWeight))
+    else localStorage.removeItem('riderWeight')
+  })
+  $effect(() => {
+    localStorage.setItem('riderWeightUnit', riderWeightUnit)
   })
   $effect(() => {
     localStorage.setItem('outputWidth', String(outputWidth))
@@ -1372,6 +1391,30 @@ export function createAppState() {
     },
     pickOutputDir,
     resetOutputDir,
+    // Rider weight (local-only; feeds the W/kg metric, never saved to templates).
+    get riderWeight() {
+      return riderWeight
+    },
+    set riderWeight(v) {
+      riderWeight =
+        v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)
+    },
+    get riderWeightUnit() {
+      return riderWeightUnit
+    },
+    set riderWeightUnit(v) {
+      riderWeightUnit = v === 'lb' ? 'lb' : 'kg'
+    },
+    // Weight resolved to kilograms for the renderer, or null when unset.
+    get riderWeightKg() {
+      if (
+        riderWeight == null ||
+        !Number.isFinite(riderWeight) ||
+        riderWeight <= 0
+      )
+        return null
+      return riderWeightUnit === 'lb' ? riderWeight * 0.45359237 : riderWeight
+    },
     get outputWidth() {
       return outputWidth
     },

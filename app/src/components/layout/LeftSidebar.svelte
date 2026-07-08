@@ -288,6 +288,38 @@
         />
       </div>
 
+      <!-- Rider weight — powers the W/kg metric. Stored on this device only and
+           never written into the template, so sharing a template can't leak it. -->
+      <div class="space-y-1">
+        <span class="text-[11px] text-zinc-500">Rider weight</span>
+        <div class="flex items-center gap-1.5">
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            inputmode="decimal"
+            placeholder="—"
+            value={app.riderWeight ?? ''}
+            oninput={(e) => (app.riderWeight = e.target.value)}
+            class="min-w-0 flex-1 h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
+                   text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div class="shrink-0 w-20">
+            <Select
+              value={app.riderWeightUnit}
+              options={[
+                { value: 'kg', label: 'kg' },
+                { value: 'lb', label: 'lb' },
+              ]}
+              onchange={(v) => (app.riderWeightUnit = v)}
+            />
+          </div>
+        </div>
+        <p class="text-[10px] text-zinc-600">
+          Used only for W/kg. Stored on this device — never saved to templates.
+        </p>
+      </div>
+
       <!-- Color variables -->
       <div class="space-y-1.5">
         <div class="flex items-center justify-between">

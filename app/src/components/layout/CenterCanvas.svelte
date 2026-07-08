@@ -105,7 +105,7 @@
         )
       })
       const renderStart = performance.now()
-      let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, previewW, previewH), timeout])
+      let data = await Promise.race([backend.nativeGenerateDemo(config, gpx, frameIdx, fps, previewW, previewH, app.riderWeightKg), timeout])
       if (generation !== previewGeneration) return
       recordRenderLatency(performance.now() - renderStart)
       if (data?.image) {
@@ -581,6 +581,7 @@
       const data = await backend.nativeGenerateDemoCrop(
         config, gpx, frameIdx, fps, v.baseW, v.baseH,
         v.view.vx, v.view.vy, v.view.vw, v.view.vh, v.view.outW, v.view.outH,
+        app.riderWeightKg,
       )
       if (gen !== cropGen) return // superseded by a newer view
       if (data?.image) {

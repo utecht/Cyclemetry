@@ -1504,6 +1504,7 @@ async fn backend_activity_distance_info(
         layers: None,
         groups: Vec::new(),
         vars: std::collections::HashMap::new(),
+        rider_weight_kg: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
     Ok(serde_json::json!({
@@ -1533,6 +1534,8 @@ async fn backend_activity_metric_range(
     unit: Option<String>,
     scene_start: f64,
     scene_end: f64,
+    // For the W/kg metric only; a local editor setting, never persisted.
+    rider_weight_kg: Option<f32>,
 ) -> Result<String, String> {
     let gpx_path = match resolve_gpx_path(&gpx_filename) {
         Ok((p, _)) => p,
@@ -1560,6 +1563,7 @@ async fn backend_activity_metric_range(
         layers: None,
         groups: Vec::new(),
         vars: std::collections::HashMap::new(),
+        rider_weight_kg: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
 
@@ -1567,7 +1571,7 @@ async fn backend_activity_metric_range(
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
     for idx in 0..activity.data_len() {
-        let value = conversion.apply(activity.get_scalar(&metric, idx));
+        let value = conversion.apply(activity.get_metric(&metric, idx, rider_weight_kg));
         if value.is_finite() {
             min = min.min(value);
             max = max.max(value);
@@ -1982,6 +1986,9 @@ async fn native_render(
     export_format: Option<String>,
     stitch_video_path: Option<String>,
     stitch_video_in: Option<f64>,
+    // Rider weight (kg) for the W/kg metric. A local editor setting, never part
+    // of the saved template — see `SceneConfig::rider_weight_kg`.
+    rider_weight_kg: Option<f32>,
     state: tauri::State<'_, SharedRenderState>,
 ) -> Result<String, String> {
     log::info!(
@@ -2014,8 +2021,10 @@ async fn native_render(
         (Some(w), Some(h)) => Some((w, h)),
         _ => None,
     };
-    let template = render::template::Template::from_value_scaled(config.clone(), target)
+    let mut template = render::template::Template::from_value_scaled(config.clone(), target)
         .map_err(|e| format!("Template parse error: {e}"))?;
+    // Weight is injected here, after parsing — it never rides in the template JSON.
+    template.scene.rider_weight_kg = rider_weight_kg;
     log::info!(
         "native_render: template parsed ({} elements, {}x{} @ {}fps)",
         template.elements.len(),
@@ -2146,6 +2155,9 @@ async fn native_demo(
     view_h: Option<f32>,
     view_out_w: Option<u32>,
     view_out_h: Option<u32>,
+    // Rider weight (kg) for the W/kg metric. A local editor setting, never part
+    // of the saved template — see `SceneConfig::rider_weight_kg`.
+    rider_weight_kg: Option<f32>,
     demo_cache: tauri::State<'_, SharedDemoCache>,
 ) -> Result<String, String> {
     let target = match (target_width, target_height) {
@@ -2169,8 +2181,12 @@ async fn native_demo(
     if gpx_filename.is_empty() || gpx_filename == "null" || gpx_filename == "undefined" {
         return Err("No activity selected".to_string());
     }
-    // Include preview_fps + target in cache hash so changing either rebuilds.
-    let config_hash = quick_hash(&format!("{}:{}:{:?}", config, preview_fps, target));
+    // Include preview_fps + target + rider weight in cache hash so changing any
+    // of them rebuilds (weight isn't in `config`, so it must be hashed here).
+    let config_hash = quick_hash(&format!(
+        "{}:{}:{:?}:{:?}",
+        config, preview_fps, target, rider_weight_kg
+    ));
     // If a previously selected activity can no longer be resolved, preview
     // synthetic sample data rather than failing the whole preview.
     let (gpx_path, gpx_warning) = match resolve_gpx_path(&gpx_filename) {
@@ -2195,8 +2211,10 @@ async fn native_demo(
         };
 
         if needs_rebuild {
-            let template = render::template::Template::from_value_scaled(config, target)
+            let mut template = render::template::Template::from_value_scaled(config, target)
                 .map_err(|e| format!("Template parse error: {e}"))?;
+            // Weight is injected here, after parsing — it never rides in the template JSON.
+            template.scene.rider_weight_kg = rider_weight_kg;
 
             let synthetic = gpx_path == "<synthetic>";
             let activity = if synthetic {

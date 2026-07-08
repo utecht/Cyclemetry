@@ -46,6 +46,13 @@ pub struct SceneConfig {
     /// color field; a pre-pass resolves them before rendering.
     #[serde(default)]
     pub vars: HashMap<String, String>,
+    /// Rider weight in kg, used only to compute the `power_to_weight` (W/kg)
+    /// metric at render time. `#[serde(skip)]` is deliberate and load-bearing:
+    /// weight is sensitive personal data, so it must never be serialized into a
+    /// saved/shared template nor read back from one. It is supplied per render
+    /// call from a local-only editor setting and set on the scene after parsing.
+    #[serde(skip)]
+    pub rider_weight_kg: Option<f32>,
 }
 
 /// A named collection of element IDs used for list organisation and bulk

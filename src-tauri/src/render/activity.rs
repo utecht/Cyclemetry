@@ -11,6 +11,10 @@ pub const ATTR_GRADIENT: &str = "gradient";
 pub const ATTR_HEARTRATE: &str = "heartrate";
 pub const ATTR_LEAN: &str = "lean";
 pub const ATTR_POWER: &str = "power";
+/// Derived metric: power (W) ÷ rider weight (kg). Has no backing sample vec —
+/// it is computed on demand from [`ATTR_POWER`] and a render-time rider weight
+/// that is deliberately never part of the template (see `SceneConfig`).
+pub const ATTR_POWER_TO_WEIGHT: &str = "power_to_weight";
 pub const ATTR_REAR_GEAR: &str = "rear_gear";
 pub const ATTR_SPEED: &str = "speed";
 pub const ATTR_TIME: &str = "time";
@@ -374,6 +378,7 @@ impl Activity {
             ATTR_LEAN,
             ATTR_CADENCE,
             ATTR_POWER,
+            ATTR_POWER_TO_WEIGHT,
             ATTR_TEMPERATURE,
             ATTR_FRONT_GEAR,
             ATTR_REAR_GEAR,
@@ -526,6 +531,9 @@ impl Activity {
         }
         if points.iter().any(|p| p.power.is_some()) {
             valid.insert(ATTR_POWER.into());
+            // W/kg is available wherever power is; the weight comes in at render
+            // time (or from the editor's local rider-weight setting).
+            valid.insert(ATTR_POWER_TO_WEIGHT.into());
         }
         if points.iter().any(|p| p.temperature.is_some()) {
             valid.insert(ATTR_TEMPERATURE.into());
@@ -896,6 +904,22 @@ impl Activity {
             ATTR_GEAR => safe(&self.gear),
             _ => 0.0,
         }
+    }
+
+    /// Raw (GPX-native) value for a metric at `index`, resolving the derived
+    /// [`ATTR_POWER_TO_WEIGHT`] (W/kg) from power and a render-time rider weight.
+    /// Weight is deliberately not stored on the activity or template — it is
+    /// supplied per render call. With no (or non-positive) weight, W/kg is 0.0.
+    /// Every other metric defers to [`Activity::get_scalar`].
+    pub fn get_metric(&self, attribute: &str, index: usize, rider_weight_kg: Option<f32>) -> f64 {
+        if attribute == ATTR_POWER_TO_WEIGHT {
+            let power = self.get_scalar(ATTR_POWER, index);
+            return match rider_weight_kg {
+                Some(w) if w > 0.0 => power / w as f64,
+                _ => 0.0,
+            };
+        }
+        self.get_scalar(attribute, index)
     }
 
     /// Distance in metres adjusted for the requested reference point.
@@ -1274,6 +1298,7 @@ mod tests {
             decimal_rounding: None,
             color: None,
             opacity: None,
+            rider_weight_kg: None,
             layers: None,
             groups: Vec::new(),
             vars: std::collections::HashMap::new(),

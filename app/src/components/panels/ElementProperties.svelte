@@ -30,9 +30,12 @@
       ...app.fonts.map((font) => ({ value: font.value, label: font.label, group: fontGroup(font) })),
     ]
   }
-  const ALL_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+  const ALL_METRICS = ['speed', 'heartrate', 'power', 'power_to_weight', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+  // Friendly labels for metrics whose raw key isn't self-explanatory.
+  const METRIC_LABELS = { power_to_weight: 'W/kg' }
+  const metricLabel = (m) => METRIC_LABELS[m] ?? m
   const ALL_PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
-  const ALL_METER_METRICS = ['speed', 'heartrate', 'power', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
+  const ALL_METER_METRICS = ['speed', 'heartrate', 'power', 'power_to_weight', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
 
   function filterMetrics(list) {
     const valid = app.activityMetrics
@@ -232,12 +235,24 @@
       gpx: app.gpxFilename,
       start: app.config.scene.start ?? 0,
       end: app.config.scene.end ?? app.timelineDuration,
+      riderWeightKg: app.riderWeightKg,
     }
   }
 
+  // W/kg (power_to_weight) is the only metric whose range depends on rider
+  // weight, so weight is part of its cache key; other metrics ignore it.
+  const weightAffectsRange = (metric) => metric === 'power_to_weight'
+
   function rangeKey(metric, unit, context = rangeContext()) {
     if (!context || !metric) return null
-    return JSON.stringify([context.gpx, metric, unit ?? null, context.start, context.end])
+    return JSON.stringify([
+      context.gpx,
+      metric,
+      unit ?? null,
+      context.start,
+      context.end,
+      weightAffectsRange(metric) ? (context.riderWeightKg ?? null) : null,
+    ])
   }
 
   function loadRange(metric, unit, context = rangeContext()) {
@@ -247,7 +262,14 @@
     if (current?.status === 'loading' || current?.status === 'ready') return
 
     rangeCache.set(key, { status: 'loading' })
-    backend.getActivityMetricRange(context.gpx, metric, unit, context.start, context.end)
+    backend.getActivityMetricRange(
+      context.gpx,
+      metric,
+      unit,
+      context.start,
+      context.end,
+      weightAffectsRange(metric) ? context.riderWeightKg : null,
+    )
       .then((range) => {
         rangeCache.set(key, { status: 'ready', range })
       })
@@ -855,7 +877,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
         <Select
           value={item.value ?? ''}
-          options={METRICS.map((m) => ({ value: m, label: m }))}
+          options={METRICS.map((m) => ({ value: m, label: metricLabel(m) }))}
           onchange={(v) => update('value', v)}
         />
 
@@ -1282,7 +1304,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
         <Select
           value={item.value ?? ''}
-          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          options={METER_METRICS.map((m) => ({ value: m, label: metricLabel(m) }))}
           onchange={(v) => update('value', v)}
         />
         {#if UNITS_BY_METRIC[item.value]}
@@ -1540,7 +1562,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
         <Select
           value={item.value ?? ''}
-          options={METER_METRICS.map((m) => ({ value: m, label: m }))}
+          options={METER_METRICS.map((m) => ({ value: m, label: metricLabel(m) }))}
           onchange={(v) => update('value', v)}
         />
         {#if UNITS_BY_METRIC[item.value]}

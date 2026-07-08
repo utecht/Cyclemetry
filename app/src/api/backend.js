@@ -228,6 +228,7 @@ export const getActivityStartTimeMs = (gpxFilename) =>
  * @param {string} [unit]
  * @param {number} sceneStart
  * @param {number} sceneEnd
+ * @param {number|null} [riderWeightKg] — rider weight in kg for the W/kg metric
  * @returns {Promise<MetricRange>}
  */
 export const getActivityMetricRange = (
@@ -236,6 +237,7 @@ export const getActivityMetricRange = (
   unit,
   sceneStart,
   sceneEnd,
+  riderWeightKg,
 ) =>
   invoke('backend_activity_metric_range', {
     gpxFilename,
@@ -243,6 +245,7 @@ export const getActivityMetricRange = (
     unit: unit ?? null,
     sceneStart,
     sceneEnd,
+    riderWeightKg: riderWeightKg ?? null,
   })
 
 /**
@@ -327,6 +330,7 @@ export const reportIssue = (title, body) =>
  * @param {number} previewFps
  * @param {number} [targetWidth]
  * @param {number} [targetHeight]
+ * @param {number|null} [riderWeightKg] — rider weight in kg for the W/kg metric
  * @returns {Promise<DemoFrame>}
  */
 export const nativeGenerateDemo = (
@@ -336,6 +340,7 @@ export const nativeGenerateDemo = (
   previewFps,
   targetWidth,
   targetHeight,
+  riderWeightKg,
 ) =>
   invoke('native_demo', {
     config,
@@ -344,6 +349,7 @@ export const nativeGenerateDemo = (
     previewFps,
     targetWidth,
     targetHeight,
+    riderWeightKg: riderWeightKg ?? null,
   })
 
 /**
@@ -365,6 +371,7 @@ export const nativeGenerateDemo = (
  * @param {number} viewH
  * @param {number} viewOutW
  * @param {number} viewOutH
+ * @param {number|null} [riderWeightKg] — rider weight in kg for the W/kg metric
  * @returns {Promise<DemoFrame>}
  */
 export const nativeGenerateDemoCrop = (
@@ -380,6 +387,7 @@ export const nativeGenerateDemoCrop = (
   viewH,
   viewOutW,
   viewOutH,
+  riderWeightKg,
 ) =>
   invoke('native_demo', {
     config,
@@ -394,6 +402,7 @@ export const nativeGenerateDemoCrop = (
     viewH,
     viewOutW,
     viewOutH,
+    riderWeightKg: riderWeightKg ?? null,
   })
 
 /**
@@ -406,6 +415,7 @@ export const nativeGenerateDemoCrop = (
  * @param {{videoPath: string, videoIn: number}} [stitch] — source footage for
  *   a stitched export; videoIn is seconds into the footage where the overlay's
  *   first frame lands
+ * @param {number|null} [riderWeightKg] — rider weight in kg for the W/kg metric
  * @returns {Promise<RenderStarted>}
  */
 export const nativeStartRender = (
@@ -416,6 +426,7 @@ export const nativeStartRender = (
   targetHeight,
   exportFormat,
   stitch,
+  riderWeightKg,
 ) =>
   invoke('native_render', {
     config,
@@ -426,6 +437,7 @@ export const nativeStartRender = (
     exportFormat: exportFormat ?? null,
     stitchVideoPath: stitch?.videoPath ?? null,
     stitchVideoIn: stitch?.videoIn ?? null,
+    riderWeightKg: riderWeightKg ?? null,
   })
 
 /** @returns {Promise<RenderProgress>} */

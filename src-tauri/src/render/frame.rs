@@ -6,7 +6,9 @@ use skia_safe::{
 };
 use std::collections::HashMap;
 
-use crate::render::activity::{ATTR_DISTANCE, ATTR_GEAR, ATTR_TIME, Activity, decode_gear};
+use crate::render::activity::{
+    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, decode_gear,
+};
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
 use crate::render::template::{
@@ -21,6 +23,7 @@ fn activity_metric_range(
     activity: &Activity,
     metric: &str,
     unit: Option<&str>,
+    rider_weight_kg: Option<f32>,
 ) -> Option<(f64, f64)> {
     if !activity.valid_attributes.contains(&metric.to_string()) {
         return None;
@@ -29,7 +32,7 @@ fn activity_metric_range(
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
     for idx in 0..activity.data_len() {
-        let value = conversion.apply(activity.get_scalar(metric, idx));
+        let value = conversion.apply(activity.get_metric(metric, idx, rider_weight_kg));
         if value.is_finite() {
             min = min.min(value);
             max = max.max(value);
@@ -202,7 +205,7 @@ impl OverlayElement for LabelConfig {
 // ─── Value ─────────────────────────────────────────────────────────────────
 
 impl ValueConfig {
-    fn sample(&self, activity: &Activity, frame_idx: usize) -> f64 {
+    fn sample(&self, activity: &Activity, frame_idx: usize, rider_weight_kg: Option<f32>) -> f64 {
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
         }
@@ -219,7 +222,9 @@ impl ValueConfig {
                 frame_idx,
             )
         } else {
-            activity.get_scalar(&self.value, frame_idx)
+            // Resolves W/kg (power_to_weight) from the rider weight; a plain
+            // series lookup for every other metric.
+            activity.get_metric(&self.value, frame_idx, rider_weight_kg)
         }
     }
 }
@@ -240,7 +245,7 @@ impl OverlayElement for ValueConfig {
     }
 
     fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds> {
-        let raw = self.sample(ctx.activity, frame_idx);
+        let raw = self.sample(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
         let text = format_value(raw, self);
         let font_name = self
             .font
@@ -270,7 +275,7 @@ impl OverlayElement for ValueConfig {
         if !ctx.activity.valid_attributes.contains(&self.value) {
             return;
         }
-        let raw = self.sample(ctx.activity, frame_idx);
+        let raw = self.sample(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
         let display = format_value(raw, self);
 
         let font_name = self
@@ -375,8 +380,9 @@ impl OverlayElement for PlotConfig {
 // ─── Meter ─────────────────────────────────────────────────────────────────
 
 impl MeterConfig {
-    fn range(&self, activity: &Activity) -> (f64, f64) {
-        let dynamic_range = activity_metric_range(activity, &self.value, self.unit.as_deref());
+    fn range(&self, activity: &Activity, rider_weight_kg: Option<f32>) -> (f64, f64) {
+        let dynamic_range =
+            activity_metric_range(activity, &self.value, self.unit.as_deref(), rider_weight_kg);
         (
             resolve_range_bound(&self.min, dynamic_range, 0.0),
             resolve_range_bound(&self.max, dynamic_range, 1.0),
@@ -392,14 +398,14 @@ impl MeterConfig {
     }
 
     /// Current fill fraction in [0, 1] for this frame.
-    fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
+    fn fraction(&self, activity: &Activity, frame_idx: usize, rider_weight_kg: Option<f32>) -> f32 {
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
         }
-        let raw = activity.get_scalar(&self.value, frame_idx);
+        let raw = activity.get_metric(&self.value, frame_idx, rider_weight_kg);
         let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
         let v = conv.apply(raw);
-        let (min, max) = self.range(activity);
+        let (min, max) = self.range(activity, rider_weight_kg);
         let span = max - min;
         if span.abs() < f64::EPSILON {
             return 0.0;
@@ -508,7 +514,7 @@ impl MeterConfig {
         let tick_w = self.scale_tick_width.unwrap_or(1.0);
         let offset = self.scale_offset.unwrap_or(8.0);
         let suffix = self.scale_suffix.as_deref().unwrap_or("");
-        let (min, max) = self.range(ctx.activity);
+        let (min, max) = self.range(ctx.activity, ctx.scene.rider_weight_kg);
 
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -736,7 +742,7 @@ impl OverlayElement for MeterConfig {
         paint.set_anti_alias(true);
 
         if let Some(n) = self.segments.filter(|n| *n >= 1) {
-            let frac = self.fraction(ctx.activity, frame_idx);
+            let frac = self.fraction(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
             self.draw_segmented(canvas, &mut paint, n, frac, radius);
             self.draw_border(canvas, &mut paint, radius);
             self.draw_scale(canvas, ctx, false);
@@ -762,7 +768,7 @@ impl OverlayElement for MeterConfig {
         self.draw_scale(canvas, ctx, true);
 
         // Fill.
-        let frac = self.fraction(ctx.activity, frame_idx);
+        let frac = self.fraction(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
         if frac > 0.0 {
             let fr = self.fill_rect(frac);
 
@@ -842,22 +848,23 @@ impl OverlayElement for MeterConfig {
 // ─── Gauge ─────────────────────────────────────────────────────────────────
 
 impl GaugeConfig {
-    fn range(&self, activity: &Activity) -> (f64, f64) {
-        let dynamic_range = activity_metric_range(activity, &self.value, self.unit.as_deref());
+    fn range(&self, activity: &Activity, rider_weight_kg: Option<f32>) -> (f64, f64) {
+        let dynamic_range =
+            activity_metric_range(activity, &self.value, self.unit.as_deref(), rider_weight_kg);
         (
             resolve_range_bound(&self.min, dynamic_range, 0.0),
             resolve_range_bound(&self.max, dynamic_range, 1.0),
         )
     }
 
-    fn fraction(&self, activity: &Activity, frame_idx: usize) -> f32 {
+    fn fraction(&self, activity: &Activity, frame_idx: usize, rider_weight_kg: Option<f32>) -> f32 {
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
         }
-        let raw = activity.get_scalar(&self.value, frame_idx);
+        let raw = activity.get_metric(&self.value, frame_idx, rider_weight_kg);
         let (conv, _) = units::resolve(&self.value, self.unit.as_deref());
         let v = conv.apply(raw);
-        let (min, max) = self.range(activity);
+        let (min, max) = self.range(activity, rider_weight_kg);
         let span = max - min;
         if span.abs() < f64::EPSILON {
             return 0.0;
@@ -905,7 +912,7 @@ impl OverlayElement for GaugeConfig {
         }
         let start = self.start_angle.unwrap_or(135.0);
         let sweep = self.sweep_angle.unwrap_or(270.0);
-        let frac = self.fraction(ctx.activity, frame_idx);
+        let frac = self.fraction(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
 
         // Background circle.
         if let Some(bg_op) = self.background_opacity.filter(|&op| op > 0.0) {
@@ -1668,11 +1675,21 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
     let (conv, _) = units::resolve(&cfg.value, cfg.unit.as_deref());
     let v = conv.apply(raw);
 
-    // Decimal rounding
-    let text = match cfg.decimal_rounding {
-        Some(0) => format!("{}", v.round() as i64),
-        Some(n) if n > 0 => format!("{:.prec$}", v, prec = n as usize),
-        _ => format!("{}", v.round() as i64),
+    // Decimal rounding. W/kg is fractional by nature, so it defaults to one
+    // decimal place when the template doesn't specify a rounding.
+    let default_decimals = if cfg.value == ATTR_POWER_TO_WEIGHT {
+        1
+    } else {
+        0
+    };
+    let decimals = cfg
+        .decimal_rounding
+        .filter(|&n| n >= 0)
+        .unwrap_or(default_decimals);
+    let text = if decimals == 0 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{:.prec$}", v, prec = decimals as usize)
     };
 
     // Suffix
@@ -1966,6 +1983,70 @@ mod tests {
         let t = Template::from_value(raw).unwrap();
         // plot-0 (idx 2), label-0 (idx 0) listed first; value-0 (idx 1) trails.
         assert_eq!(t.layer_order(), vec![2, 0, 1]);
+    }
+
+    /// W/kg = power ÷ rider weight, computed from the render-time weight (never
+    /// stored in the template). With no weight it falls back to 0.0, and it
+    /// defaults to one decimal place.
+    #[test]
+    fn power_to_weight_divides_power_by_rider_weight() {
+        use crate::render::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
+        use crate::render::template::Element;
+
+        let activity = Activity {
+            power: vec![300.0],
+            speed: vec![10.0],
+            valid_attributes: vec![ATTR_POWER.into(), ATTR_POWER_TO_WEIGHT.into()],
+            ..Activity::default()
+        };
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100 },
+            "elements": [
+                { "type": "value", "id": "v", "value": "power_to_weight", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let Element::Value(cfg) = &t.elements[0] else {
+            panic!("expected a value element");
+        };
+
+        // No weight set yet → empty-state 0.0, formatted to one decimal.
+        assert_eq!(
+            super::format_value(cfg.sample(&activity, 0, None), cfg),
+            "0.0"
+        );
+        // 300 W / 72 kg ≈ 4.2 W/kg.
+        assert_eq!(
+            super::format_value(cfg.sample(&activity, 0, Some(72.0)), cfg),
+            "4.2"
+        );
+    }
+
+    /// Meters and gauges auto-scale off `activity_metric_range`, which for W/kg
+    /// must divide the power range by the rider weight (and yield a degenerate
+    /// 0..0 range when no weight is set).
+    #[test]
+    fn power_to_weight_range_scales_by_rider_weight() {
+        use crate::render::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
+
+        let activity = Activity {
+            power: vec![100.0, 400.0],
+            speed: vec![10.0, 10.0],
+            valid_attributes: vec![ATTR_POWER.into(), ATTR_POWER_TO_WEIGHT.into()],
+            ..Activity::default()
+        };
+
+        // No weight → flat 0..0 range.
+        let none = super::activity_metric_range(&activity, ATTR_POWER_TO_WEIGHT, None, None);
+        assert_eq!(none, Some((0.0, 0.0)));
+
+        // 100 W / 50 kg = 2.0, 400 W / 50 kg = 8.0.
+        let (min, max) =
+            super::activity_metric_range(&activity, ATTR_POWER_TO_WEIGHT, None, Some(50.0))
+                .unwrap();
+        assert!((min - 2.0).abs() < 1e-9);
+        assert!((max - 8.0).abs() < 1e-9);
     }
 
     /// Anchored elements get their x/y rewritten from the target's box; the

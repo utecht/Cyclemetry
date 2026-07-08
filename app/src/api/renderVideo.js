@@ -71,6 +71,7 @@ export default async function renderVideo(state) {
       outputHeight,
       exportFormat,
       stitch,
+      state.riderWeightKg,
     )
     const outputPath = startData.output_path
 
