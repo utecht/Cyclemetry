@@ -1532,6 +1532,7 @@ async fn backend_activity_distance_info(
         groups: Vec::new(),
         vars: std::collections::HashMap::new(),
         rider_weight_kg: None,
+        units: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
     Ok(serde_json::json!({
@@ -1591,6 +1592,7 @@ async fn backend_activity_metric_range(
         groups: Vec::new(),
         vars: std::collections::HashMap::new(),
         rider_weight_kg: None,
+        units: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
 

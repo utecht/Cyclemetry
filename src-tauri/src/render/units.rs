@@ -6,7 +6,8 @@
 //! and suffix never drift between code paths.
 
 use crate::render::activity::{
-    ATTR_DISTANCE, ATTR_ELEVATION, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
+    ATTR_CADENCE, ATTR_DISTANCE, ATTR_ELEVATION, ATTR_GRADIENT, ATTR_HEARTRATE, ATTR_POWER,
+    ATTR_POWER_TO_WEIGHT, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
     MI_CONVERSION, MPH_CONVERSION,
 };
 
@@ -74,6 +75,56 @@ pub fn resolve(attr: &str, unit: Option<&str>) -> (Conversion, String) {
     }
 }
 
+/// Human-facing unit label for the "auto" value suffix, including the
+/// conventional leading space (`" km"`, `" mph"`, `" W"`) or degree spacing
+/// (`"°C"`, `"%"` — no space). Unlike [`resolve`]'s uppercase chart suffix,
+/// these are cased the way a rider expects to read them in an overlay.
+///
+/// `attr` is the metric attribute (summary metrics should be mapped to their
+/// base metric by the caller). Returns `None` for metrics that have no natural
+/// unit label (time, gear), so "auto" simply appends nothing there.
+pub fn display_suffix(attr: &str, unit: Option<&str>) -> Option<String> {
+    let u = unit.unwrap_or("").to_ascii_lowercase();
+    let s = match attr {
+        ATTR_SPEED => match u.as_str() {
+            "ms" | "m/s" => " m/s",
+            "mph" | "imperial" => " mph",
+            _ => " km/h", // kmh / metric / default
+        },
+        ATTR_DISTANCE => match u.as_str() {
+            "m" => " m",
+            "mi" | "imperial" => " mi",
+            _ => " km", // km / metric / default
+        },
+        ATTR_ELEVATION => match u.as_str() {
+            "ft" | "imperial" => " ft",
+            _ => " m", // m / metric / default
+        },
+        ATTR_TEMPERATURE => match u.as_str() {
+            "f" | "imperial" => "°F",
+            _ => "°C", // c / metric / default
+        },
+        ATTR_POWER => " W",
+        ATTR_POWER_TO_WEIGHT => " W/kg",
+        ATTR_HEARTRATE => " bpm",
+        ATTR_CADENCE => " rpm",
+        ATTR_GRADIENT => "%",
+        _ => return None,
+    };
+    Some(s.to_string())
+}
+
+/// Whether a metric has a metric/imperial distinction (speed, distance,
+/// elevation, temperature). Metrics without one (power, cadence, heartrate,
+/// gradient, gear, time) render identically in either system, so the
+/// scene-level unit toggle skips them.
+pub fn has_unit_system(attr: &str) -> bool {
+    matches!(
+        attr,
+        ATTR_SPEED | ATTR_DISTANCE | ATTR_ELEVATION | ATTR_TEMPERATURE
+    )
+}
+
 /// Convert a display-unit distance target back to metres (used by the
 /// "until_custom" distance-reference mode). Inverse of the distance branch of
 /// [`resolve`]; distance has no offset so this is a plain divide.
@@ -114,6 +165,43 @@ mod tests {
         assert!((distance_target_to_m(1.0, Some("mi")) - 1609.34).abs() < 1.0);
         assert!((distance_target_to_m(5.0, Some("metric")) - 5000.0).abs() < 1e-6);
         assert!((distance_target_to_m(1.0, Some("imperial")) - 1609.34).abs() < 1.0);
+    }
+
+    #[test]
+    fn auto_suffix_tracks_unit_and_metric() {
+        // Unit-convertible metrics follow the unit token.
+        assert_eq!(
+            display_suffix(ATTR_DISTANCE, Some("km")).as_deref(),
+            Some(" km")
+        );
+        assert_eq!(
+            display_suffix(ATTR_DISTANCE, Some("mi")).as_deref(),
+            Some(" mi")
+        );
+        assert_eq!(
+            display_suffix(ATTR_SPEED, Some("mph")).as_deref(),
+            Some(" mph")
+        );
+        assert_eq!(
+            display_suffix(ATTR_TEMPERATURE, Some("f")).as_deref(),
+            Some("°F")
+        );
+        // Legacy metric/imperial tokens and None resolve to the same labels.
+        assert_eq!(display_suffix(ATTR_DISTANCE, None).as_deref(), Some(" km"));
+        assert_eq!(
+            display_suffix(ATTR_DISTANCE, Some("imperial")).as_deref(),
+            Some(" mi")
+        );
+        // Non-convertible metrics have a fixed label regardless of unit.
+        assert_eq!(display_suffix(ATTR_POWER, None).as_deref(), Some(" W"));
+        assert_eq!(
+            display_suffix(ATTR_HEARTRATE, None).as_deref(),
+            Some(" bpm")
+        );
+        assert_eq!(display_suffix(ATTR_GRADIENT, None).as_deref(), Some("%"));
+        // Metrics with no natural unit label yield nothing.
+        assert_eq!(display_suffix("time", None), None);
+        assert_eq!(display_suffix("gear", None), None);
     }
 
     #[test]

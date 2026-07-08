@@ -708,6 +708,19 @@ export function createAppState() {
     config = { ...config, elements }
   }
 
+  // Canvas-centering hook. The WYSIWYG overlay owns the measured pixel bounds
+  // and author→output scale, so it registers the concrete centering fn; the
+  // properties panel calls alignSelected() without knowing that geometry.
+  // Null whenever no editable canvas is mounted.
+  let alignHandler = null
+  function setAlignHandler(fn) {
+    alignHandler = fn
+  }
+  // Center the primary-selected element on the canvas. axis: 'h' | 'v' | 'both'.
+  function alignSelected(axis) {
+    if (selectedElementId) alignHandler?.(selectedElementId, axis)
+  }
+
   // Stable, collision-free id within the config. Keeps the readable
   // `type-N` scheme (matches converted templates / Rust's opaque ids).
   function newElementId(type, elements) {
@@ -1540,6 +1553,8 @@ export function createAppState() {
     commitElementPositions,
     updateElementLive,
     commitElementUpdate,
+    setAlignHandler,
+    alignSelected,
     addElement,
     removeElement,
     deleteSelectedElement,

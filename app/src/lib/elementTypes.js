@@ -84,6 +84,7 @@
  * @property {number} [opacity]
  * @property {string[]} [layers]
  * @property {GroupConfig[]} [groups]
+ * @property {'metric'|'imperial'} [units]
  */
 
 /**
@@ -125,6 +126,7 @@
  * @property {number} [opacity]
  * @property {string} [unit]
  * @property {string} [suffix]
+ * @property {'none'|'auto'|'custom'} [suffix_mode]
  * @property {number} [decimal_rounding]
  * @property {number} [hours_offset]
  * @property {string} [time_timezone]
@@ -135,6 +137,7 @@
  * @property {number} [distance_target]
  * @property {'overlay_start'|'activity_start'|'overlay_end'|'activity_end'|'until_custom'|'since_custom'|'time_of_day'} [time_reference]
  * @property {number} [time_target]
+ * @property {'activity'|'overlay'} [summary_scope] For summary metrics (total_distance, elevation_gain, avg_speed, …): aggregate over the whole activity (default) or the overlay window.
  * @property {'left'|'center'|'right'} [text_align]
  */
 

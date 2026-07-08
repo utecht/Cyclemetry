@@ -20,6 +20,100 @@ pub const ATTR_SPEED: &str = "speed";
 pub const ATTR_TIME: &str = "time";
 pub const ATTR_TEMPERATURE: &str = "temperature";
 
+// ─── Summary (aggregate) metrics ───────────────────────────────────────────
+// Whole-window totals/averages rendered as a single constant value across every
+// frame (e.g. a ride-summary stats card). Unlike the live telemetry attributes
+// above they have no per-sample series; each resolves through
+// [`Activity::summary_value`] against a precomputed [`ActivitySummary`].
+pub const SUM_TOTAL_DISTANCE: &str = "total_distance";
+pub const SUM_TOTAL_TIME: &str = "total_time";
+pub const SUM_ELEVATION_GAIN: &str = "elevation_gain";
+pub const SUM_ELEVATION_LOSS: &str = "elevation_loss";
+pub const SUM_MAX_ELEVATION: &str = "max_elevation";
+pub const SUM_MIN_ELEVATION: &str = "min_elevation";
+pub const SUM_AVG_SPEED: &str = "avg_speed";
+pub const SUM_MAX_SPEED: &str = "max_speed";
+pub const SUM_AVG_POWER: &str = "avg_power";
+pub const SUM_MAX_POWER: &str = "max_power";
+pub const SUM_AVG_HEARTRATE: &str = "avg_heartrate";
+pub const SUM_MAX_HEARTRATE: &str = "max_heartrate";
+pub const SUM_AVG_CADENCE: &str = "avg_cadence";
+
+/// Minimum sustained altitude change (metres) that counts toward elevation
+/// gain/loss. Elevation is already Savitzky-Golay smoothed at parse time, so a
+/// gentle floor here just rejects residual jitter without swallowing real hills.
+const ELEVATION_NOISE_THRESHOLD_M: f64 = 1.0;
+
+/// The base telemetry attribute a summary metric derives from. Drives unit
+/// resolution (via `units::resolve`) and availability checks. Returns `None`
+/// for any token that is not a summary metric.
+pub fn summary_base_metric(name: &str) -> Option<&'static str> {
+    Some(match name {
+        SUM_TOTAL_DISTANCE => ATTR_DISTANCE,
+        SUM_TOTAL_TIME => ATTR_TIME,
+        SUM_ELEVATION_GAIN | SUM_ELEVATION_LOSS | SUM_MAX_ELEVATION | SUM_MIN_ELEVATION => {
+            ATTR_ELEVATION
+        }
+        SUM_AVG_SPEED | SUM_MAX_SPEED => ATTR_SPEED,
+        SUM_AVG_POWER | SUM_MAX_POWER => ATTR_POWER,
+        SUM_AVG_HEARTRATE | SUM_MAX_HEARTRATE => ATTR_HEARTRATE,
+        SUM_AVG_CADENCE => ATTR_CADENCE,
+        _ => return None,
+    })
+}
+
+/// Whether `name` is a summary/aggregate metric token.
+pub fn is_summary_metric(name: &str) -> bool {
+    summary_base_metric(name).is_some()
+}
+
+/// Accumulate total ascent and descent over an elevation series, counting only
+/// moves that reach `threshold` metres from the last counted point.
+fn elevation_gain_loss(elevation: &[f64], threshold: f64) -> (f64, f64) {
+    if elevation.len() < 2 {
+        return (0.0, 0.0);
+    }
+    let mut gain = 0.0;
+    let mut loss = 0.0;
+    let mut anchor = elevation[0];
+    for &e in &elevation[1..] {
+        let delta = e - anchor;
+        if delta >= threshold {
+            gain += delta;
+            anchor = e;
+        } else if delta <= -threshold {
+            loss += -delta;
+            anchor = e;
+        }
+    }
+    (gain, loss)
+}
+
+/// Whole-window aggregate metrics, constant across every frame. Computed once
+/// over the full activity and once over the trimmed overlay window; a Value
+/// element chooses which via its `summary_scope`.
+#[derive(Debug, Clone, Default)]
+pub struct ActivitySummary {
+    /// Distance covered in metres.
+    pub total_distance: f64,
+    /// Elapsed duration in seconds.
+    pub total_time: f64,
+    /// Cumulative ascent in metres.
+    pub elevation_gain: f64,
+    /// Cumulative descent in metres.
+    pub elevation_loss: f64,
+    pub max_elevation: f64,
+    pub min_elevation: f64,
+    /// Overall average speed in m/s (distance ÷ time).
+    pub avg_speed: f64,
+    pub max_speed: f64,
+    pub avg_power: f64,
+    pub max_power: f64,
+    pub avg_heartrate: f64,
+    pub max_heartrate: f64,
+    pub avg_cadence: f64,
+}
+
 pub const MPH_CONVERSION: f64 = 2.23694;
 pub const KMH_CONVERSION: f64 = 3.6;
 pub const FT_CONVERSION: f64 = 3.28084;
@@ -54,6 +148,13 @@ pub struct Activity {
     /// the alignment timeline to map activity time → wall-clock for matching
     /// against a video's container `creation_time`.
     pub start_time_ms: Option<i64>,
+    /// Aggregate metrics over the full activity (before overlay trimming).
+    /// Preserved through `resample_wall_clock` so whole-ride totals stay
+    /// available even when only a clip is rendered.
+    pub activity_summary: ActivitySummary,
+    /// Aggregate metrics over the trimmed overlay window actually being
+    /// rendered. Equals `activity_summary` until the activity is resampled.
+    pub overlay_summary: ActivitySummary,
 }
 
 impl Activity {
@@ -388,6 +489,8 @@ impl Activity {
         .iter()
         .map(|s| s.to_string())
         .collect();
+        a.activity_summary = a.compute_summary();
+        a.overlay_summary = a.activity_summary.clone();
         a
     }
 
@@ -657,6 +760,8 @@ impl Activity {
 
         activity.total_activity_distance = cum_dist;
         activity.total_activity_elapsed = activity.elapsed_seconds.last().copied().unwrap_or(0.0);
+        activity.activity_summary = activity.compute_summary();
+        activity.overlay_summary = activity.activity_summary.clone();
         Ok(activity)
     }
 
@@ -773,6 +878,9 @@ impl Activity {
             total_activity_elapsed: self.total_activity_elapsed,
             start_time_ms: self.start_time_ms.map(|ms| ms + (start * 1000.0) as i64),
             valid_attributes: self.valid_attributes.clone(),
+            // Whole-ride totals survive the trim; overlay totals are recomputed
+            // from the trimmed series below.
+            activity_summary: self.activity_summary.clone(),
             ..Activity::default()
         };
 
@@ -795,6 +903,7 @@ impl Activity {
             out.gear.push(sample.gear);
         }
 
+        out.overlay_summary = out.compute_summary();
         Ok(out)
     }
 
@@ -920,6 +1029,93 @@ impl Activity {
             };
         }
         self.get_scalar(attribute, index)
+    }
+
+    /// Compute all aggregate metrics over this activity's current series.
+    /// Called on the full activity at parse time and on the trimmed overlay
+    /// window after resampling.
+    pub fn compute_summary(&self) -> ActivitySummary {
+        let span = |v: &[f64]| match (v.first(), v.last()) {
+            (Some(&f), Some(&l)) => (l - f).max(0.0),
+            _ => 0.0,
+        };
+        let max_of = |v: &[f64]| {
+            let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            if m.is_finite() { m } else { 0.0 }
+        };
+        let min_of = |v: &[f64]| {
+            let m = v.iter().copied().fold(f64::INFINITY, f64::min);
+            if m.is_finite() { m } else { 0.0 }
+        };
+        let mean_of = |v: &[f64]| {
+            if v.is_empty() {
+                0.0
+            } else {
+                v.iter().sum::<f64>() / v.len() as f64
+            }
+        };
+
+        let total_distance = span(&self.distance);
+        let total_time = span(&self.elapsed_seconds);
+        let (elevation_gain, elevation_loss) =
+            elevation_gain_loss(&self.elevation, ELEVATION_NOISE_THRESHOLD_M);
+
+        ActivitySummary {
+            total_distance,
+            total_time,
+            elevation_gain,
+            elevation_loss,
+            max_elevation: max_of(&self.elevation),
+            min_elevation: min_of(&self.elevation),
+            // Overall average = total distance / total time, which is
+            // time-weighted and robust to uneven sample intervals; fall back to
+            // a plain sample mean only when there is no usable time axis.
+            avg_speed: if total_time > 0.0 {
+                total_distance / total_time
+            } else {
+                mean_of(&self.speed)
+            },
+            max_speed: max_of(&self.speed),
+            avg_power: mean_of(&self.power),
+            max_power: max_of(&self.power),
+            avg_heartrate: mean_of(&self.heartrate),
+            max_heartrate: max_of(&self.heartrate),
+            avg_cadence: mean_of(&self.cadence),
+        }
+    }
+
+    /// Resolve a summary metric token to its constant value for the requested
+    /// scope: "activity" (default, whole ride) or "overlay" (trimmed window).
+    pub fn summary_value(&self, name: &str, scope: Option<&str>) -> f64 {
+        let s = match scope.unwrap_or("activity") {
+            "overlay" => &self.overlay_summary,
+            _ => &self.activity_summary,
+        };
+        match name {
+            SUM_TOTAL_DISTANCE => s.total_distance,
+            SUM_TOTAL_TIME => s.total_time,
+            SUM_ELEVATION_GAIN => s.elevation_gain,
+            SUM_ELEVATION_LOSS => s.elevation_loss,
+            SUM_MAX_ELEVATION => s.max_elevation,
+            SUM_MIN_ELEVATION => s.min_elevation,
+            SUM_AVG_SPEED => s.avg_speed,
+            SUM_MAX_SPEED => s.max_speed,
+            SUM_AVG_POWER => s.avg_power,
+            SUM_MAX_POWER => s.max_power,
+            SUM_AVG_HEARTRATE => s.avg_heartrate,
+            SUM_MAX_HEARTRATE => s.max_heartrate,
+            SUM_AVG_CADENCE => s.avg_cadence,
+            _ => 0.0,
+        }
+    }
+
+    /// Whether a summary metric can be shown — true when its base telemetry
+    /// attribute is present in the source file.
+    pub fn has_summary(&self, name: &str) -> bool {
+        match summary_base_metric(name) {
+            Some(base) => self.valid_attributes.iter().any(|a| a == base),
+            None => false,
+        }
     }
 
     /// Distance in metres adjusted for the requested reference point.
@@ -1302,6 +1498,7 @@ mod tests {
             layers: None,
             groups: Vec::new(),
             vars: std::collections::HashMap::new(),
+            units: None,
         }
     }
 
@@ -1319,6 +1516,50 @@ mod tests {
         let activity = Activity::parse_gpx(gpx).unwrap();
         assert_eq!(activity.elapsed_seconds, vec![0.0, 2.0, 5.0]);
         assert!(activity.has_wall_clock_time_axis());
+    }
+
+    #[test]
+    fn elevation_gain_loss_ignores_sub_threshold_jitter() {
+        // Net +10m with 0.5m jitter that must not accumulate at a 1m floor.
+        let elev = vec![100.0, 100.5, 100.0, 105.0, 104.7, 110.0];
+        let (gain, loss) = elevation_gain_loss(&elev, ELEVATION_NOISE_THRESHOLD_M);
+        assert!((gain - 10.0).abs() < 1e-9, "gain was {gain}");
+        assert_eq!(loss, 0.0, "loss was {loss}");
+    }
+
+    #[test]
+    fn summary_value_reflects_scope() {
+        let mut a = Activity::default();
+        a.valid_attributes = vec![
+            ATTR_DISTANCE.to_string(),
+            ATTR_ELEVATION.to_string(),
+            ATTR_SPEED.to_string(),
+        ];
+        // Full ride: 0..1000m, elevation climbs 100→300 (gain 200).
+        a.distance = vec![0.0, 500.0, 1000.0];
+        a.elevation = vec![100.0, 200.0, 300.0];
+        a.speed = vec![5.0, 10.0, 15.0];
+        a.elapsed_seconds = vec![0.0, 50.0, 100.0];
+        a.activity_summary = a.compute_summary();
+        // Overlay window = second half only: 500..1000m, elevation 200→300.
+        let mut overlay = a.clone();
+        overlay.distance = vec![500.0, 1000.0];
+        overlay.elevation = vec![200.0, 300.0];
+        overlay.elapsed_seconds = vec![50.0, 100.0];
+        a.overlay_summary = overlay.compute_summary();
+
+        assert_eq!(
+            a.summary_value(SUM_TOTAL_DISTANCE, Some("activity")),
+            1000.0
+        );
+        assert_eq!(a.summary_value(SUM_TOTAL_DISTANCE, Some("overlay")), 500.0);
+        assert_eq!(a.summary_value(SUM_ELEVATION_GAIN, None), 200.0); // default = activity
+        assert_eq!(a.summary_value(SUM_ELEVATION_GAIN, Some("overlay")), 100.0);
+        assert_eq!(a.summary_value(SUM_MAX_ELEVATION, Some("activity")), 300.0);
+        // avg_speed = distance / time = 1000 / 100 = 10 m/s.
+        assert_eq!(a.summary_value(SUM_AVG_SPEED, Some("activity")), 10.0);
+        assert!(a.has_summary(SUM_TOTAL_DISTANCE));
+        assert!(!a.has_summary(SUM_AVG_POWER)); // power not in valid_attributes
     }
 
     #[test]

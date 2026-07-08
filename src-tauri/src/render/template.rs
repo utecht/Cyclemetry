@@ -46,6 +46,12 @@ pub struct SceneConfig {
     /// color field; a pre-pass resolves them before rendering.
     #[serde(default)]
     pub vars: HashMap<String, String>,
+    /// Scene-wide unit system: `"metric"` (default) or `"imperial"`. A pre-pass
+    /// (`Template::apply_scene_units`) fills this into any value/meter/gauge
+    /// element (and plot point label) that hasn't set an explicit `unit`, so a
+    /// single toggle flips every unit-bearing readout. Elements with an explicit
+    /// unit override the scene system.
+    pub units: Option<String>,
     /// Rider weight in kg, used only to compute the `power_to_weight` (W/kg)
     /// metric at render time. `#[serde(skip)]` is deliberate and load-bearing:
     /// weight is sensitive personal data, so it must never be serialized into a
@@ -315,7 +321,14 @@ pub struct ValueConfig {
     pub color: Option<String>,
     pub opacity: Option<f32>,
     pub unit: Option<String>,
+    /// Manual suffix text, used when `suffix_mode` is "custom" (or absent, for
+    /// back-compat with templates authored before `suffix_mode` existed).
     pub suffix: Option<String>,
+    /// How to derive the value's trailing suffix: "none", "auto" (unit-derived,
+    /// tracks the unit picker — e.g. " km"/" mi", " W", " bpm"), or "custom"
+    /// (use `suffix` verbatim). When absent, falls back to custom-if-`suffix`-
+    /// present-else-none so existing templates render unchanged.
+    pub suffix_mode: Option<String>,
     pub decimal_rounding: Option<i32>,
     pub hours_offset: Option<f32>,
     pub time_format: Option<String>,
@@ -340,6 +353,10 @@ pub struct ValueConfig {
     pub time_reference: Option<String>,
     /// For `time_reference: "until_custom"` or `"since_custom"` — the reference time in seconds.
     pub time_target: Option<f64>,
+    /// For summary metrics (`total_distance`, `elevation_gain`, `avg_speed`, …):
+    /// which window to aggregate over. "activity" (default, whole ride) or
+    /// "overlay" (the trimmed segment being rendered). Ignored by live metrics.
+    pub summary_scope: Option<String>,
     /// Horizontal alignment relative to x. "left" (default) | "center" | "right".
     pub text_align: Option<String>,
     /// Vertical alignment relative to y. "baseline" (default) | "top" |
@@ -741,8 +758,37 @@ impl Template {
             }
         }
 
+        template.apply_scene_units();
         template.resolve_anchors();
         Ok(template)
+    }
+
+    /// Fill the scene-wide unit system (`scene.units`) into every unit-bearing
+    /// element that hasn't chosen an explicit `unit`, so one toggle flips every
+    /// readout. Metric is `resolve`'s default already, so only "imperial" needs
+    /// filling. Only metrics with a metric/imperial distinction are touched;
+    /// elements with an explicit `unit` keep it (per-element override).
+    fn apply_scene_units(&mut self) {
+        let system = match self.scene.units.as_deref() {
+            Some("imperial") => "imperial",
+            _ => return,
+        };
+        for el in &mut self.elements {
+            match el {
+                Element::Value(c) => fill_scene_unit(&c.value, &mut c.unit, system),
+                Element::Meter(c) => fill_scene_unit(&c.value, &mut c.unit, system),
+                Element::Gauge(c) => fill_scene_unit(&c.value, &mut c.unit, system),
+                Element::Plot(c) => {
+                    if let Some(pl) = &mut c.point_label
+                        && pl.units.is_none()
+                        && convertible_metric(&c.value)
+                    {
+                        pl.units = Some(vec![system.to_string()]);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Rewrite the `x`/`y` of every anchored element from its target's box.
@@ -829,6 +875,22 @@ fn resolve_vars(value: &mut serde_json::Value, vars: &HashMap<String, String>) {
             }
         }
         _ => {}
+    }
+}
+
+/// Whether a metric (or the base metric of a summary metric) has a
+/// metric/imperial distinction the scene unit system should drive.
+fn convertible_metric(metric: &str) -> bool {
+    use crate::render::activity::summary_base_metric;
+    crate::render::units::has_unit_system(summary_base_metric(metric).unwrap_or(metric))
+}
+
+/// Set `unit` to the scene system token when the element left it unset and its
+/// metric is unit-convertible. `resolve` accepts the "imperial"/"metric" tokens
+/// directly, so no per-metric mapping is needed here.
+fn fill_scene_unit(metric: &str, unit: &mut Option<String>, system: &str) {
+    if unit.is_none() && convertible_metric(metric) {
+        *unit = Some(system.to_string());
     }
 }
 

@@ -7,7 +7,8 @@ use skia_safe::{
 use std::collections::HashMap;
 
 use crate::render::activity::{
-    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, decode_gear,
+    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, SUM_TOTAL_TIME,
+    decode_gear, is_summary_metric, summary_base_metric,
 };
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
@@ -206,6 +207,9 @@ impl OverlayElement for LabelConfig {
 
 impl ValueConfig {
     fn sample(&self, activity: &Activity, frame_idx: usize, rider_weight_kg: Option<f32>) -> f64 {
+        if is_summary_metric(&self.value) {
+            return activity.summary_value(&self.value, self.summary_scope.as_deref());
+        }
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
         }
@@ -272,7 +276,12 @@ impl OverlayElement for ValueConfig {
     }
 
     fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
-        if !ctx.activity.valid_attributes.contains(&self.value) {
+        let available = if is_summary_metric(&self.value) {
+            ctx.activity.has_summary(&self.value)
+        } else {
+            ctx.activity.valid_attributes.contains(&self.value)
+        };
+        if !available {
             return;
         }
         let raw = self.sample(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
@@ -1646,17 +1655,20 @@ fn draw_text_with_letter_spacing(
 // ─── Value formatting ──────────────────────────────────────────────────────
 
 fn format_value(raw: f64, cfg: &ValueConfig) -> String {
+    let suffix = resolve_suffix(cfg);
+    let append = |text: String| match &suffix {
+        Some(s) => format!("{text}{s}"),
+        None => text,
+    };
+
     if cfg.value == ATTR_GEAR {
         let text = decode_gear(raw)
             .map(|(front, rear)| format!("{front}x{rear}"))
             .unwrap_or_else(|| "0x0".to_string());
-        return match &cfg.suffix {
-            Some(s) => format!("{text}{s}"),
-            None => text,
-        };
+        return append(text);
     }
 
-    if cfg.value == ATTR_TIME {
+    if cfg.value == ATTR_TIME || cfg.value == SUM_TOTAL_TIME {
         let text = format_time(
             raw,
             cfg.time_format.as_deref(),
@@ -1664,15 +1676,15 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
             cfg.time_12h.unwrap_or(false),
             cfg.time_ampm.unwrap_or(false),
         );
-        return match &cfg.suffix {
-            Some(s) => format!("{text}{s}"),
-            None => text,
-        };
+        return append(text);
     }
 
-    // Convert from the GPX-native unit. Value elements do not auto-append a
+    // Convert from the GPX-native unit. Summary metrics (e.g. total_distance,
+    // elevation_gain) borrow their base metric's unit table so km/mi/ft all
+    // work exactly as on the live value. Value elements do not auto-append a
     // unit suffix; the optional manual `suffix` field is applied below.
-    let (conv, _) = units::resolve(&cfg.value, cfg.unit.as_deref());
+    let unit_attr = summary_base_metric(&cfg.value).unwrap_or(cfg.value.as_str());
+    let (conv, _) = units::resolve(unit_attr, cfg.unit.as_deref());
     let v = conv.apply(raw);
 
     // Decimal rounding. W/kg is fractional by nature, so it defaults to one
@@ -1692,15 +1704,28 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
         format!("{:.prec$}", v, prec = decimals as usize)
     };
 
-    // Suffix
-    match &cfg.suffix {
-        Some(s) => format!("{text}{s}"),
-        None => text,
+    append(text)
+}
+
+/// Resolve a value element's trailing suffix per its `suffix_mode`:
+/// - `"none"` → no suffix
+/// - `"auto"` → unit-derived label that tracks the unit picker (e.g. " km",
+///   " mph", " W", " bpm"); summary metrics borrow their base metric's label
+/// - `"custom"` or absent → the manual `suffix` string if any (absent keeps
+///   pre-`suffix_mode` templates rendering their manual suffix unchanged)
+fn resolve_suffix(cfg: &ValueConfig) -> Option<String> {
+    match cfg.suffix_mode.as_deref() {
+        Some("none") => None,
+        Some("auto") => {
+            let unit_attr = summary_base_metric(&cfg.value).unwrap_or(cfg.value.as_str());
+            units::display_suffix(unit_attr, cfg.unit.as_deref())
+        }
+        _ => cfg.suffix.clone().filter(|s| !s.is_empty()),
     }
 }
 
 /// Format raw seconds into a human-readable string.
-/// `fmt`: "hh:mm:ss" | "hh:mm" | "mm:ss" | "h" | "m" | "s" (default).
+/// `fmt`: "hh:mm:ss" | "hh:mm" | "mm:ss" | "h m" | "h" | "m" | "s" (default).
 /// `twelve_hour`: convert 24h → 12h for clock formats.
 /// `show_ampm`: append " AM"/" PM" suffix (only when `twelve_hour` is true).
 fn format_time(
@@ -1735,6 +1760,17 @@ fn format_time(
             let m = secs / 60;
             let s = secs % 60;
             format!("{m}:{s:02}")
+        }
+        "h m" | "hm" => {
+            // Compact "2h 34m"; drop the hours part entirely when it's zero.
+            let secs = raw.abs() as i64;
+            let h = secs / 3600;
+            let m = (secs % 3600) / 60;
+            if h > 0 {
+                format!("{h}h {m}m")
+            } else {
+                format!("{m}m")
+            }
         }
         "h" => {
             let v = raw / 3600.0;
@@ -2021,6 +2057,179 @@ mod tests {
             super::format_value(cfg.sample(&activity, 0, Some(72.0)), cfg),
             "4.2"
         );
+    }
+
+    /// The compact "h m" format renders "2h 34m", truncates seconds, and drops
+    /// the hours part when it is zero.
+    #[test]
+    fn time_format_h_m_is_compact() {
+        assert_eq!(
+            super::format_time(
+                2.0 * 3600.0 + 34.0 * 60.0 + 59.0,
+                Some("h m"),
+                None,
+                false,
+                false
+            ),
+            "2h 34m"
+        );
+        assert_eq!(
+            super::format_time(34.0 * 60.0, Some("h m"), None, false, false),
+            "34m"
+        );
+        assert_eq!(
+            super::format_time(0.0, Some("h m"), None, false, false),
+            "0m"
+        );
+    }
+
+    /// Summary metrics resolve to a constant value from the precomputed
+    /// summaries, honor `summary_scope`, and format through their base metric's
+    /// unit/time rules (km suffix, elevation metres, hh:mm:ss).
+    #[test]
+    fn summary_metrics_format_via_base_metric() {
+        use crate::render::activity::{
+            ATTR_DISTANCE, ATTR_ELEVATION, ATTR_TIME, Activity, ActivitySummary,
+        };
+        use crate::render::template::Element;
+
+        let full = ActivitySummary {
+            total_distance: 42_195.0, // metres
+            total_time: 3661.0,       // 1:01:01
+            elevation_gain: 512.0,
+            ..Default::default()
+        };
+        let clip = ActivitySummary {
+            total_distance: 1000.0,
+            ..Default::default()
+        };
+        let activity = Activity {
+            valid_attributes: vec![
+                ATTR_DISTANCE.into(),
+                ATTR_ELEVATION.into(),
+                ATTR_TIME.into(),
+            ],
+            activity_summary: full,
+            overlay_summary: clip,
+            ..Activity::default()
+        };
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100 },
+            "elements": [
+                { "type": "value", "id": "d", "value": "total_distance",
+                  "unit": "km", "suffix": " km", "decimal_rounding": 1, "x": 0, "y": 0 },
+                { "type": "value", "id": "e", "value": "elevation_gain",
+                  "unit": "m", "suffix": " m", "x": 0, "y": 0 },
+                { "type": "value", "id": "t", "value": "total_time",
+                  "time_format": "hh:mm:ss", "x": 0, "y": 0 },
+                { "type": "value", "id": "d2", "value": "total_distance",
+                  "summary_scope": "overlay", "unit": "m", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let fmt = |i: usize| {
+            let Element::Value(cfg) = &t.elements[i] else {
+                panic!("expected value element")
+            };
+            super::format_value(cfg.sample(&activity, 0, None), cfg)
+        };
+
+        assert_eq!(fmt(0), "42.2 km"); // whole activity, km, 1 decimal
+        assert_eq!(fmt(1), "512 m"); // elevation gain in metres
+        assert_eq!(fmt(2), "1:01:01"); // total time hh:mm:ss
+        assert_eq!(fmt(3), "1000"); // overlay-scoped distance, metres, no suffix
+    }
+
+    /// suffix_mode: "auto" tracks the unit (and summary base metric), "none"
+    /// drops any suffix, "custom"/absent keep the manual `suffix` verbatim.
+    #[test]
+    fn suffix_mode_resolves_auto_none_and_custom() {
+        use crate::render::activity::{ATTR_DISTANCE, ATTR_SPEED, Activity, ActivitySummary};
+        use crate::render::template::Element;
+
+        let activity = Activity {
+            speed: vec![10.0], // 10 m/s
+            valid_attributes: vec![ATTR_SPEED.into(), ATTR_DISTANCE.into()],
+            activity_summary: ActivitySummary {
+                total_distance: 5000.0,
+                ..Default::default()
+            },
+            ..Activity::default()
+        };
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100 },
+            "elements": [
+                // auto on a live metric follows the unit token
+                { "type": "value", "id": "a", "value": "speed",
+                  "unit": "mph", "suffix_mode": "auto", "x": 0, "y": 0 },
+                // auto on a summary metric borrows the base metric's label
+                { "type": "value", "id": "b", "value": "total_distance",
+                  "unit": "km", "suffix_mode": "auto", "decimal_rounding": 1, "x": 0, "y": 0 },
+                // none drops a leftover manual suffix
+                { "type": "value", "id": "c", "value": "speed",
+                  "unit": "mph", "suffix": " mph", "suffix_mode": "none", "x": 0, "y": 0 },
+                // custom keeps the manual suffix verbatim
+                { "type": "value", "id": "d", "value": "speed",
+                  "unit": "mph", "suffix": " miles/hr", "suffix_mode": "custom", "x": 0, "y": 0 },
+                // absent mode with a manual suffix stays custom (back-compat)
+                { "type": "value", "id": "e", "value": "speed",
+                  "unit": "mph", "suffix": " mph", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let fmt = |i: usize| {
+            let Element::Value(cfg) = &t.elements[i] else {
+                panic!("expected value element")
+            };
+            super::format_value(cfg.sample(&activity, 0, None), cfg)
+        };
+
+        assert_eq!(fmt(0), "22 mph"); // 10 m/s → 22.37 mph, auto suffix
+        assert_eq!(fmt(1), "5.0 km"); // summary distance, auto suffix
+        assert_eq!(fmt(2), "22"); // none → no suffix despite manual field
+        assert_eq!(fmt(3), "22 miles/hr"); // custom verbatim
+        assert_eq!(fmt(4), "22 mph"); // legacy: manual suffix, no mode
+    }
+
+    /// scene.units = "imperial" fills every unit-bearing element that left its
+    /// unit unset; explicit per-element units still win, and metrics without a
+    /// metric/imperial distinction are untouched.
+    #[test]
+    fn scene_units_imperial_fills_unset_convertible_metrics() {
+        use crate::render::activity::{ATTR_POWER, ATTR_SPEED, Activity};
+        use crate::render::template::Element;
+
+        let activity = Activity {
+            speed: vec![10.0], // 10 m/s
+            power: vec![200.0],
+            valid_attributes: vec![ATTR_SPEED.into(), ATTR_POWER.into()],
+            ..Activity::default()
+        };
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100, "units": "imperial" },
+            "elements": [
+                // unset unit → inherits scene imperial
+                { "type": "value", "id": "a", "value": "speed", "suffix_mode": "auto", "x": 0, "y": 0 },
+                // explicit metric unit overrides the scene system
+                { "type": "value", "id": "b", "value": "speed", "unit": "kmh", "suffix_mode": "auto", "x": 0, "y": 0 },
+                // non-convertible metric is untouched by the scene system
+                { "type": "value", "id": "c", "value": "power", "suffix_mode": "auto", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let fmt = |i: usize| {
+            let Element::Value(cfg) = &t.elements[i] else {
+                panic!("expected value element")
+            };
+            super::format_value(cfg.sample(&activity, 0, None), cfg)
+        };
+
+        assert_eq!(fmt(0), "22 mph"); // inherited imperial
+        assert_eq!(fmt(1), "36 km/h"); // explicit override wins (10 m/s = 36 km/h)
+        assert_eq!(fmt(2), "200 W"); // power unaffected
     }
 
     /// Meters and gauges auto-scale off `activity_metric_range`, which for W/kg

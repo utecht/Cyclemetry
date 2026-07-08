@@ -9,7 +9,7 @@
    *      Config `y` for text is the Skia baseline, so we subtract ~0.8×font_size
    *      to approximate the visual top of the glyph.
    */
-  import { getContext, untrack } from 'svelte'
+  import { getContext, untrack, onMount } from 'svelte'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import ElementHandle from './ElementHandle.svelte'
 
@@ -161,6 +161,78 @@
   // During a group drag: { leaderId, dx, dy }. Non-leader selected handles
   // follow via groupOffset so the whole selection moves in unison.
   let liveGroup = $state(null)
+
+  // ── Smart center guides ─────────────────────────────────────────────────────
+  // While a single element is dragged, its center snaps to the canvas center
+  // and a crimson guide line marks the active axis. [{ axis: 'v'|'h', pos }].
+  let activeGuides = $state([])
+  // The leader's own ElementHandle only knows its raw drag delta; this is the
+  // snap correction (snapped − raw) so its box + floated pixels track the snap.
+  let leaderSnap = $state({ dx: 0, dy: 0 })
+  // Snap zone as a fraction of the scene dimension — resolution-independent in
+  // screen terms since the canvas fills roughly the same display width.
+  const SNAP_FRACTION = 0.005
+
+  // Snap a raw drag delta so the element's center clicks onto the canvas center
+  // line when within threshold. Single-element drags only (groups pass through).
+  function snapDelta(id, dx, dy) {
+    if (isGroupDrag(id)) return { dx, dy, guides: [] }
+    const base = dragBase?.baseElements.get(id) ?? elements.find((e) => e.id === id)
+    if (!base) return { dx, dy, guides: [] }
+    const tx = sceneWidth / 2
+    const ty = sceneHeight / 2
+    const cx = base.x + base.w / 2 + dx
+    const cy = base.y + base.h / 2 + dy
+    const guides = []
+    let sdx = dx
+    let sdy = dy
+    if (Math.abs(cx - tx) <= sceneWidth * SNAP_FRACTION) {
+      sdx = dx + (tx - cx)
+      guides.push({ axis: 'v', pos: tx })
+    }
+    if (Math.abs(cy - ty) <= sceneHeight * SNAP_FRACTION) {
+      sdy = dy + (ty - cy)
+      guides.push({ axis: 'h', pos: ty })
+    }
+    return { dx: sdx, dy: sdy, guides }
+  }
+
+  // Center the primary-selected element on the canvas. Uses the same
+  // output-space bounds the handles draw, so it works for every element type
+  // and honors current text alignment. Registered on app so the properties
+  // panel's Center buttons can call it. axis: 'h' | 'v' | 'both'.
+  function alignToCanvasCenter(id, axis) {
+    const el = elById(id)
+    if (!el || el.locked) return
+    const b = elements.find((e) => e.id === id)
+    if (!b) return
+    const s = authorScale || 1
+    const wantH = axis === 'h' || axis === 'both'
+    const wantV = axis === 'v' || axis === 'both'
+    const ddx = wantH ? (sceneWidth / 2 - (b.x + b.w / 2)) / s : 0
+    const ddy = wantV ? (sceneHeight / 2 - (b.y + b.h / 2)) / s : 0
+    const preConfig = JSON.stringify(app.config)
+    let updates
+    if (el.anchor?.target) {
+      // Anchored elements derive x/y from their target — shift the offset.
+      const a = el.anchor
+      updates = { anchor: { ...a, offset_x: Math.round((a.offset_x ?? 0) + ddx), offset_y: Math.round((a.offset_y ?? 0) + ddy) } }
+    } else {
+      updates = {}
+      if (wantH) updates.x = Math.round((el.x ?? 0) + ddx)
+      if (wantV) updates.y = Math.round((el.y ?? 0) + ddy)
+    }
+    app.commitElementUpdate(preConfig, id, updates)
+    // Show config-derived bounds at the new spot until the fresh frame lands.
+    const next = new SvelteSet(movedIds)
+    next.add(id)
+    movedIds = next
+  }
+
+  onMount(() => {
+    app.setAlignHandler(alignToCanvasCenter)
+    return () => app.setAlignHandler(null)
+  })
 
   // Live rotation state: { id, degrees } while the user is dragging the handle.
   let liveRotation = $state(null)
@@ -344,16 +416,26 @@
 
   function handleDrag(id, dx, dy) {
     ensureDragBase(id)
+    // Snap the delta to the canvas center and surface the guide line.
+    const snapped = snapDelta(id, dx, dy)
+    activeGuides = snapped.guides
+    leaderSnap = { dx: snapped.dx - dx, dy: snapped.dy - dy }
     // Float the cropped real pixels under the cursor; group members and
     // anchored followers ride along via groupOffsetFor. No live re-render: a
     // server-side render can't keep up with a drag, and queuing them only
     // delays the single commit render we want immediately on drop.
-    liveGroup = { leaderId: id, dx, dy }
-    moveDragSnaps(dx, dy)
+    liveGroup = { leaderId: id, dx: snapped.dx, dy: snapped.dy }
+    moveDragSnaps(snapped.dx, snapped.dy)
   }
 
   function handleDragEnd(id, dx, dy) {
     ensureDragBase(id)
+    // Commit the snapped position so the drop lands exactly on center.
+    const snapped = snapDelta(id, dx, dy)
+    dx = snapped.dx
+    dy = snapped.dy
+    activeGuides = []
+    leaderSnap = { dx: 0, dy: 0 }
     const ids = isGroupDrag(id) ? [...selectedSet] : [id]
     const idSet = new Set(ids)
     const moves = ids.map(sid => moveFor(sid, dx, dy, idSet)).filter(Boolean)
@@ -377,7 +459,10 @@
   }
 
   function groupOffsetFor(id) {
-    if (liveGroup && liveGroup.leaderId !== id) {
+    if (liveGroup) {
+      // The leader's own handle already applies the raw delta — add just the
+      // snap correction so its box tracks the snapped (floated) pixels.
+      if (liveGroup.leaderId === id) return leaderSnap
       if (selectedSet.size > 1 && selectedSet.has(id) && selectedSet.has(liveGroup.leaderId))
         return { dx: liveGroup.dx, dy: liveGroup.dy }
       if (dragBase?.followerIds?.has(id)) return { dx: liveGroup.dx, dy: liveGroup.dy }
@@ -621,6 +706,15 @@
       onresize={(corner, dx, dy, shift) => handleResize(el.id, corner, dx, dy, shift)}
       onresizeend={(corner, dx, dy, shift) => handleResizeEnd(el.id, corner, dx, dy, shift)}
     />
+  {/each}
+
+  <!-- Center snap guides — crimson line on the axis the element is centered on -->
+  {#each activeGuides as g (g.axis)}
+    {#if g.axis === 'v'}
+      <line x1={g.pos} y1={0} x2={g.pos} y2={sceneHeight} stroke="#dc143c" stroke-width="1" vector-effect="non-scaling-stroke" style="pointer-events:none" />
+    {:else}
+      <line x1={0} y1={g.pos} x2={sceneWidth} y2={g.pos} stroke="#dc143c" stroke-width="1" vector-effect="non-scaling-stroke" style="pointer-events:none" />
+    {/if}
   {/each}
 
   {#if marquee && (marquee.w > 0 || marquee.h > 0)}

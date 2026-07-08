@@ -65,6 +65,8 @@ function stripSceneDefaults(scene) {
   const out = { ...scene }
   if (out.fps === 30) delete out.fps
   if (out.vars && Object.keys(out.vars).length === 0) delete out.vars
+  // Metric is the default unit system, so drop a redundant explicit "metric".
+  if (out.units === 'metric') delete out.units
   // start/end are activity-specific timeline bounds, not template config.
   // Strip them so templates stay GPX-agnostic and always open at the full
   // activity range when loaded.

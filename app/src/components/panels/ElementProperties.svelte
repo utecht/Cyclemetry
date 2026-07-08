@@ -5,7 +5,7 @@
    */
   import { getContext } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
-  import { AlertTriangle, Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
+  import { AlertTriangle, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
   import Input from '../ui/Input.svelte'
   import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
@@ -31,8 +31,49 @@
     ]
   }
   const ALL_METRICS = ['speed', 'heartrate', 'power', 'power_to_weight', 'elevation', 'cadence', 'gradient', 'lean', 'temperature', 'gear', 'front_gear', 'rear_gear', 'time', 'distance']
+
+  // Summary (aggregate) metrics: a single constant value over the whole ride
+  // or the overlay window. Each maps to the base telemetry attribute it needs,
+  // used both for availability (base must be present) and unit resolution.
+  const SUMMARY_BASE = {
+    total_distance: 'distance',
+    total_time: 'time',
+    elevation_gain: 'elevation',
+    elevation_loss: 'elevation',
+    max_elevation: 'elevation',
+    min_elevation: 'elevation',
+    avg_speed: 'speed',
+    max_speed: 'speed',
+    avg_power: 'power',
+    max_power: 'power',
+    avg_heartrate: 'heartrate',
+    max_heartrate: 'heartrate',
+    avg_cadence: 'cadence',
+  }
+  const ALL_SUMMARY_METRICS = Object.keys(SUMMARY_BASE)
+  const isSummaryMetric = (m) => m in SUMMARY_BASE
+  const SUMMARY_SCOPES = [
+    { value: 'activity', label: 'Whole activity' },
+    { value: 'overlay', label: 'Overlay window' },
+  ]
+
   // Friendly labels for metrics whose raw key isn't self-explanatory.
-  const METRIC_LABELS = { power_to_weight: 'W/kg' }
+  const METRIC_LABELS = {
+    power_to_weight: 'W/kg',
+    total_distance: 'Total distance',
+    total_time: 'Total time',
+    elevation_gain: 'Elevation gain',
+    elevation_loss: 'Elevation loss',
+    max_elevation: 'Max elevation',
+    min_elevation: 'Min elevation',
+    avg_speed: 'Avg speed',
+    max_speed: 'Max speed',
+    avg_power: 'Avg power',
+    max_power: 'Max power',
+    avg_heartrate: 'Avg heart rate',
+    max_heartrate: 'Max heart rate',
+    avg_cadence: 'Avg cadence',
+  }
   const metricLabel = (m) => METRIC_LABELS[m] ?? m
   const ALL_PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
   const ALL_METER_METRICS = ['speed', 'heartrate', 'power', 'power_to_weight', 'elevation', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear']
@@ -43,7 +84,22 @@
     return list.filter((m) => valid.includes(m))
   }
 
+  // Summary metrics are available when their base telemetry attribute is
+  // present in the loaded activity.
+  function filterSummary(list) {
+    const valid = app.activityMetrics
+    if (!valid) return list
+    return list.filter((m) => valid.includes(SUMMARY_BASE[m]))
+  }
+
   const METRICS = $derived(filterMetrics(ALL_METRICS))
+  const SUMMARY_METRICS = $derived(filterSummary(ALL_SUMMARY_METRICS))
+  // Value-element dropdown: live metrics first, then summary metrics, each in
+  // its own labeled group.
+  const VALUE_METRIC_OPTIONS = $derived([
+    ...METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Live' })),
+    ...SUMMARY_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Summary' })),
+  ])
   const PLOT_METRICS = $derived(filterMetrics(ALL_PLOT_METRICS))
   const METER_METRICS = $derived(filterMetrics(ALL_METER_METRICS))
   const METER_DIRECTIONS = [
@@ -78,6 +134,7 @@
     { value: 'hh:mm:ss', label: 'HH:MM:SS' },
     { value: 'hh:mm', label: 'HH:MM' },
     { value: 'mm:ss', label: 'MM:SS' },
+    { value: 'h m', label: '2h 34m' },
     { value: 's', label: 'Seconds' },
     { value: 'm', label: 'Minutes' },
     { value: 'h', label: 'Hours' },
@@ -182,6 +239,26 @@
   // Default unit token per metric, used when the element has none set yet
   // (matches the Rust-side default so the picker reflects what renders).
   const DEFAULT_UNIT = { distance: 'km', speed: 'kmh', elevation: 'm', temperature: 'c' }
+
+  // Value suffix modes. "auto" tracks the unit picker (km↔mi, W, bpm, …);
+  // "custom" appends the free-text `suffix`; "none" appends nothing.
+  const SUFFIX_MODES = [
+    { value: 'none', label: 'None' },
+    { value: 'auto', label: 'Auto (unit)' },
+    { value: 'custom', label: 'Custom' },
+  ]
+  // Resolve the effective mode for the picker. Templates authored before
+  // suffix_mode existed carry a manual `suffix` with no mode → show "Custom".
+  function suffixMode(item) {
+    if (item.suffix_mode) return item.suffix_mode
+    return item.suffix ? 'custom' : 'none'
+  }
+  function setSuffixMode(v) {
+    const s = selected()
+    if (!s) return
+    // Clear the manual suffix when leaving Custom so it can't linger unseen.
+    app.updateElement(s.id, { suffix_mode: v, suffix: v === 'custom' ? s.item.suffix : undefined })
+  }
   const markerId = () => `marker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
   // Resolve the unit token to show in the picker, mapping legacy
   // metric/imperial (or unset) to the matching precise token.
@@ -190,6 +267,34 @@
     if (opts.some((o) => o.value === unit)) return unit
     if (unit === 'imperial') return { distance: 'mi', speed: 'mph', elevation: 'ft', temperature: 'f' }[metric]
     return DEFAULT_UNIT[metric]
+  }
+
+  // Scene-wide unit system ("metric" | "imperial"), default metric.
+  function sceneUnitSystem() {
+    return app.config?.scene?.units === 'imperial' ? 'imperial' : 'metric'
+  }
+  // Concrete token a metric resolves to under the current scene system —
+  // used to label the "Auto (…)" picker row so it names what it inherits.
+  function sceneUnit(metric) {
+    return displayUnit(metric, sceneUnitSystem())
+  }
+  // Concrete unit an element actually renders in: its explicit unit, or the
+  // scene system when it's left on Auto (unit unset).
+  function effectiveUnit(metric, unit) {
+    return unit == null ? sceneUnit(metric) : displayUnit(metric, unit)
+  }
+  // Value shown in a unit picker: '' = Auto (inherit scene), else the concrete
+  // token (legacy metric/imperial map onto their precise option).
+  function unitValue(metric, unit) {
+    return unit == null ? '' : displayUnit(metric, unit)
+  }
+  // Picker options with an Auto row on top that names the inherited unit.
+  function unitOptions(metric) {
+    return [{ value: '', label: `Auto (${sceneUnit(metric)})` }, ...(UNITS_BY_METRIC[metric] ?? [])]
+  }
+  // Store a picked unit; '' (Auto) clears the field so the element inherits.
+  function changeUnit(v) {
+    update('unit', v || undefined)
   }
 
   let selected = $derived(() => {
@@ -226,7 +331,7 @@
 
   function metricRangeUnit(item) {
     if (!item?.value) return null
-    return UNITS_BY_METRIC[item.value] ? displayUnit(item.value, item.unit) : item.unit
+    return UNITS_BY_METRIC[item.value] ? effectiveUnit(item.value, item.unit) : item.unit
   }
 
   function rangeContext() {
@@ -343,16 +448,20 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
   function changeDistanceUnit(newUnit) {
     const s = selected()
     if (!s) return
-    const oldUnit = displayUnit('distance', s.item.unit)
-    const updates = { unit: newUnit }
+    // '' = Auto (inherit scene); convert the target against the concrete unit
+    // each side actually resolves to, but persist the raw choice (undefined for
+    // Auto) so the element keeps following the scene toggle.
+    const oldUnit = effectiveUnit('distance', s.item.unit)
+    const newConcrete = newUnit === '' ? sceneUnit('distance') : newUnit
+    const updates = { unit: newUnit || undefined }
     const t = s.item.distance_target
-    if (oldUnit !== newUnit && t != null && t !== '' && !Number.isNaN(Number(t))) {
+    if (oldUnit !== newConcrete && t != null && t !== '' && !Number.isNaN(Number(t))) {
       const toM = (v, u) => (u === 'm' ? v : u === 'mi' ? v * 1609.34 : v * 1000)
       const fromM = (m, u) => (u === 'm' ? m : u === 'mi' ? m / 1609.34 : m / 1000)
       const meters = toM(Number(t), oldUnit)
-      const conv = fromM(meters, newUnit)
+      const conv = fromM(meters, newConcrete)
       updates.distance_target =
-        newUnit === 'm' ? Math.round(conv) : Math.round(conv * 100) / 100
+        newConcrete === 'm' ? Math.round(conv) : Math.round(conv * 100) / 100
     }
     app.updateElement(s.id, updates)
   }
@@ -819,6 +928,29 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
       />
     </div>
 
+    <!-- Align — snap the element to the exact canvas center -->
+    <div class="mb-4 flex items-center gap-2">
+      <span class="mr-auto text-[10px] uppercase tracking-wider text-zinc-600">Align</span>
+      <Tooltip content="Center horizontally">
+        <button
+          onclick={() => app.alignSelected('h')}
+          aria-label="Center horizontally on canvas"
+          class="cursor-pointer rounded-[6px] border border-zinc-800 bg-zinc-900/40 p-1.5 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+        >
+          <AlignHorizontalJustifyCenter size={14} />
+        </button>
+      </Tooltip>
+      <Tooltip content="Center vertically">
+        <button
+          onclick={() => app.alignSelected('v')}
+          aria-label="Center vertically on canvas"
+          class="cursor-pointer rounded-[6px] border border-zinc-800 bg-zinc-900/40 p-1.5 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+        >
+          <AlignVerticalJustifyCenter size={14} />
+        </button>
+      </Tooltip>
+    </div>
+
     <!-- ═══ LABEL ═══ -->
     {#if type === 'label'}
       <!-- Text: all text properties in one place -->
@@ -877,14 +1009,32 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <p class="text-[10px] uppercase tracking-wider text-zinc-600">Metric</p>
         <Select
           value={item.value ?? ''}
-          options={METRICS.map((m) => ({ value: m, label: metricLabel(m) }))}
+          options={VALUE_METRIC_OPTIONS}
           onchange={(v) => update('value', v)}
         />
 
-        {#if item.value === 'distance'}
+        {#if isSummaryMetric(item.value)}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Scope</span>
+          <Select value={item.summary_scope ?? 'activity'} options={SUMMARY_SCOPES} onchange={(v) => update('summary_scope', v)} />
+        </label>
+        {#if UNITS_BY_METRIC[SUMMARY_BASE[item.value]]}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit('distance', item.unit)} options={UNITS_BY_METRIC.distance} onchange={(v) => changeDistanceUnit(v)} />
+          <Select value={unitValue(SUMMARY_BASE[item.value], item.unit)} options={unitOptions(SUMMARY_BASE[item.value])} onchange={(v) => changeUnit(v)} />
+        </label>
+        {/if}
+        {#if item.value === 'total_time'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Format</span>
+          <Select value={item.time_format ?? 'hh:mm:ss'} options={TIME_FORMATS} onchange={(v) => update('time_format', v)} />
+        </label>
+        {/if}
+
+        {:else if item.value === 'distance'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={unitValue('distance', item.unit)} options={unitOptions('distance')} onchange={(v) => changeDistanceUnit(v)} />
         </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Reference</span>
@@ -892,8 +1042,8 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         </label>
         {#if item.distance_reference === 'until_custom' || item.distance_reference === 'since_custom'}
         <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Point ({displayUnit('distance', item.unit)})</span>
-          {#if displayUnit('distance', item.unit) === 'm'}
+          <span class="text-xs text-zinc-500">Point ({effectiveUnit('distance', item.unit)})</span>
+          {#if effectiveUnit('distance', item.unit) === 'm'}
           <Input type="number"
             value={item.distance_target != null ? Math.round(item.distance_target) : ''}
             min={0} step={1}
@@ -986,15 +1136,22 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         {:else if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+          <Select value={unitValue(item.value, item.unit)} options={unitOptions(item.value)} onchange={(v) => changeUnit(v)} />
+        </label>
+        {/if}
+
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Suffix</span>
+          <Select value={suffixMode(item)} options={SUFFIX_MODES} onchange={(v) => setSuffixMode(v)} />
+        </label>
+        {#if suffixMode(item) === 'custom'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Custom suffix</span>
+          <Input value={item.suffix ?? ''} placeholder="e.g. kilometers" oninput={(e) => update('suffix', e.target.value || undefined)} />
         </label>
         {/if}
 
         {#if showAdvanced}
-        <label class="space-y-1 block">
-          <span class="text-xs text-zinc-500">Suffix</span>
-          <Input value={item.suffix ?? ''} placeholder="e.g. mph" oninput={(e) => update('suffix', e.target.value || undefined)} />
-        </label>
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Decimal places</span>
           <Input type="number" value={numVal(item, 'decimal_rounding')} min={0} max={4} oninput={(e) => update('decimal_rounding', e.target.value)} />
@@ -1310,7 +1467,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         {#if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+          <Select value={unitValue(item.value, item.unit)} options={unitOptions(item.value)} onchange={(v) => changeUnit(v)} />
         </label>
         {/if}
         <div class="grid grid-cols-2 gap-2">
@@ -1568,7 +1725,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         {#if UNITS_BY_METRIC[item.value]}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
-          <Select value={displayUnit(item.value, item.unit)} options={UNITS_BY_METRIC[item.value]} onchange={(v) => update('unit', v)} />
+          <Select value={unitValue(item.value, item.unit)} options={unitOptions(item.value)} onchange={(v) => changeUnit(v)} />
         </label>
         {/if}
         <div class="grid grid-cols-2 gap-2">

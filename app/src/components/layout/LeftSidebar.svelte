@@ -288,6 +288,20 @@
         />
       </div>
 
+      <!-- Unit system — every readout on "Auto" follows this; per-element
+           unit overrides still win. -->
+      <div class="space-y-1">
+        <span class="text-[11px] text-zinc-500">Units</span>
+        <Select
+          value={app.config.scene.units ?? 'metric'}
+          options={[
+            { value: 'metric', label: 'Metric (km, m, °C)' },
+            { value: 'imperial', label: 'Imperial (mi, ft, °F)' },
+          ]}
+          onchange={(v) => app.updateScene({ units: v === 'imperial' ? 'imperial' : undefined })}
+        />
+      </div>
+
       <!-- Rider weight — powers the W/kg metric. Stored on this device only and
            never written into the template, so sharing a template can't leak it. -->
       <div class="space-y-1">
