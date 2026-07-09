@@ -2,7 +2,7 @@
   "elements": [
     {
       "decimal_rounding": 0,
-      "font_size": 120,
+      "font_size": 240,
       "id": "value-2",
       "suffix_mode": "auto",
       "tabular_figures": true,
@@ -10,81 +10,81 @@
       "time_format": "h m",
       "type": "value",
       "value": "running_time",
-      "x": 610,
-      "y": 1200
+      "x": 1100,
+      "y": 2250
     },
     {
       "color": "#ffffff",
-      "font_size": 69,
+      "font_size": 140,
       "id": "label-2",
       "text": "Time",
       "type": "label",
-      "x": 513,
-      "y": 1050
+      "x": 892,
+      "y": 1950
     },
     {
       "decimal_rounding": 0,
-      "font_size": 120,
+      "font_size": 240,
       "id": "value-1",
       "suffix_mode": "auto",
       "tabular_figures": true,
       "text_align": "center",
       "type": "value",
       "value": "running_elevation_gain",
-      "x": 607,
-      "y": 850
+      "x": 1083,
+      "y": 1550
     },
     {
       "color": "#ffffff",
-      "font_size": 69,
+      "font_size": 140,
       "id": "label-1",
       "text": "Elev Gain",
       "type": "label",
-      "x": 434,
-      "y": 700
+      "x": 730,
+      "y": 1250
     },
     {
       "color": "#ffffff",
-      "font_size": 69,
+      "font_size": 140,
       "id": "label-0",
       "text": "Distance",
       "text_align": "center",
       "type": "label",
-      "x": 600,
-      "y": 350
+      "x": 1080,
+      "y": 550
     },
     {
       "decimal_rounding": 2,
-      "font_size": 120,
+      "font_size": 240,
       "id": "value-0",
       "suffix_mode": "auto",
       "tabular_figures": true,
       "text_align": "center",
       "type": "value",
       "value": "running_distance",
-      "x": 606,
-      "y": 500
+      "x": 1085,
+      "y": 850
     },
     {
-      "height": 649,
+      "height": 1134,
       "id": "plot-0",
       "line": {
         "color": "#ffffff",
         "future_opacity": 0,
-        "width": 10
+        "width": 20
       },
       "point": {
         "color": "#ffffff",
         "edge_color": "#ffffff",
         "edge_width": 0,
         "remove_edge_color": true,
-        "weight": 1000
+        "weight": 2000
       },
       "type": "plot",
       "value": "course",
-      "width": 818,
-      "x": 198,
-      "y": 1361
+      "width": 1390,
+      "x": 385,
+      "y": 2499
     }
   ],
   "scene": {
@@ -119,10 +119,10 @@
     },
     "font": "Year in Sport Font.otf",
     "font_size": 64,
-    "height": 2160,
+    "height": 3840,
     "opacity": 1,
     "target_duration": 3,
     "units": "imperial",
-    "width": 3840
+    "width": 2160
   }
 }

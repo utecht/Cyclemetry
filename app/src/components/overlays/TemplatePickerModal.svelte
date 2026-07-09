@@ -254,7 +254,7 @@
                       <img
                         src={tpl.preview_url}
                         alt={tpl.name}
-                        class="w-full h-full object-cover"
+                        class="w-full h-full object-contain"
                         onerror={() => onImgError(tpl.id)}
                       />
                     {:else}
@@ -331,7 +331,7 @@
                       <img
                         src={tpl.preview_url}
                         alt={tpl.name}
-                        class="w-full h-full object-cover"
+                        class="w-full h-full object-contain"
                         onerror={() => onImgError(tpl.id)}
                       />
                     {:else}

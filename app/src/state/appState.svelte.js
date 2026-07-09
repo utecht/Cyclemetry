@@ -1292,6 +1292,35 @@ export function createAppState() {
     return () => clearTimeout(timer)
   })
 
+  // Retarget the output resolution to a template's authored aspect ratio.
+  // The renderer scales templates by height and keeps whatever output shape is
+  // set globally, so a vertical template loaded into a 16:9 output renders with
+  // everything crammed to one side. When a template's aspect differs from the
+  // current output aspect, adopt the template's aspect while preserving the
+  // resolution tier (long edge stays put). Matching aspects are left alone so a
+  // user's specific resolution choice within an aspect is respected.
+  function syncOutputToTemplateAspect(scene) {
+    const w = scene?.width
+    const h = scene?.height
+    if (!w || !h) return
+    const templateAspect = w / h
+    const currentAspect = outputHeight ? outputWidth / outputHeight : 1
+    if (Math.abs(templateAspect - currentAspect) < 0.01) return
+    const longEdge = Math.max(outputWidth, outputHeight)
+    let nw
+    let nh
+    if (templateAspect >= 1) {
+      nw = longEdge
+      nh = Math.round(longEdge / templateAspect)
+    } else {
+      nh = longEdge
+      nw = Math.round(longEdge * templateAspect)
+    }
+    // Encoders require even dimensions.
+    outputWidth = nw - (nw % 2)
+    outputHeight = nh - (nh % 2)
+  }
+
   async function loadTemplate(filename) {
     const data = await backend.getTemplate(filename)
     const loaded = migrateConfig(data)
@@ -1305,6 +1334,7 @@ export function createAppState() {
         start: currentStart,
         end: currentEnd > currentStart ? currentEnd : activityDuration,
       }
+      syncOutputToTemplateAspect(loaded.scene)
     }
     config = loaded
     loadedTemplateFilename = filename
