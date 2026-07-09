@@ -11,6 +11,7 @@ Community templates are browsable and installable directly from within Cyclemetr
 | **Jeff** | ![Jeff](jeff/preview.jpg) |
 | **NorCal** | ![NorCal](norcal/preview.jpg) |
 | **Safa** | ![Safa](safa/preview.jpg) |
+| **Strava** | ![Strava](strava/preview.jpg) |
 | **Will** | ![Will](will/preview.jpg) |
 
 <!-- SHOWCASE_END -->
@@ -34,7 +35,7 @@ Template README format:
 ```md
 # My Template
 
-## Inspiration
+## Design
 
 - [Creator video title](https://www.youtube.com/watch?v=...)
 
@@ -49,7 +50,7 @@ Template README format:
 2. Create a new folder under `templates/` using lowercase snake_case (e.g. `templates/my_template/`).
 3. Add your template JSON at `templates/my_template/my_template.json`.
 4. Add a `preview.jpg` — a 1920×1080 screenshot of the overlay rendered over a real activity. This is required; templates without a preview won't appear in the in-app browser.
-5. Add a `README.md` inside your folder. Use the H1 for the display name, include the preview image, and add an `## Inspiration` section if the design was inspired by a video.
+5. Add a `README.md` inside your folder. Use the H1 for the display name, include the preview image, and add a `## Design` section if the design was inspired by a video.
 6. Optionally include your name/handle, a description, and any notes about which activity types or data fields the template expects.
 7. Open a **pull request** against `main`. Include a brief description of the template and link to any video it was designed for.
 

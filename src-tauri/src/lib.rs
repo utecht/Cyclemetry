@@ -1525,6 +1525,7 @@ async fn backend_activity_distance_info(
         overlay_filename: None,
         start: Some(scene_start),
         end: Some(scene_end),
+        target_duration: None,
         decimal_rounding: None,
         color: None,
         opacity: None,
@@ -1585,6 +1586,7 @@ async fn backend_activity_metric_range(
         overlay_filename: None,
         start: Some(scene_start),
         end: Some(scene_end),
+        target_duration: None,
         decimal_rounding: None,
         color: None,
         opacity: None,
@@ -2015,6 +2017,10 @@ async fn native_render(
     export_format: Option<String>,
     stitch_video_path: Option<String>,
     stitch_video_in: Option<f64>,
+    // Transparent overlay exports: when true, emit the full canvas (dead space
+    // around the overlay) instead of cropping to the visible elements. Defaults
+    // to false (crop + placement-offset sidecar). Ignored for stitched.
+    full_frame: Option<bool>,
     // Rider weight (kg) for the W/kg metric. A local editor setting, never part
     // of the saved template — see `SceneConfig::rider_weight_kg`.
     rider_weight_kg: Option<f32>,
@@ -2100,6 +2106,7 @@ async fn native_render(
                 &assets_dirs,
                 export_format,
                 stitch.as_ref(),
+                full_frame.unwrap_or(false),
                 &progress_clone,
             )
         }))
@@ -2254,6 +2261,14 @@ async fn native_demo(
             };
             let mut preview_scene = template.scene.clone();
             preview_scene.fps = preview_fps;
+            // The preview scrubs ride-time across the whole window; the editor
+            // indexes frames by ride-second × preview_fps. A time-lapse
+            // (target_duration) would instead compress the window into a handful
+            // of output frames, breaking that mapping (every later scrub position
+            // would clamp to the last frame). So the preview always samples the
+            // full window at real time; the frontend plays it back fast to
+            // reflect the time-lapse output length.
+            preview_scene.target_duration = None;
             let mut preview_template = template.clone();
             preview_template.scene = preview_scene;
             let activity = activity
@@ -2496,6 +2511,9 @@ async fn native_calibrate_export(
             &assets_dirs,
             format,
             None,
+            // Calibration measures bits-per-pixel-second, which is independent
+            // of crop vs full-frame — use the default (cropped) path.
+            false,
             &progress,
         );
         let elapsed_ms = t0.elapsed().as_millis() as u64;
@@ -2942,6 +2960,33 @@ pub fn run() {
                     ],
                 )?;
                 app.set_menu(menu)?;
+
+                // macOS shows a Spotlight-style search field at the top of the
+                // Help menu, but only once AppKit knows which submenu *is* the
+                // Help menu. Because Tauri installs the menu programmatically
+                // after launch, AppKit's title-based auto-detection has already
+                // run and found nothing — so point `helpMenu` at our "Help"
+                // submenu explicitly to opt back into the search field.
+                {
+                    use objc2::MainThreadMarker;
+                    use objc2_app_kit::NSApplication;
+                    let mtm = MainThreadMarker::new().expect("setup must run on main thread");
+                    let ns_app = NSApplication::sharedApplication(mtm);
+                    if let Some(main_menu) = ns_app.mainMenu() {
+                        for i in 0..main_menu.numberOfItems() {
+                            let Some(item) = main_menu.itemAtIndex(i) else {
+                                continue;
+                            };
+                            let Some(submenu) = item.submenu() else {
+                                continue;
+                            };
+                            if submenu.title().to_string() == "Help" {
+                                unsafe { ns_app.setHelpMenu(Some(&submenu)) };
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 app.on_menu_event(|app_handle, event| {
                     use tauri::Emitter;

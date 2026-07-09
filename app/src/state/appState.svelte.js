@@ -126,6 +126,12 @@ export function createAppState() {
   // Animation), both transparent-overlay .mov files; or 'stitched' — an H.264
   // .mp4 with the overlay composited onto the reference video.
   let exportFormat = $state(localStorage.getItem('exportFormat') ?? 'prores')
+  // For transparent overlay exports: emit the full canvas (transparent dead
+  // space around the overlay, drop-in at 0,0) instead of cropping to the
+  // visible elements. Defaults to false (crop + placement-offset sidecar).
+  let exportFullFrame = $state(
+    localStorage.getItem('exportFullFrame') === 'true',
+  )
   // Snapshot of `config` as it was last loaded/saved. Used to detect unsaved
   // template edits. Output resolution lives outside `config`, so switching a
   // 1080p template into a 4K view never marks it modified.
@@ -225,6 +231,7 @@ export function createAppState() {
   })
   $effect(() => {
     localStorage.setItem('exportFormat', exportFormat)
+    localStorage.setItem('exportFullFrame', String(exportFullFrame))
   })
   $effect(() => {
     if (pristineConfig != null)
@@ -1448,6 +1455,12 @@ export function createAppState() {
     },
     set exportFormat(v) {
       exportFormat = v
+    },
+    get exportFullFrame() {
+      return exportFullFrame
+    },
+    set exportFullFrame(v) {
+      exportFullFrame = v
     },
     get previewFps() {
       return previewFps

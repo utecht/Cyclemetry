@@ -1,11 +1,15 @@
 <script>
   import { onMount } from 'svelte'
+  import Switch from '../ui/Switch.svelte'
 
   let {
     // [{ value, label, container, transparent, desc }] — available export formats.
     formats = [],
     // Preselected format (last used, persisted)
     initial = 'prores',
+    // Preselected sizing for transparent exports (last used, persisted):
+    // false = trim to overlay (crop + placement offset), true = full canvas.
+    initialFullFrame = false,
     // (format) => "~1:20" | null — estimated render wall-clock time
     timeFor = null,
     // (format) => "~1.5 GB" | null — estimated output file size
@@ -23,6 +27,9 @@
 
   let selected = $state(initial)
   let selectedFormat = $derived(formats.find((f) => f.value === selected))
+  // Sizing only applies to transparent overlays; stitched always fills the frame.
+  let fullFrame = $state(initialFullFrame)
+  let showSizing = $derived(!!selectedFormat?.transparent)
 
   // Shared column layout so the header cells and every row align.
   const COLS =
@@ -39,7 +46,7 @@
       oncancel?.()
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      onconfirm?.(selected)
+      onconfirm?.(selected, showSizing && fullFrame)
     }
   }
 </script>
@@ -47,7 +54,7 @@
 <div
   role="dialog"
   aria-modal="true"
-  aria-label="Choose export format"
+  aria-label="Export settings"
   tabindex="-1"
   class="fixed inset-0 z-[60] flex items-center justify-center pt-14"
   onmousedown={(e) => {
@@ -59,7 +66,7 @@
   <div
     class="relative z-10 w-[600px] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-5"
   >
-    <p class="text-base font-semibold text-zinc-100">Select export format</p>
+    <p class="text-base font-semibold text-zinc-100">Export settings</p>
 
     <!-- Comparison table: transparency, render time, and file size side by
          side so the formats are easy to weigh against each other. -->
@@ -179,6 +186,31 @@
       </p>
     {/if}
 
+    <!-- Sizing (transparent overlays only): off crops to the overlay's bounding
+         box with a placement offset for the editor; on keeps the full canvas so
+         the clip drops onto footage at 0,0. Stitched fills the frame either way. -->
+    {#if showSizing}
+      <div
+        class="mt-4 flex items-center justify-between gap-4 rounded-[6px] border border-zinc-700 bg-zinc-800/20 px-3 py-2.5"
+      >
+        <div class="min-w-0">
+          <span class="block text-sm font-medium text-zinc-200"
+            >Full-frame export</span
+          >
+          <span class="mt-0.5 block text-xs leading-snug text-zinc-400">
+            {fullFrame
+              ? 'Full canvas with transparent dead space — drops onto footage at 0,0.'
+              : 'Cropped to the overlay — smaller file, with a placement offset for your editor.'}
+          </span>
+        </div>
+        <Switch
+          checked={fullFrame}
+          ariaLabel="Full-frame export"
+          onchange={(checked) => (fullFrame = checked)}
+        />
+      </div>
+    {/if}
+
     <div class="mt-4 flex justify-end gap-2">
       <button
         onclick={() => oncancel?.()}
@@ -188,7 +220,7 @@
         Cancel
       </button>
       <button
-        onclick={() => onconfirm?.(selected)}
+        onclick={() => onconfirm?.(selected, showSizing && fullFrame)}
         class="text-xs px-3 py-1.5 rounded border border-primary/70 bg-primary/15 text-zinc-100
                hover:border-primary hover:bg-primary/25 cursor-pointer transition-colors"
       >

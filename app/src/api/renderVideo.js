@@ -72,6 +72,9 @@ export default async function renderVideo(state) {
       exportFormat,
       stitch,
       state.riderWeightKg,
+      // Full-frame only applies to transparent overlays; stitched always
+      // composites to full canvas, so force it off there.
+      exportFormat === 'stitched' ? false : state.exportFullFrame,
     )
     const outputPath = startData.output_path
 

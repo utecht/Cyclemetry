@@ -57,6 +57,19 @@
     { value: 'overlay', label: 'Overlay window' },
   ]
 
+  // Running (cumulative-to-current-point) metrics: counters that accumulate
+  // from the ride start up to the current frame, so they tick up as the render
+  // sweeps — the readouts for a time-lapse ride-summary flyover. Like summary
+  // metrics, each maps to the base telemetry attribute it needs.
+  const RUNNING_BASE = {
+    running_time: 'time',
+    running_distance: 'distance',
+    running_elevation_gain: 'elevation',
+    running_elevation_loss: 'elevation',
+  }
+  const ALL_RUNNING_METRICS = Object.keys(RUNNING_BASE)
+  const isRunningMetric = (m) => m in RUNNING_BASE
+
   // Friendly labels for metrics whose raw key isn't self-explanatory.
   const METRIC_LABELS = {
     power_to_weight: 'W/kg',
@@ -73,6 +86,10 @@
     avg_heartrate: 'Avg heart rate',
     max_heartrate: 'Max heart rate',
     avg_cadence: 'Avg cadence',
+    running_time: 'Running time',
+    running_distance: 'Running distance',
+    running_elevation_gain: 'Running climb',
+    running_elevation_loss: 'Running descent',
   }
   const metricLabel = (m) => METRIC_LABELS[m] ?? m
   const ALL_PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
@@ -92,12 +109,22 @@
     return list.filter((m) => valid.includes(SUMMARY_BASE[m]))
   }
 
+  // Running metrics are available when their base telemetry attribute is
+  // present in the loaded activity.
+  function filterRunning(list) {
+    const valid = app.activityMetrics
+    if (!valid) return list
+    return list.filter((m) => valid.includes(RUNNING_BASE[m]))
+  }
+
   const METRICS = $derived(filterMetrics(ALL_METRICS))
   const SUMMARY_METRICS = $derived(filterSummary(ALL_SUMMARY_METRICS))
-  // Value-element dropdown: live metrics first, then summary metrics, each in
-  // its own labeled group.
+  const RUNNING_METRICS = $derived(filterRunning(ALL_RUNNING_METRICS))
+  // Value-element dropdown: live metrics first, then running counters, then
+  // summary metrics, each in its own labeled group.
   const VALUE_METRIC_OPTIONS = $derived([
     ...METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Live' })),
+    ...RUNNING_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Running' })),
     ...SUMMARY_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Summary' })),
   ])
   const PLOT_METRICS = $derived(filterMetrics(ALL_PLOT_METRICS))
@@ -1031,6 +1058,20 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         </label>
         {/if}
 
+        {:else if isRunningMetric(item.value)}
+        {#if UNITS_BY_METRIC[RUNNING_BASE[item.value]]}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Unit</span>
+          <Select value={unitValue(RUNNING_BASE[item.value], item.unit)} options={unitOptions(RUNNING_BASE[item.value])} onchange={(v) => changeUnit(v)} />
+        </label>
+        {/if}
+        {#if item.value === 'running_time'}
+        <label class="space-y-1 block">
+          <span class="text-xs text-zinc-500">Format</span>
+          <Select value={item.time_format ?? 'hh:mm:ss'} options={TIME_FORMATS} onchange={(v) => update('time_format', v)} />
+        </label>
+        {/if}
+
         {:else if item.value === 'distance'}
         <label class="space-y-1 block">
           <span class="text-xs text-zinc-500">Unit</span>
@@ -1156,6 +1197,18 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">Decimal places</span>
           <Input type="number" value={numVal(item, 'decimal_rounding')} min={0} max={4} oninput={(e) => update('decimal_rounding', e.target.value)} />
         </label>
+        <label class="flex items-center justify-between cursor-pointer group">
+          <span class="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors duration-[150ms]">Fixed-width digits</span>
+          <input
+            type="checkbox"
+            checked={item.tabular_figures ?? false}
+            onchange={(e) => update('tabular_figures', e.target.checked || undefined)}
+            class="h-3.5 w-3.5 rounded-sm accent-primary cursor-pointer"
+          />
+        </label>
+        <p class="text-[10px] text-zinc-600 -mt-1">
+          Keeps a changing value from jittering — every digit takes equal width, so the number and suffix stay put.
+        </p>
         {/if}
       </section>
 

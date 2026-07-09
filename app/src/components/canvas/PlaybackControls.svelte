@@ -9,6 +9,10 @@
     end = 1,                    // overlay window end (sceneEnd)
     playing = $bindable(false),
     buffered = [],   // array of seconds that are ready in cache
+    // Time-lapse output length in seconds. When set, the readout shows the
+    // exported clip's time (the whole window compressed into this many seconds)
+    // instead of ride-time, so the preview matches the export.
+    outputDuration = null,
     onseek,
     distanceInfo = null,     // { total_m, overlay_start_m, overlay_end_m }
     customDistanceM = null,  // current custom reference point in metres
@@ -50,6 +54,15 @@
   }
 
   let duration = $derived(end - start)
+
+  // Timecode readout. On a time-lapse, map the ride-time playhead onto the
+  // exported clip's timeline (0 → outputDuration) so it reads e.g. 0:03 / 0:05.
+  let readoutTotal = $derived(outputDuration ?? duration)
+  let readoutCurrent = $derived(
+    outputDuration != null && duration > 0
+      ? ((playhead - start) / duration) * outputDuration
+      : playhead - start,
+  )
 
   // ── Visual smoothing for the scrub thumb ────────────────────────────────
   // During playback the upstream `playhead` updates in coarse hops:
@@ -238,7 +251,7 @@
     </div>
 
     <span class="absolute right-0 font-mono text-[11px] text-zinc-500 tabular-nums">
-      {formatTime(playhead - start)} / {formatTime(duration)}
+      {formatTime(readoutCurrent)} / {formatTime(readoutTotal)}
     </span>
   </div>
 </div>

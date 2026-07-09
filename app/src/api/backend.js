@@ -427,6 +427,7 @@ export const nativeStartRender = (
   exportFormat,
   stitch,
   riderWeightKg,
+  fullFrame,
 ) =>
   invoke('native_render', {
     config,
@@ -437,6 +438,7 @@ export const nativeStartRender = (
     exportFormat: exportFormat ?? null,
     stitchVideoPath: stitch?.videoPath ?? null,
     stitchVideoIn: stitch?.videoIn ?? null,
+    fullFrame: fullFrame ?? false,
     riderWeightKg: riderWeightKg ?? null,
   })
 

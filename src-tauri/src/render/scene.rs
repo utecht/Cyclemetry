@@ -102,6 +102,13 @@ pub fn render_video(
     assets_dirs: &[&str],
     export_format: ExportFormat,
     stitch: Option<&StitchOptions>,
+    // Transparent overlay exports crop to the union of visible elements by
+    // default (smaller files + a placement-offset sidecar for the editor).
+    // When `full_frame` is set, the overlay is emitted at the full canvas size
+    // with transparent dead space instead, so it drops onto footage at 0,0 with
+    // no offset. Ignored for stitched exports (the overlay is composited back to
+    // full canvas anyway, so the internal crop is pure efficiency).
+    full_frame: bool,
     progress: &RenderProgress,
 ) -> Result<(), String> {
     log::info!(
@@ -125,7 +132,18 @@ pub fn render_video(
         "render_video: activity loaded ({} samples)",
         activity.data_len()
     );
-    let activity = activity.sample_for_scene(&template.scene, false)?;
+    // A time-lapse (`target_duration`) speeds the overlay up; the source footage
+    // in a stitched export can't be sped up to match, so the two would desync.
+    // Ignore compression for stitched and render the overlay at real time.
+    let activity =
+        if export_format == ExportFormat::Stitched && template.scene.target_duration.is_some() {
+            log::warn!("render_video: ignoring target_duration for stitched export");
+            let mut scene = template.scene.clone();
+            scene.target_duration = None;
+            activity.sample_for_scene(&scene, false)?
+        } else {
+            activity.sample_for_scene(&template.scene, false)?
+        };
     if progress.cancelled.load(Ordering::Relaxed) {
         return Err("Render cancelled".to_string());
     }
@@ -153,13 +171,22 @@ pub fn render_video(
     // The overlay is mostly transparent; rasterising + piping + encoding the
     // full 4K frame is overhead. compute_crop_rect returns None when cropping
     // wouldn't pay off, in which case we keep the full-frame path.
-    log::info!("render_video: computing crop rect");
-    let crop = crate::render::frame::compute_crop_rect(
-        &activity,
-        template,
-        fonts_dir,
-        Some(&progress.cancelled),
-    );
+    // A full-frame transparent export skips cropping entirely so the output
+    // matches the canvas dimensions (dead space around the overlay). Stitched
+    // always crops internally — the overlay is composited back to full canvas,
+    // so cropping is a pure encode/pipe saving with no effect on the result.
+    let crop = if full_frame && export_format != ExportFormat::Stitched {
+        log::info!("render_video: full-frame export — skipping crop");
+        None
+    } else {
+        log::info!("render_video: computing crop rect");
+        crate::render::frame::compute_crop_rect(
+            &activity,
+            template,
+            fonts_dir,
+            Some(&progress.cancelled),
+        )
+    };
     if progress.cancelled.load(Ordering::Relaxed) {
         return Err("Render cancelled".to_string());
     }

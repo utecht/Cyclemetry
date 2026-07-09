@@ -55,6 +55,33 @@
   let timelineCollapsed = $state(false)
   let sceneCollapsed = $state(false)
 
+  // ── Time-lapse (compress the whole range into a short clip) ──────────────
+  const TIMELAPSE_DEFAULT_SECS = 5
+
+  let timelapseOn = $derived((app.config?.scene?.target_duration ?? 0) > 0)
+
+  // Speed-up factor: how much faster than real time the clip plays.
+  let timelapseSpeedup = $derived.by(() => {
+    const s = app.config?.scene
+    const td = s?.target_duration
+    if (!(td > 0)) return null
+    const start = s.start ?? 0
+    const end = s.end ?? app.timelineDuration
+    const win = end - start
+    return win > 0 ? win / td : null
+  })
+
+  function toggleTimelapse(on) {
+    app.updateScene({ target_duration: on ? TIMELAPSE_DEFAULT_SECS : undefined })
+  }
+
+  function setTargetDuration(v) {
+    const n = Number(v)
+    app.updateScene({
+      target_duration: !isNaN(n) && n > 0 ? n : undefined,
+    })
+  }
+
   let timelineError = $derived.by(() => {
     const s = app.config?.scene
     if (!s) return null
@@ -247,6 +274,42 @@
         {#if timelineError}
           <p class="text-[11px] text-red-500">{timelineError}</p>
         {/if}
+        </div>
+
+        <!-- Time-lapse: sweep the whole range into a short summary clip -->
+        <div class="space-y-1.5 border-t border-zinc-800/70 pt-3">
+          <label class="flex items-center justify-between cursor-pointer group">
+            <span class="text-[11px] text-zinc-500 group-hover:text-zinc-400 transition-colors duration-[150ms]">Time-lapse</span>
+            <input
+              type="checkbox"
+              checked={timelapseOn}
+              onchange={(e) => toggleTimelapse(e.target.checked)}
+              class="h-3.5 w-3.5 rounded-sm accent-primary cursor-pointer"
+            />
+          </label>
+          {#if timelapseOn}
+            <div class="flex items-center gap-2">
+              <input
+                type="number"
+                min="0.5"
+                step="0.5"
+                inputmode="decimal"
+                value={app.config.scene.target_duration ?? TIMELAPSE_DEFAULT_SECS}
+                onchange={(e) => setTargetDuration(e.target.value)}
+                class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
+                       text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <span class="text-zinc-600 text-xs shrink-0">sec</span>
+            </div>
+            <p class="text-[10px] text-zinc-600">
+              {#if timelapseSpeedup}
+                Whole range compressed to {app.config.scene.target_duration ?? TIMELAPSE_DEFAULT_SECS}s
+                (≈{Math.round(timelapseSpeedup)}× speed). Ignored for stitched exports.
+              {:else}
+                Compresses the whole range into a short clip.
+              {/if}
+            </p>
+          {/if}
         </div>
         </div>
         {/if}

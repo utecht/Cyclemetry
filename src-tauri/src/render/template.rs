@@ -32,6 +32,12 @@ pub struct SceneConfig {
     pub overlay_filename: Option<String>,
     pub start: Option<f64>,
     pub end: Option<f64>,
+    /// Time-lapse output length in seconds. When set, the whole trimmed ride
+    /// window (`start`..`end`) is compressed into this many seconds of video
+    /// instead of playing at real time — the basis of the ride-summary flyover.
+    /// Absent = real time (output length equals the window). Ignored on
+    /// stitched exports, where the footage can't be sped up to match.
+    pub target_duration: Option<f64>,
     pub decimal_rounding: Option<i32>,
     pub color: Option<String>,
     pub opacity: Option<f32>,
@@ -329,6 +335,12 @@ pub struct ValueConfig {
     /// (use `suffix` verbatim). When absent, falls back to custom-if-`suffix`-
     /// present-else-none so existing templates render unchanged.
     pub suffix_mode: Option<String>,
+    /// Render digits at a uniform (tabular) advance so a value that changes each
+    /// frame — a running counter, a clock — doesn't reflow: every digit occupies
+    /// the width of the widest digit, so the number and any trailing suffix stay
+    /// put. Non-digit glyphs keep their natural width. Default false (proportional
+    /// figures), so existing templates are unchanged.
+    pub tabular_figures: Option<bool>,
     pub decimal_rounding: Option<i32>,
     pub hours_offset: Option<f32>,
     pub time_format: Option<String>,
@@ -878,11 +890,11 @@ fn resolve_vars(value: &mut serde_json::Value, vars: &HashMap<String, String>) {
     }
 }
 
-/// Whether a metric (or the base metric of a summary metric) has a
+/// Whether a metric (or the base metric of a summary/running metric) has a
 /// metric/imperial distinction the scene unit system should drive.
 fn convertible_metric(metric: &str) -> bool {
-    use crate::render::activity::summary_base_metric;
-    crate::render::units::has_unit_system(summary_base_metric(metric).unwrap_or(metric))
+    use crate::render::activity::unit_base_metric;
+    crate::render::units::has_unit_system(unit_base_metric(metric))
 }
 
 /// Set `unit` to the scene system token when the element left it unset and its
@@ -899,5 +911,45 @@ fn merge_scene_into_item(scene: &serde_json::Value, item: &mut serde_json::Value
         for (k, v) in scene_obj {
             item_obj.entry(k).or_insert_with(|| v.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bundled ride-summary flyover template must always parse through the
+    /// real deserializer and carry the time-lapse + running-metric wiring, so a
+    /// schema change can't silently break the shipped template.
+    #[test]
+    fn bundled_flyover_template_parses() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../templates/flyover/flyover.json"
+        );
+        let text = std::fs::read_to_string(path).expect("flyover template should exist");
+        let raw: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        let template = Template::from_value(raw).expect("flyover template should deserialize");
+
+        assert_eq!(template.scene.target_duration, Some(5.0));
+        let values: Vec<&str> = template
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                Element::Value(c) => Some(c.value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(values.contains(&"running_time"));
+        assert!(values.contains(&"running_distance"));
+        assert!(values.contains(&"running_elevation_gain"));
+        // The course plot draws on progressively (future segment hidden).
+        let plot = template.elements.iter().find_map(|e| match e {
+            Element::Plot(c) => Some(c),
+            _ => None,
+        });
+        let plot = plot.expect("flyover has a course plot");
+        assert_eq!(plot.value, "course");
+        assert_eq!(plot.line.as_ref().and_then(|l| l.future_opacity), Some(0.0));
     }
 }

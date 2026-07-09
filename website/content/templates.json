@@ -55,6 +55,17 @@
     "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/safa/safa.json"
   },
   {
+    "name": "strava",
+    "displayName": "Strava",
+    "design": {
+      "label": "YouTube Inspo",
+      "url": "https://www.youtube.com/shorts/LjLE3ZmaJC4"
+    },
+    "previewUrl": "/templates/strava/preview.jpg",
+    "githubUrl": "https://github.com/walkersutton/cyclemetry/tree/main/templates/strava",
+    "jsonUrl": "https://raw.githubusercontent.com/walkersutton/cyclemetry/main/templates/strava/strava.json"
+  },
+  {
     "name": "will",
     "displayName": "Will",
     "design": {

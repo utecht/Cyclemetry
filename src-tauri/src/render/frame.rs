@@ -7,8 +7,8 @@ use skia_safe::{
 use std::collections::HashMap;
 
 use crate::render::activity::{
-    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, SUM_TOTAL_TIME,
-    decode_gear, is_summary_metric, summary_base_metric,
+    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, RUN_TIME, SUM_TOTAL_TIME,
+    decode_gear, is_summary_metric, running_base_metric, unit_base_metric,
 };
 use crate::render::chart::ChartCache;
 use crate::render::color::{hex_with_opacity, lerp_gradient};
@@ -210,6 +210,16 @@ impl ValueConfig {
         if is_summary_metric(&self.value) {
             return activity.summary_value(&self.value, self.summary_scope.as_deref());
         }
+        // Running counters (running_time / running_distance / running_elevation_*)
+        // accumulate to the current frame. They aren't raw source attributes, so
+        // resolve them before the valid_attributes gate, checking their base
+        // telemetry attribute's availability instead.
+        if let Some(base) = running_base_metric(&self.value) {
+            if !activity.valid_attributes.iter().any(|a| a == base) {
+                return 0.0;
+            }
+            return activity.get_running(&self.value, frame_idx);
+        }
         if !activity.valid_attributes.contains(&self.value) {
             return 0.0;
         }
@@ -263,7 +273,13 @@ impl OverlayElement for ValueConfig {
             .get(font_name)
             .map(|tf| font_from_typeface(tf.clone(), font_size, italic))
             .or_else(|| load_font(font_name, font_size, ctx.fonts_dir, italic))?;
-        let (text_w, rect) = font.measure_str(&text, None);
+        let (natural_w, rect) = font.measure_str(&text, None);
+        let text_w = if self.tabular_figures.unwrap_or(false) {
+            let cell = digit_cell_width(&font, None);
+            measure_tabular_str(&font, &text, None, cell)
+        } else {
+            natural_w
+        };
         let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
         let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
         Some(ElementBounds {
@@ -278,6 +294,8 @@ impl OverlayElement for ValueConfig {
     fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
         let available = if is_summary_metric(&self.value) {
             ctx.activity.has_summary(&self.value)
+        } else if let Some(base) = running_base_metric(&self.value) {
+            ctx.activity.valid_attributes.iter().any(|a| a == base)
         } else {
             ctx.activity.valid_attributes.contains(&self.value)
         };
@@ -303,10 +321,17 @@ impl OverlayElement for ValueConfig {
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
             paint.set_color(color);
-            let text_w = font.measure_str(&display, Some(&paint)).0;
-            let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
             let baseline = align_baseline_y(self.y as f32, &font, self.vertical_align.as_deref());
-            canvas.draw_str(&display, (draw_x, baseline), &font, &paint);
+            if self.tabular_figures.unwrap_or(false) {
+                let cell = digit_cell_width(&font, Some(&paint));
+                let text_w = measure_tabular_str(&font, &display, Some(&paint), cell);
+                let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+                draw_tabular_str(canvas, &display, (draw_x, baseline), &font, &paint, cell);
+            } else {
+                let text_w = font.measure_str(&display, Some(&paint)).0;
+                let draw_x = align_x(self.x as f32, text_w, self.text_align.as_deref());
+                canvas.draw_str(&display, (draw_x, baseline), &font, &paint);
+            }
         }
     }
 }
@@ -1652,6 +1677,67 @@ fn draw_text_with_letter_spacing(
     }
 }
 
+// ─── Tabular figures (fixed-width digits) ───────────────────────────────────
+// A value that changes each frame reflows because proportional digits have
+// different advances ('1' is narrow, '0' wide), so the string width — and any
+// trailing suffix — jitters. Tabular rendering gives every ASCII digit the
+// advance of the widest digit (centering the glyph in that cell), leaving other
+// glyphs natural. `measure_tabular_str` mirrors `draw_tabular_str`'s layout
+// exactly so alignment stays correct.
+
+/// The tabular cell width: the widest advance among ASCII digits `0`–`9`.
+fn digit_cell_width(font: &Font, paint: Option<&Paint>) -> f32 {
+    let mut cell = 0.0f32;
+    for d in b'0'..=b'9' {
+        let adv = font
+            .measure_str((d as char).encode_utf8(&mut [0u8; 1]), paint)
+            .0;
+        if adv > cell {
+            cell = adv;
+        }
+    }
+    cell
+}
+
+/// Width of `text` with each ASCII digit occupying `cell` and every other glyph
+/// its natural advance.
+fn measure_tabular_str(font: &Font, text: &str, paint: Option<&Paint>, cell: f32) -> f32 {
+    let mut buf = [0u8; 4];
+    text.chars().fold(0.0f32, |w, ch| {
+        if ch.is_ascii_digit() {
+            w + cell
+        } else {
+            w + font.measure_str(ch.encode_utf8(&mut buf), paint).0
+        }
+    })
+}
+
+/// Draw `text` with each ASCII digit centered in a fixed `cell` advance and
+/// other glyphs at natural width.
+fn draw_tabular_str(
+    canvas: &Canvas,
+    text: &str,
+    origin: (f32, f32),
+    font: &Font,
+    paint: &Paint,
+    cell: f32,
+) {
+    let (mut x, y) = origin;
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        let s = ch.encode_utf8(&mut buf);
+        let adv = font.measure_str(&*s, Some(paint)).0;
+        if ch.is_ascii_digit() {
+            // Center the digit glyph within its uniform cell.
+            canvas.draw_str(&*s, (x + (cell - adv) / 2.0, y), font, paint);
+            x += cell;
+        } else {
+            canvas.draw_str(&*s, (x, y), font, paint);
+            x += adv;
+        }
+    }
+}
+
 // ─── Value formatting ──────────────────────────────────────────────────────
 
 fn format_value(raw: f64, cfg: &ValueConfig) -> String {
@@ -1668,7 +1754,7 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
         return append(text);
     }
 
-    if cfg.value == ATTR_TIME || cfg.value == SUM_TOTAL_TIME {
+    if cfg.value == ATTR_TIME || cfg.value == SUM_TOTAL_TIME || cfg.value == RUN_TIME {
         let text = format_time(
             raw,
             cfg.time_format.as_deref(),
@@ -1683,7 +1769,7 @@ fn format_value(raw: f64, cfg: &ValueConfig) -> String {
     // elevation_gain) borrow their base metric's unit table so km/mi/ft all
     // work exactly as on the live value. Value elements do not auto-append a
     // unit suffix; the optional manual `suffix` field is applied below.
-    let unit_attr = summary_base_metric(&cfg.value).unwrap_or(cfg.value.as_str());
+    let unit_attr = unit_base_metric(&cfg.value);
     let (conv, _) = units::resolve(unit_attr, cfg.unit.as_deref());
     let v = conv.apply(raw);
 
@@ -1717,7 +1803,7 @@ fn resolve_suffix(cfg: &ValueConfig) -> Option<String> {
     match cfg.suffix_mode.as_deref() {
         Some("none") => None,
         Some("auto") => {
-            let unit_attr = summary_base_metric(&cfg.value).unwrap_or(cfg.value.as_str());
+            let unit_attr = unit_base_metric(&cfg.value);
             units::display_suffix(unit_attr, cfg.unit.as_deref())
         }
         _ => cfg.suffix.clone().filter(|s| !s.is_empty()),
@@ -2141,6 +2227,84 @@ mod tests {
         assert_eq!(fmt(3), "1000"); // overlay-scoped distance, metres, no suffix
     }
 
+    /// Running counters resolve per-frame and format through their base metric:
+    /// running_time as a clock, running_distance in km, running_elevation_gain
+    /// in metres. They also hide when the base telemetry attribute is absent.
+    #[test]
+    fn running_metrics_resolve_and_format_via_base_metric() {
+        use crate::render::activity::{ATTR_DISTANCE, ATTR_ELEVATION, ATTR_TIME, Activity};
+        use crate::render::template::Element;
+
+        let activity = Activity {
+            elapsed_seconds: vec![0.0, 61.0, 3661.0],
+            distance: vec![0.0, 1000.0, 5000.0],
+            cumulative_elevation_gain: vec![0.0, 100.0, 250.0],
+            valid_attributes: vec![
+                ATTR_DISTANCE.into(),
+                ATTR_ELEVATION.into(),
+                ATTR_TIME.into(),
+            ],
+            ..Activity::default()
+        };
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100 },
+            "elements": [
+                { "type": "value", "id": "t", "value": "running_time",
+                  "time_format": "hh:mm:ss", "x": 0, "y": 0 },
+                { "type": "value", "id": "d", "value": "running_distance",
+                  "unit": "km", "suffix_mode": "auto", "decimal_rounding": 1, "x": 0, "y": 0 },
+                { "type": "value", "id": "e", "value": "running_elevation_gain",
+                  "unit": "m", "suffix_mode": "auto", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let fmt = |i: usize, frame: usize| {
+            let Element::Value(cfg) = &t.elements[i] else {
+                panic!("expected value element")
+            };
+            super::format_value(cfg.sample(&activity, frame, None), cfg)
+        };
+
+        // Frame 2: 3661 s → 1:01:01, 5000 m → 5.0 km, 250 m climbed.
+        assert_eq!(fmt(0, 2), "1:01:01");
+        assert_eq!(fmt(1, 2), "5.0 km");
+        assert_eq!(fmt(2, 2), "250 m");
+        // Frame 1 reads the mid-point running totals.
+        assert_eq!(fmt(2, 1), "100 m");
+
+        // Without elevation telemetry, running_elevation_gain reads 0.
+        let no_elev = Activity {
+            valid_attributes: vec![ATTR_DISTANCE.into(), ATTR_TIME.into()],
+            ..activity.clone()
+        };
+        let Element::Value(cfg) = &t.elements[2] else {
+            panic!("expected value element")
+        };
+        assert_eq!(cfg.sample(&no_elev, 1, None), 0.0);
+    }
+
+    /// Tabular figures give every same-length number an identical width, so a
+    /// counting value (and its trailing suffix) doesn't reflow frame to frame.
+    #[test]
+    fn tabular_figures_keep_equal_length_numbers_equal_width() {
+        let fonts_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/fonts");
+        let font = super::load_font("rajdhani-bold.ttf", 100.0, fonts_dir, false)
+            .expect("bundled font should load");
+        let cell = super::digit_cell_width(&font, None);
+        assert!(cell > 0.0);
+
+        // Same digit count → identical tabular width regardless of the digits…
+        let a = super::measure_tabular_str(&font, "100", None, cell);
+        let b = super::measure_tabular_str(&font, "111", None, cell);
+        assert!((a - b).abs() < 1e-3, "tabular widths differ: {a} vs {b}");
+
+        // …and the whole string (digits + suffix) stays put as the value changes.
+        let d1 = super::measure_tabular_str(&font, "1.2 mi", None, cell);
+        let d2 = super::measure_tabular_str(&font, "9.8 mi", None, cell);
+        assert!((d1 - d2).abs() < 1e-3, "suffix reflows: {d1} vs {d2}");
+    }
+
     /// suffix_mode: "auto" tracks the unit (and summary base metric), "none"
     /// drops any suffix, "custom"/absent keep the manual `suffix` verbatim.
     #[test]
@@ -2198,13 +2362,14 @@ mod tests {
     /// metric/imperial distinction are untouched.
     #[test]
     fn scene_units_imperial_fills_unset_convertible_metrics() {
-        use crate::render::activity::{ATTR_POWER, ATTR_SPEED, Activity};
+        use crate::render::activity::{ATTR_DISTANCE, ATTR_POWER, ATTR_SPEED, Activity};
         use crate::render::template::Element;
 
         let activity = Activity {
             speed: vec![10.0], // 10 m/s
             power: vec![200.0],
-            valid_attributes: vec![ATTR_SPEED.into(), ATTR_POWER.into()],
+            distance: vec![1609.34], // 1 mile
+            valid_attributes: vec![ATTR_SPEED.into(), ATTR_POWER.into(), ATTR_DISTANCE.into()],
             ..Activity::default()
         };
 
@@ -2216,7 +2381,9 @@ mod tests {
                 // explicit metric unit overrides the scene system
                 { "type": "value", "id": "b", "value": "speed", "unit": "kmh", "suffix_mode": "auto", "x": 0, "y": 0 },
                 // non-convertible metric is untouched by the scene system
-                { "type": "value", "id": "c", "value": "power", "suffix_mode": "auto", "x": 0, "y": 0 }
+                { "type": "value", "id": "c", "value": "power", "suffix_mode": "auto", "x": 0, "y": 0 },
+                // running metric inherits the scene system via its base (distance)
+                { "type": "value", "id": "d", "value": "running_distance", "suffix_mode": "auto", "decimal_rounding": 1, "x": 0, "y": 0 }
             ]
         });
         let t = Template::from_value(raw).unwrap();
@@ -2230,6 +2397,7 @@ mod tests {
         assert_eq!(fmt(0), "22 mph"); // inherited imperial
         assert_eq!(fmt(1), "36 km/h"); // explicit override wins (10 m/s = 36 km/h)
         assert_eq!(fmt(2), "200 W"); // power unaffected
+        assert_eq!(fmt(3), "1.0 mi"); // running metric follows scene imperial (was "km")
     }
 
     /// Meters and gauges auto-scale off `activity_metric_range`, which for W/kg

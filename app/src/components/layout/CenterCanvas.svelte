@@ -293,7 +293,7 @@
     const dt = (now - lastTick) / 1000
     lastTick = now
     if (!videoIsMaster) {
-      const next = Math.min(app.selectedSecond + dt, sceneEnd)
+      const next = Math.min(app.selectedSecond + dt * playbackSpeedup, sceneEnd)
       app.selectedSecond = next
     }
     // Always check the end condition — works for both master modes.
@@ -340,6 +340,16 @@
 
   let sceneStart = $derived(app.config?.scene?.start ?? 0)
   let sceneEnd = $derived(app.config?.scene?.end ?? app.timelineDuration)
+
+  // Time-lapse: the whole ride window plays back in `target_duration` seconds,
+  // so the editor preview matches the exported clip length. The scrubber still
+  // maps to ride-time (the preview is sampled at real time); we just advance the
+  // playhead `speedup×` faster during playback. 1 = real time (no time-lapse).
+  let playbackSpeedup = $derived.by(() => {
+    const td = app.config?.scene?.target_duration
+    const window = sceneEnd - sceneStart
+    return td > 0 && window > 0 ? window / td : 1
+  })
   let quickStartStep = $derived(!app.config ? 1 : !app.hasActivity ? 2 : 0)
   let quickStartStep1Complete = $derived(!!app.config)
   let quickStartStep2Complete = $derived(app.hasActivity)
@@ -897,6 +907,7 @@
     end={sceneEnd}
     bind:playing
     buffered={bufferedSeconds}
+    outputDuration={playbackSpeedup > 1 ? (app.config?.scene?.target_duration ?? null) : null}
     onseek={seek}
     distanceInfo={(showDistanceBar || showCourseMarkerBar) ? distanceInfo : null}
     customDistanceM={showDistanceBar ? customDistanceM : null}

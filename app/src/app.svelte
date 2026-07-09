@@ -506,7 +506,7 @@
     return () => clearTimeout(timer)
   })
 
-  async function startRender(format) {
+  async function startRender(format, fullFrame = false) {
     showExportFormatDialog = false
     if (rendering || !app.hasActivity) return
     if (format === 'stitched' && (!app.video?.path || app.video.missing)) {
@@ -515,6 +515,9 @@
       if (!app.video?.path || app.video.missing) return
     }
     app.exportFormat = format
+    // Only the transparent formats carry a sizing choice — don't let a stitched
+    // export (always full-frame) clobber the saved overlay preference.
+    if (format !== 'stitched') app.exportFullFrame = fullFrame
     if (!hasRenderedOnce) {
       hasRenderedOnce = true
       localStorage.setItem(RENDERED_ONCE_KEY, 'true')
@@ -542,6 +545,18 @@
   // Estimate render wall-clock time from the last recorded render FPS.
   // Re-evaluates whenever renderingVideo or config changes, so it picks up
   // the freshly-stored FPS right after a render finishes.
+  // Output video length in seconds for a given format. A time-lapse
+  // (scene.target_duration) compresses the whole window into that many seconds;
+  // stitched exports ignore it (the footage can't be sped up to match, mirroring
+  // the Rust guard), so they use the real window length.
+  function outputDurationFor(format) {
+    const start = app.config.scene.start ?? 0
+    const end = app.config.scene.end ?? app.timelineDuration
+    const window = end - start
+    const td = app.config.scene.target_duration
+    return format !== 'stitched' && td > 0 ? td : window
+  }
+
   function renderEstimateSecsFor(format) {
     if (app.renderingVideo || !app.config?.scene || !app.hasActivity)
       return null
@@ -551,15 +566,13 @@
     if (start >= end) return null
     const renderFps = app.renderFpsFor(format)
     if (!renderFps || renderFps <= 0) return null
-    return Math.round(((end - start) * fps) / renderFps)
+    return Math.round((outputDurationFor(format) * fps) / renderFps)
   }
 
   function renderFileSizeEstFor(format) {
     if (!app.config?.scene || !app.hasActivity) return null
     const fps = app.config.scene.fps ?? 30
-    const start = app.config.scene.start ?? 0
-    const end = app.config.scene.end ?? app.timelineDuration
-    const duration = end - start
+    const duration = outputDurationFor(format)
     if (duration <= 0) return null
     const calibration = app.exportSizeCalibrationFor(format)
     // qtrle (lossless RLE) has no reliable prior — its size swings wildly with
@@ -682,6 +695,7 @@
       initial={EXPORT_FORMATS.some((f) => f.value === app.exportFormat)
         ? app.exportFormat
         : EXPORT_FORMATS[0].value}
+      initialFullFrame={app.exportFullFrame}
       timeFor={exportTimeEstimateFor}
       sizeFor={exportSizeEstimateFor}
       testAvailableFor={exportTestAvailableFor}

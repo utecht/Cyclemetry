@@ -39,6 +39,19 @@ pub const SUM_AVG_HEARTRATE: &str = "avg_heartrate";
 pub const SUM_MAX_HEARTRATE: &str = "max_heartrate";
 pub const SUM_AVG_CADENCE: &str = "avg_cadence";
 
+// ─── Running (cumulative-to-current-point) metrics ─────────────────────────
+// Live counters that accumulate from the activity start up to the current
+// frame, so they tick upward as the render sweeps the ride — the readouts for
+// a time-lapse ride-summary flyover. Unlike summary metrics they vary per
+// frame; unlike plain telemetry they aren't a raw source attribute. Time and
+// distance reuse the existing reference machinery (`get_time`/`get_distance`
+// with `activity_start`); elevation gain/loss read precomputed cumulative
+// series. Each resolves through [`Activity::get_running`].
+pub const RUN_TIME: &str = "running_time";
+pub const RUN_DISTANCE: &str = "running_distance";
+pub const RUN_ELEVATION_GAIN: &str = "running_elevation_gain";
+pub const RUN_ELEVATION_LOSS: &str = "running_elevation_loss";
+
 /// Minimum sustained altitude change (metres) that counts toward elevation
 /// gain/loss. Elevation is already Savitzky-Golay smoothed at parse time, so a
 /// gentle floor here just rejects residual jitter without swallowing real hills.
@@ -67,6 +80,29 @@ pub fn is_summary_metric(name: &str) -> bool {
     summary_base_metric(name).is_some()
 }
 
+/// The base telemetry attribute a running metric derives from. Drives unit
+/// resolution (running metrics format identically to their base — km/mi for
+/// distance, hh:mm:ss for time, m/ft for elevation) and availability checks.
+/// Returns `None` for any token that is not a running metric.
+pub fn running_base_metric(name: &str) -> Option<&'static str> {
+    Some(match name {
+        RUN_TIME => ATTR_TIME,
+        RUN_DISTANCE => ATTR_DISTANCE,
+        RUN_ELEVATION_GAIN | RUN_ELEVATION_LOSS => ATTR_ELEVATION,
+        _ => return None,
+    })
+}
+
+/// The base telemetry attribute whose unit table a value token formats through:
+/// its own name for plain live metrics, or the underlying attribute for summary
+/// and running derivatives. Used by the render formatter for unit conversion and
+/// suffix selection.
+pub fn unit_base_metric(name: &str) -> &str {
+    summary_base_metric(name)
+        .or_else(|| running_base_metric(name))
+        .unwrap_or(name)
+}
+
 /// Accumulate total ascent and descent over an elevation series, counting only
 /// moves that reach `threshold` metres from the last counted point.
 fn elevation_gain_loss(elevation: &[f64], threshold: f64) -> (f64, f64) {
@@ -87,6 +123,35 @@ fn elevation_gain_loss(elevation: &[f64], threshold: f64) -> (f64, f64) {
         }
     }
     (gain, loss)
+}
+
+/// Running ascent/descent aligned per index: element `i` is the cumulative gain
+/// (resp. loss) over `elevation[0..=i]`, using the same anchor-threshold logic
+/// as [`elevation_gain_loss`], so the final element equals that function's
+/// total over the same series. Both arrays are the length of `elevation`.
+fn cumulative_elevation_gain_loss(elevation: &[f64], threshold: f64) -> (Vec<f64>, Vec<f64>) {
+    let n = elevation.len();
+    let mut gains = vec![0.0; n];
+    let mut losses = vec![0.0; n];
+    if n < 2 {
+        return (gains, losses);
+    }
+    let mut gain = 0.0;
+    let mut loss = 0.0;
+    let mut anchor = elevation[0];
+    for i in 1..n {
+        let delta = elevation[i] - anchor;
+        if delta >= threshold {
+            gain += delta;
+            anchor = elevation[i];
+        } else if delta <= -threshold {
+            loss += -delta;
+            anchor = elevation[i];
+        }
+        gains[i] = gain;
+        losses[i] = loss;
+    }
+    (gains, losses)
 }
 
 /// Whole-window aggregate metrics, constant across every frame. Computed once
@@ -138,6 +203,13 @@ pub struct Activity {
     pub front_gear: Vec<f64>,
     pub rear_gear: Vec<f64>,
     pub gear: Vec<f64>,
+    /// Running ascent (metres) accumulated from the first sample up to each
+    /// index, aligned 1:1 with the sample series. Backs the
+    /// `running_elevation_gain` metric. Built during resampling; empty until
+    /// then (readouts fall back to 0).
+    pub cumulative_elevation_gain: Vec<f64>,
+    /// Running descent (metres), counterpart to `cumulative_elevation_gain`.
+    pub cumulative_elevation_loss: Vec<f64>,
     pub valid_attributes: Vec<String>,
     /// Total cumulative distance (metres) of the full activity before any trim.
     pub total_activity_distance: f64,
@@ -847,14 +919,25 @@ impl Activity {
     ) -> Result<Self, String> {
         let fps = scene.fps.max(1);
         let start = scene.start.unwrap_or(0.0).max(0.0);
-        self.resample_wall_clock(start, scene.end, fps, synthetic)
+        self.resample_wall_clock(start, scene.end, fps, scene.target_duration, synthetic)
     }
 
+    /// Resample the activity onto an evenly spaced frame grid covering the
+    /// `start`..`end` ride window.
+    ///
+    /// `target_duration`: when `Some(secs)`, the whole window is compressed (or
+    /// stretched) into that many seconds of output — a time-lapse. The frame
+    /// count becomes `secs * fps` and each frame maps linearly across the ride
+    /// window, so the render sweeps the entire ride in `secs`. When `None`,
+    /// output plays at real time (frame count = window · fps), the historical
+    /// behaviour. Either way `elapsed_seconds` stores *ride*-elapsed time, so
+    /// running clocks read true ride time regardless of playback speed.
     pub fn resample_wall_clock(
         &self,
         start: f64,
         end: Option<f64>,
         fps: u32,
+        target_duration: Option<f64>,
         synthetic: bool,
     ) -> Result<Self, String> {
         if !self.has_wall_clock_time_axis() {
@@ -870,7 +953,16 @@ impl Activity {
         let duration = self.elapsed_duration().unwrap_or(0.0);
         let start = start.clamp(0.0, duration);
         let end = end.unwrap_or(duration).clamp(start, duration);
-        let frames = ((end - start) * fps as f64).ceil().max(1.0) as usize;
+        let window = end - start;
+        // Output length: the time-lapse target when set (and positive), else the
+        // window itself (real-time playback).
+        let compress = matches!(target_duration, Some(d) if d > 0.0);
+        let out_duration = if compress {
+            target_duration.unwrap()
+        } else {
+            window
+        };
+        let frames = (out_duration * fps as f64).ceil().max(1.0) as usize;
         let gap_threshold = self.wall_clock_gap_threshold();
 
         let mut out = Activity {
@@ -885,7 +977,20 @@ impl Activity {
         };
 
         for frame in 0..frames {
-            let t = (start + frame as f64 / fps as f64).min(duration);
+            // Ride time sampled for this output frame. Real-time playback keeps
+            // the historical fixed 1/fps grid. Time-lapse instead spreads the
+            // frames evenly across the whole window so the last frame lands
+            // exactly on `end` — the ride is swept start→end in `out_duration`.
+            let t = if compress {
+                if frames <= 1 || window <= 0.0 {
+                    start
+                } else {
+                    start + (frame as f64 / (frames - 1) as f64) * window
+                }
+            } else {
+                start + frame as f64 / fps as f64
+            };
+            let t = t.min(duration);
             out.elapsed_seconds.push(t - start);
             let sample = self.wall_clock_sample(t, gap_threshold);
             out.course.push(sample.course);
@@ -902,6 +1007,13 @@ impl Activity {
             out.rear_gear.push(sample.rear_gear);
             out.gear.push(sample.gear);
         }
+
+        // Running ascent/descent over the resampled elevation series, so the
+        // `running_elevation_gain`/`_loss` counters can read a per-frame total.
+        let (gains, losses) =
+            cumulative_elevation_gain_loss(&out.elevation, ELEVATION_NOISE_THRESHOLD_M);
+        out.cumulative_elevation_gain = gains;
+        out.cumulative_elevation_loss = losses;
 
         out.overlay_summary = out.compute_summary();
         Ok(out)
@@ -1173,6 +1285,28 @@ impl Activity {
             "until_custom" => target_s.map(|t| (t - elapsed).max(0.0)).unwrap_or(0.0),
             "since_custom" => target_s.map(|t| (elapsed - t).max(0.0)).unwrap_or(0.0),
             _ => elapsed, // "overlay_start"
+        }
+    }
+
+    /// Resolve a running (cumulative-to-current-point) metric at `index`, in
+    /// GPX-native units (seconds / metres). Time and distance reuse the
+    /// `activity_start` reference (elapsed and cumulative distance); elevation
+    /// gain/loss read the precomputed running series. Unknown tokens → 0.
+    pub fn get_running(&self, name: &str, index: usize) -> f64 {
+        match name {
+            RUN_TIME => self.get_time(Some("activity_start"), None, 0.0, index),
+            RUN_DISTANCE => self.get_distance(Some("activity_start"), None, index),
+            RUN_ELEVATION_GAIN => self
+                .cumulative_elevation_gain
+                .get(index)
+                .copied()
+                .unwrap_or(0.0),
+            RUN_ELEVATION_LOSS => self
+                .cumulative_elevation_loss
+                .get(index)
+                .copied()
+                .unwrap_or(0.0),
+            _ => 0.0,
         }
     }
 
@@ -1491,6 +1625,7 @@ mod tests {
             overlay_filename: None,
             start: Some(start),
             end: Some(end),
+            target_duration: None,
             decimal_rounding: None,
             color: None,
             opacity: None,
@@ -1675,6 +1810,86 @@ mod tests {
 
         assert_eq!(sampled.speed, vec![12.0, 12.0, 12.0]);
         assert_eq!(sampled.distance, vec![12.0, 12.0, 12.0]);
+    }
+
+    /// A wall-clock activity of `n` evenly-spaced samples over `duration_s`,
+    /// covering 0→1000 m and climbing 100→200 m linearly.
+    fn linear_activity(duration_s: f64, n: usize) -> Activity {
+        let mut a = Activity::default();
+        a.valid_attributes = vec![
+            ATTR_DISTANCE.to_string(),
+            ATTR_ELEVATION.to_string(),
+            ATTR_SPEED.to_string(),
+        ];
+        for i in 0..n {
+            let f = i as f64 / (n - 1) as f64;
+            a.elapsed_seconds.push(f * duration_s);
+            a.distance.push(f * 1000.0);
+            a.elevation.push(100.0 + f * 100.0);
+            a.speed.push(10.0);
+            a.course.push((0.0, f * 0.01));
+        }
+        a.total_activity_distance = 1000.0;
+        a.total_activity_elapsed = duration_s;
+        a.activity_summary = a.compute_summary();
+        a
+    }
+
+    #[test]
+    fn target_duration_sets_frame_count_and_sweeps_full_window() {
+        let a = linear_activity(100.0, 101);
+        let mut scene = wall_clock_scene(0.0, 100.0, 10);
+        scene.target_duration = Some(5.0);
+        let out = a.sample_for_scene(&scene, false).unwrap();
+
+        // 5 s of output at 10 fps, independent of the 100 s ride length.
+        assert_eq!(out.data_len(), 50);
+        // elapsed_seconds is ride time, not output time: sweeps 0 → full window.
+        assert!((out.elapsed_seconds.first().copied().unwrap() - 0.0).abs() < 1e-9);
+        assert!((out.elapsed_seconds.last().copied().unwrap() - 100.0).abs() < 1e-6);
+        // Distance sweeps the whole ride too.
+        assert!((out.distance.last().copied().unwrap() - 1000.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn no_target_duration_keeps_realtime_frame_count() {
+        let a = linear_activity(4.0, 41);
+        let scene = wall_clock_scene(0.0, 4.0, 2); // window 4 s · 2 fps = 8 frames
+        let out = a.sample_for_scene(&scene, false).unwrap();
+        assert_eq!(out.data_len(), 8);
+    }
+
+    #[test]
+    fn running_elevation_gain_accumulates_to_series_total() {
+        let a = linear_activity(100.0, 101);
+        let scene = wall_clock_scene(0.0, 100.0, 4);
+        let out = a.sample_for_scene(&scene, false).unwrap();
+        let n = out.data_len();
+
+        // Monotonic non-decreasing.
+        for w in out.cumulative_elevation_gain.windows(2) {
+            assert!(w[1] >= w[0]);
+        }
+        // Final running gain matches the aggregate over the same series.
+        let (gain, _) = elevation_gain_loss(&out.elevation, ELEVATION_NOISE_THRESHOLD_M);
+        let last = out.get_running(RUN_ELEVATION_GAIN, n - 1);
+        assert!((last - gain).abs() < 1e-9, "last={last} gain={gain}");
+        assert!(last > 90.0, "expected ~100 m of climb, got {last}");
+        // A pure climb accrues no loss.
+        assert_eq!(out.get_running(RUN_ELEVATION_LOSS, n - 1), 0.0);
+    }
+
+    #[test]
+    fn running_time_and_distance_read_current_point() {
+        let a = linear_activity(100.0, 101);
+        let scene = wall_clock_scene(0.0, 100.0, 4);
+        let out = a.sample_for_scene(&scene, false).unwrap();
+        let mid = out.data_len() / 2;
+
+        assert_eq!(out.get_running(RUN_TIME, mid), out.elapsed_seconds[mid]);
+        assert_eq!(out.get_running(RUN_DISTANCE, mid), out.distance[mid]);
+        // Unknown running token resolves to 0.
+        assert_eq!(out.get_running("not_a_metric", mid), 0.0);
     }
 }
 
