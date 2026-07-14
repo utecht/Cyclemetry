@@ -26,10 +26,21 @@ import {
 // The overlay pipeline (same Rust/Skia engine as the desktop app) runs in wasm;
 // the background clip is decoded and the finished mp4 encoded with WebCodecs.
 // Nothing leaves the device.
+//
+// Nothing is rendered until a ride is loaded: before that the page is a template
+// picker, and the stage shows the chosen template's preview rather than a demo
+// ride that isn't the user's.
 
-const DEMO_FONT = 'Year in Sport Font.otf'
-const OUT_W = 1080
-const OUT_H = 1920
+const MANIFEST_URL = '/create/manifest.json'
+
+/** Templates are authored at 4K; render the web export at 1080 on the long edge. */
+const MAX_EDGE = 1920
+
+function outputSize({ width, height }) {
+  const scale = MAX_EDGE / Math.max(width, height)
+  const even = (n) => Math.round((n * scale) / 2) * 2 // odd dimensions break encoders
+  return { width: even(width), height: even(height) }
+}
 
 /** The template's own animation length, used when there's no clip to match. */
 function templateSeconds(templateText) {
@@ -45,9 +56,14 @@ function formatSize(bytes) {
   return bytes > 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.round(bytes / 1e3)} KB`
 }
 
-function UploadTile({ label, hint, accept, file, onPick, onClear, disabled }) {
+function UploadTile({ label, hint, accept, file, onPick, onClear, disabled, openRef }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
+
+  // Lets the empty stage open this same picker instead of owning a second input.
+  useEffect(() => {
+    if (openRef) openRef.current = () => inputRef.current?.click()
+  }, [openRef])
 
   return (
     <div
@@ -240,12 +256,16 @@ export default function CreateClient() {
   const cancelRef = useRef(false)
   const bootedRef = useRef(false)
   const headRef = useRef(null)
+  const gpxOpenRef = useRef(null) // opens the ride tile's file picker from the stage
   const domainRef = useRef(MAX_OVERLAY_SECONDS)
   const timelineRef = useRef(null)
   const lastOverlayRef = useRef(-1)
   const playRef = useRef({ raf: 0, startedAt: 0, lastIdx: -1, drawing: false })
 
-  const [session, setSession] = useState(null)
+  const [engineReady, setEngineReady] = useState(false)
+  const [templates, setTemplates] = useState([])
+  const [templateId, setTemplateId] = useState(null)
+  const [session, setSession] = useState(null) // null until a ride is loaded
   const [clipSeconds, setClipSeconds] = useState(null) // null unless a video is loaded
   const [overlaySeconds, setOverlaySeconds] = useState(null)
   const [startSeconds, setStartSeconds] = useState(0)
@@ -255,14 +275,26 @@ export default function CreateClient() {
   const [headFrame, setHeadFrame] = useState(0) // the paused playhead; the frame a still exports
   const [gpxName, setGpxName] = useState(null)
   const [bgName, setBgName] = useState(null)
+  const [dropping, setDropping] = useState(false) // a GPX is hovering over the empty stage
   const [status, setStatus] = useState('Starting render engine…')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(true)
   const [progress, setProgress] = useState(null)
   const [result, setResult] = useState(null)
 
+  const template = templates.find((t) => t.id === templateId) ?? null
   const timeline = session ? buildTimeline(session, clipSeconds, startSeconds) : null
   timelineRef.current = timeline
+
+  /** Size the canvases to the session's output, which the template decides. */
+  function sizeCanvases(w, h) {
+    overlayRef.current.width = w
+    overlayRef.current.height = h
+    pixelsRef.current = new ImageData(w, h)
+    canvasRef.current.width = w
+    canvasRef.current.height = h
+    lastOverlayRef.current = -1
+  }
 
   /** Draw output frame `i` — background at i/fps, overlay at its own offset clock. */
   async function drawPreview(i) {
@@ -287,8 +319,8 @@ export default function CreateClient() {
     }
     compositeFrame(
       canvas.getContext('2d'),
-      OUT_W,
-      OUT_H,
+      tl.width,
+      tl.height,
       bg,
       sample,
       overlayIdx >= 0 ? overlayRef.current : null,
@@ -335,13 +367,25 @@ export default function CreateClient() {
   // length changes — the length lives in the template, so it needs a re-init.
   // Debounced so dragging the duration slider doesn't re-parse the GPX on every
   // pixel. The start offset is pure timeline math and never lands here.
+  //
+  // No ride, no scene: the wasm engine can synthesize a demo activity, but a
+  // stranger's numbers on screen are worse than no preview at all.
   useEffect(() => {
-    if (!bootedRef.current || overlaySeconds == null) return
+    if (!bootedRef.current || !template || !gpxPathRef.current || overlaySeconds == null) return
     const timer = setTimeout(async () => {
+      setStatus('Building your ride…')
       setBusy(true)
       try {
-        const template = retimeTemplate(baseTemplateRef.current, overlaySeconds)
-        const built = initSession(modRef.current, template, gpxPathRef.current, OUT_W, OUT_H)
+        const out = outputSize(template)
+        const retimed = retimeTemplate(baseTemplateRef.current, overlaySeconds)
+        const built = initSession(
+          modRef.current,
+          retimed,
+          gpxPathRef.current,
+          out.width,
+          out.height,
+        )
+        sizeCanvases(built.width, built.height)
         setSession(built)
         setResult(null)
         rewind()
@@ -353,6 +397,60 @@ export default function CreateClient() {
     }, 120)
     return () => clearTimeout(timer)
   }, [revision, overlaySeconds])
+
+  // Pull the chosen template's JSON and fonts into the wasm filesystem. Changing
+  // template resets the overlay's length to whatever that template wants (or to
+  // the clip, when there is one) and rebuilds the scene if a ride is loaded.
+  useEffect(() => {
+    if (!engineReady || !templateId) return
+    const picked = templates.find((t) => t.id === templateId)
+    let stale = false
+
+    ;(async () => {
+      setStatus('Loading template…')
+      setBusy(true)
+      try {
+        const [templateText, ...fonts] = await Promise.all([
+          fetch(picked.template).then((r) => {
+            if (!r.ok) throw new Error(`failed to load the ${picked.name} template`)
+            return r.text()
+          }),
+          ...picked.fonts.map((font) =>
+            fetch(`/create/fonts/${encodeURIComponent(font)}`).then((r) => {
+              if (!r.ok) throw new Error(`failed to load the font ${font}`)
+              return r.arrayBuffer()
+            }),
+          ),
+        ])
+        if (stale) return
+
+        picked.fonts.forEach((font, i) => {
+          writeFile(modRef.current, `/fonts/${font}`, new Uint8Array(fonts[i]))
+        })
+        baseTemplateRef.current = templateText
+        bootedRef.current = true
+
+        setResult(null)
+        setStartSeconds(0)
+        setOverlaySeconds(
+          clipSeconds ? clampOverlay(clipSeconds, clipSeconds) : templateSeconds(templateText),
+        )
+        setRevision((r) => r + 1)
+      } catch (e) {
+        if (!stale) setError(String(e?.message ?? e))
+      } finally {
+        if (!stale) setBusy(false)
+      }
+    })()
+
+    return () => {
+      stale = true
+    }
+    // clipSeconds is read, not tracked: a new clip retimes the overlay through
+    // its own handler, and re-running this on every clip swap would refetch the
+    // template for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineReady, templateId, templates])
 
   // Play the overlay as a loop rather than a scrubber: the timeline is a few
   // seconds long, so a phone-shaped preview is better served by watching it
@@ -398,28 +496,21 @@ export default function CreateClient() {
   useEffect(() => {
     ;(async () => {
       try {
-        const mod = await loadEngine()
-        modRef.current = mod
-
-        setStatus('Loading template…')
-        const [templateRes, fontRes] = await Promise.all([
-          fetch('/create-demo/template.json'),
-          fetch(`/create-demo/fonts/${encodeURIComponent(DEMO_FONT)}`),
+        setStatus('Loading templates…')
+        const [mod, manifest] = await Promise.all([
+          loadEngine(),
+          fetch(MANIFEST_URL).then((r) => {
+            if (!r.ok) throw new Error('failed to load the template list')
+            return r.json()
+          }),
         ])
-        if (!templateRes.ok || !fontRes.ok) throw new Error('failed to fetch demo assets')
-        baseTemplateRef.current = await templateRes.text()
-        writeFile(mod, `/fonts/${DEMO_FONT}`, new Uint8Array(await fontRes.arrayBuffer()))
-
+        if (!manifest.length) throw new Error('no templates are available')
+        modRef.current = mod
         overlayRef.current = document.createElement('canvas')
-        overlayRef.current.width = OUT_W
-        overlayRef.current.height = OUT_H
-        pixelsRef.current = new ImageData(OUT_W, OUT_H)
-        canvasRef.current.width = OUT_W
-        canvasRef.current.height = OUT_H
 
-        setStatus('Building demo ride…')
-        bootedRef.current = true
-        setOverlaySeconds(templateSeconds(baseTemplateRef.current)) // kicks off the first build
+        setTemplates(manifest)
+        setTemplateId(manifest[0].id) // the template effect takes it from here
+        setEngineReady(true)
       } catch (e) {
         setError(String(e?.message ?? e))
         setBusy(false)
@@ -487,6 +578,9 @@ export default function CreateClient() {
         setClipSeconds(null)
       }
       setRevision((r) => r + 1)
+      // The scene effect clears `busy` once it rebuilds; with no ride yet there
+      // is nothing to rebuild, so clear it here or the page stays stuck.
+      if (!gpxPathRef.current) setBusy(false)
     } catch (e) {
       setError(String(e?.message ?? e))
       setBusy(false)
@@ -499,7 +593,7 @@ export default function CreateClient() {
     setBgName(null)
     setClipSeconds(null)
     setStartSeconds(0)
-    setOverlaySeconds(templateSeconds(baseTemplateRef.current))
+    if (baseTemplateRef.current) setOverlaySeconds(templateSeconds(baseTemplateRef.current))
     setRevision((r) => r + 1)
   }
 
@@ -558,6 +652,9 @@ export default function CreateClient() {
   }
 
   const exporting = progress !== null
+  const previewAspect = template
+    ? `${outputSize(template).width} / ${outputSize(template).height}`
+    : '9 / 16'
   const seconds = timeline ? timeline.seconds : 0
   const overlayEnd = (startSeconds ?? 0) + (overlaySeconds ?? 0)
   const domain = clipSeconds ?? MAX_OVERLAY_SECONDS
@@ -580,18 +677,73 @@ export default function CreateClient() {
         <button
           type="button"
           className="preview-hit"
+          hidden={!session}
           disabled={!session || exporting || mode === 'still'}
           aria-label={playing ? 'Pause preview' : 'Play preview'}
           onClick={togglePlay}
         >
-          <canvas ref={canvasRef} className="preview" />
+          <canvas ref={canvasRef} className="preview" style={{ aspectRatio: previewAspect }} />
           {!playing && !exporting && mode === 'video' && (
             <span className="preview-glyph" aria-hidden="true">
               ▶
             </span>
           )}
         </button>
+
+        {/* No ride, nothing on the stage. Showing a stand-in ride here would put
+            numbers on screen that aren't the user's — what the template looks
+            like is the template cards' job. The canvas stays mounted underneath;
+            the refs depend on it. */}
+        {!session && (
+          <button
+            type="button"
+            className={`empty${dropping ? ' empty-drag' : ''}`}
+            style={{ aspectRatio: previewAspect }}
+            disabled={busy}
+            onClick={() => gpxOpenRef.current?.()}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDropping(true)
+            }}
+            onDragLeave={() => setDropping(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDropping(false)
+              const dropped = e.dataTransfer.files?.[0]
+              if (dropped && !busy) onGpxPicked(dropped)
+            }}
+          >
+            <span className="empty-glyph" aria-hidden="true">
+              ↑
+            </span>
+            <span className="empty-text">
+              {busy ? status : 'Add your ride'}
+              {!busy && <span className="empty-sub">Drop a GPX file, or tap to choose</span>}
+            </span>
+          </button>
+        )}
       </div>
+
+      {templates.length > 0 && (
+        <div className="picker">
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`card${t.id === templateId ? ' card-on' : ''}`}
+              aria-pressed={t.id === templateId}
+              disabled={busy || exporting}
+              onClick={() => setTemplateId(t.id)}
+            >
+              <img className="card-thumb" src={t.preview} alt="" />
+              <span className="card-text">
+                <span className="card-name">{t.name}</span>
+                <span className="card-blurb">{t.blurb}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {session && overlaySeconds != null && (
         <div className="timing">
@@ -629,6 +781,7 @@ export default function CreateClient() {
           file={gpxName}
           onPick={onGpxPicked}
           disabled={busy || exporting}
+          openRef={gpxOpenRef}
         />
         <UploadTile
           label="Background photo or clip"
@@ -654,6 +807,7 @@ export default function CreateClient() {
           </div>
         </div>
       ) : (
+        session && (
         <div className="export">
           <div className="seg" role="group" aria-label="What to export">
             <button
@@ -687,10 +841,9 @@ export default function CreateClient() {
               : `Export mp4 · ${seconds.toFixed(1)}s`}
           </button>
 
-          {mode === 'still' && (
-            <p className="msg">Drag the playhead to pick the frame.</p>
-          )}
+          {mode === 'still' && <p className="msg">Drag the playhead to pick the frame.</p>}
         </div>
+        )
       )}
 
       {result && (
@@ -746,9 +899,78 @@ const css = `
 .preview {
   display: block;
   width: 100%;
-  aspect-ratio: ${OUT_W} / ${OUT_H};
   background: #1C1C1C;
 }
+
+/* Pre-ride stage: a drop target, not a stand-in ride. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 260px;
+  padding: 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #1C1C1C;
+  cursor: pointer;
+  transition: background 150ms ease-out;
+}
+.empty:hover:not(:disabled), .empty-drag { background: #242424; }
+.empty:disabled { cursor: default; }
+.empty-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #242424;
+  color: #A7A7A7;
+  font-size: 18px;
+}
+.empty-drag .empty-glyph { background: #DC143C; color: #FAFAFA; }
+.empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #FAFAFA;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+}
+.empty-sub { color: #6F6F6F; font-size: 12px; font-weight: 400; }
+
+.picker { display: flex; flex-direction: column; gap: 8px; }
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px 8px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: #1C1C1C;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease-out, box-shadow 150ms ease-out;
+}
+.card:hover:not(:disabled) { background: #242424; }
+.card:disabled { opacity: 0.5; cursor: not-allowed; }
+.card-on { background: #242424; box-shadow: inset 0 0 0 1px #DC143C; }
+.card-thumb {
+  flex: none;
+  width: 48px;
+  height: 85px; /* 9:16 */
+  object-fit: cover;
+  border-radius: 6px;
+  background: #121212;
+}
+.card-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.card-name { font-size: 14px; color: #FAFAFA; }
+.card-blurb { font-size: 12px; line-height: 1.4; color: #6F6F6F; }
 .preview-glyph {
   position: absolute;
   top: 50%;

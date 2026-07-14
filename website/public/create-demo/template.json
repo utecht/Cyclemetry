@@ -1,0 +1,128 @@
+{
+  "elements": [
+    {
+      "decimal_rounding": 0,
+      "font_size": 240,
+      "id": "value-2",
+      "suffix_mode": "auto",
+      "tabular_figures": true,
+      "text_align": "center",
+      "time_format": "h m",
+      "type": "value",
+      "value": "running_time",
+      "x": 1100,
+      "y": 2250
+    },
+    {
+      "color": "#ffffff",
+      "font_size": 140,
+      "id": "label-2",
+      "text": "Time",
+      "type": "label",
+      "x": 892,
+      "y": 1950
+    },
+    {
+      "decimal_rounding": 0,
+      "font_size": 240,
+      "id": "value-1",
+      "suffix_mode": "auto",
+      "tabular_figures": true,
+      "text_align": "center",
+      "type": "value",
+      "value": "running_elevation_gain",
+      "x": 1083,
+      "y": 1550
+    },
+    {
+      "color": "#ffffff",
+      "font_size": 140,
+      "id": "label-1",
+      "text": "Elev Gain",
+      "type": "label",
+      "x": 730,
+      "y": 1250
+    },
+    {
+      "color": "#ffffff",
+      "font_size": 140,
+      "id": "label-0",
+      "text": "Distance",
+      "text_align": "center",
+      "type": "label",
+      "x": 1080,
+      "y": 550
+    },
+    {
+      "decimal_rounding": 2,
+      "font_size": 240,
+      "id": "value-0",
+      "suffix_mode": "auto",
+      "tabular_figures": true,
+      "text_align": "center",
+      "type": "value",
+      "value": "running_distance",
+      "x": 1085,
+      "y": 850
+    },
+    {
+      "height": 1134,
+      "id": "plot-0",
+      "line": {
+        "color": "#ffffff",
+        "future_opacity": 0,
+        "width": 20
+      },
+      "point": {
+        "color": "#ffffff",
+        "edge_color": "#ffffff",
+        "edge_width": 0,
+        "remove_edge_color": true,
+        "weight": 2000
+      },
+      "type": "plot",
+      "value": "course",
+      "width": 1390,
+      "x": 385,
+      "y": 2499
+    }
+  ],
+  "scene": {
+    "color": "#ffffff",
+    "editor": {
+      "groups": [
+        {
+          "element_ids": [
+            "value-1",
+            "label-1"
+          ],
+          "id": "group-0",
+          "name": "Elev Gain"
+        },
+        {
+          "element_ids": [
+            "label-2",
+            "value-2"
+          ],
+          "id": "group-1",
+          "name": "Time"
+        },
+        {
+          "element_ids": [
+            "label-0",
+            "value-0"
+          ],
+          "id": "group-2",
+          "name": "Distance"
+        }
+      ]
+    },
+    "font": "Year in Sport Font.otf",
+    "font_size": 64,
+    "height": 3840,
+    "opacity": 1,
+    "target_duration": 3,
+    "units": "imperial",
+    "width": 2160
+  }
+}

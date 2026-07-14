@@ -32,4 +32,4 @@ tauri_build.log
 
 # Web companion build artifacts (synced by scripts/sync-wasm-web.mjs)
 website/public/wasm/
-website/public/create-demo/
+website/public/create/
