@@ -1,3 +1,4 @@
+mod activity;
 mod recent;
 mod render;
 mod strava;
@@ -2112,6 +2113,10 @@ async fn native_render(
 
     tokio::task::spawn_blocking(move || {
         log::info!("native_render: worker started");
+        // Held for the whole render: without it, minimizing the window lets macOS
+        // App Nap demote these workers to the efficiency cores mid-export. Dropped
+        // when the worker returns, panic or not.
+        let _activity = activity::RenderActivity::begin("Rendering video");
         // catch_unwind ensures is_running is always cleared even if render_video panics
         // (e.g. Skia surface failure, rayon worker panic). Without this, a panic would
         // silently swallow the JoinHandle error and leave is_running=true forever.
