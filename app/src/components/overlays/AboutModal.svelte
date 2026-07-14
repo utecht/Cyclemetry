@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import WindowDragStrip from './WindowDragStrip.svelte'
   import { getVersion } from '@tauri-apps/api/app'
   import { open } from '@tauri-apps/plugin-shell'
   import { X } from 'lucide-svelte'
@@ -28,6 +29,7 @@
   class="fixed inset-0 z-50 flex items-center justify-center pt-14"
 >
   <div role="presentation" class="absolute inset-0 bg-black/60 backdrop-blur-sm" onmousedown={onclose}></div>
+  <WindowDragStrip />
 
   <!-- Panel -->
   <div class="relative z-10 w-72 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">

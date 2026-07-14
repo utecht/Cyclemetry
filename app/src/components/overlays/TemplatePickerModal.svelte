@@ -1,5 +1,6 @@
 <script>
   import { getContext, onMount } from 'svelte'
+  import WindowDragStrip from './WindowDragStrip.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import * as backend from '@/api/backend.js'
   import { X, Trash2, Plus, Upload } from 'lucide-svelte'
@@ -192,6 +193,7 @@
     aria-label="Close template picker"
     onclick={onclose}
   ></button>
+  <WindowDragStrip />
 
   <div class="relative z-10 flex w-[720px] max-h-[80vh] flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
 

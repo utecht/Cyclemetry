@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import WindowDragStrip from './WindowDragStrip.svelte'
   import { Check, Upload, X } from 'lucide-svelte'
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
   import { listAssets, importAsset } from '../../api/backend.js'
@@ -65,6 +66,7 @@
   onmousedown={(e) => { if (e.target === e.currentTarget) oncancel?.() }}
 >
   <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+  <WindowDragStrip />
 
   <div class="relative z-10 flex flex-col w-[520px] max-h-[72vh] rounded-[14px] border border-white/[0.08] bg-[var(--panel)] shadow-2xl">
 

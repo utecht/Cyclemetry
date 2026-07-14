@@ -1,7 +1,7 @@
 <script>
   import { setContext, onMount } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
-  import { getCurrentWindow } from '@tauri-apps/api/window'
+  import { windowDrag } from './lib/windowDrag.js'
   import { createAppState } from './state/appState.svelte.js'
   import * as backend from './api/backend.js'
   import loadGpx from './api/gpxUtils.js'
@@ -131,22 +131,6 @@
     )
     return preset ? preset.label : `${app.outputWidth}×${app.outputHeight}`
   })
-
-  function isHeaderInteractiveTarget(target) {
-    return target.closest('button, input, a, select, [role="button"]')
-  }
-
-  function onHeaderMousedown(e) {
-    if (e.button !== 0 || e.detail > 1) return
-    if (isHeaderInteractiveTarget(e.target)) return
-    getCurrentWindow().startDragging()
-  }
-
-  function onHeaderDblclick(e) {
-    if (e.button !== 0) return
-    if (isHeaderInteractiveTarget(e.target)) return
-    getCurrentWindow().toggleMaximize()
-  }
 
   function videoBasename(path) {
     if (!path) return ''
@@ -799,8 +783,7 @@
   <!-- ── Header ─────────────────────────────────────────────────────────────── -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
-    onmousedown={onHeaderMousedown}
-    ondblclick={onHeaderDblclick}
+    use:windowDrag
     class="h-[52px] shrink-0 bg-[var(--panel)] rounded-[10px] flex items-center gap-2 pr-3 pl-[88px] z-50"
   >
     <!-- Logo chip -->

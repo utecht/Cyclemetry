@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { TriangleAlert } from 'lucide-svelte'
+  import WindowDragStrip from './WindowDragStrip.svelte'
   import Switch from '../ui/Switch.svelte'
   import { formatFileSize } from '@/lib/utils.js'
 
@@ -80,6 +81,7 @@
   }}
 >
   <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+  <WindowDragStrip />
 
   <div
     class="relative z-10 w-[600px] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-5"

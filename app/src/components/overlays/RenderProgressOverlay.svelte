@@ -1,6 +1,7 @@
 <script>
   import { getContext } from 'svelte'
   import { formatTime } from '@/lib/utils.js'
+  import WindowDragStrip from './WindowDragStrip.svelte'
   import * as backend from '@/api/backend.js'
   import Button from '@/components/ui/Button.svelte'
   import { CirclePause, CircleStop, Minimize2 } from 'lucide-svelte'
@@ -47,7 +48,9 @@
 
 {#if app.renderingVideo && expanded}
   <div class="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/90 backdrop-blur-md">
-    <div class="relative w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl space-y-5">
+    <WindowDragStrip />
+
+    <div class="relative z-10 w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl space-y-5">
       <!-- Icon -->
       <div class="flex flex-col items-center gap-3 text-center">
         {#if paused}
