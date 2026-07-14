@@ -1240,8 +1240,8 @@ fn backend_upload(file_data: Vec<u8>, filename: String) -> Result<String, String
 /// needs it to map activity time onto the video's `creation_time` axis.
 fn gpx_metadata_response(filename: &str, path: &str) -> Result<String, String> {
     use chrono::{TimeZone, Utc};
-    let activity = render::activity::Activity::from_file(path)
-        .map_err(|e| format!("Could not read activity file: {e}"))?;
+    let activity =
+        load_activity_cached(path).map_err(|e| format!("Could not read activity file: {e}"))?;
     if !activity.has_wall_clock_time_axis() {
         return Err(
             "This activity file does not include usable timestamps. Cyclemetry needs activity timestamps to align the overlay timeline.".to_string(),
@@ -1511,9 +1511,9 @@ async fn backend_activity_distance_info(
     let synthetic = gpx_path == "<synthetic>";
     let activity = if synthetic {
         let duration = (scene_end.ceil() as usize).max(60);
-        render::activity::Activity::synthetic(duration)
+        Arc::new(render::activity::Activity::synthetic(duration))
     } else {
-        render::activity::Activity::from_file(&gpx_path)?
+        load_activity_cached(&gpx_path)?
     };
     let total_m = activity.total_activity_distance;
     let scene = render::template::SceneConfig {
@@ -1551,7 +1551,7 @@ async fn backend_activity_distance_info(
 #[tauri::command]
 async fn backend_activity_start_time_ms(gpx_filename: String) -> Option<i64> {
     let path = resolve_gpx_path(&gpx_filename).ok()?.0;
-    render::activity::Activity::from_file(&path)
+    load_activity_cached(&path)
         .ok()
         .and_then(|a| a.start_time_ms)
 }
@@ -1573,9 +1573,9 @@ async fn backend_activity_metric_range(
     let synthetic = gpx_path == "<synthetic>";
     let activity = if synthetic {
         let duration = (scene_end.ceil() as usize).max(60);
-        render::activity::Activity::synthetic(duration)
+        Arc::new(render::activity::Activity::synthetic(duration))
     } else {
-        render::activity::Activity::from_file(&gpx_path)?
+        load_activity_cached(&gpx_path)?
     };
     let scene = render::template::SceneConfig {
         width: 1,
@@ -1979,6 +1979,56 @@ struct DemoCache {
 }
 type SharedDemoCache = Arc<Mutex<Option<DemoCache>>>;
 
+/// Cheap identity stamp for a ride file: (byte length, mtime seconds).
+/// `None` for the synthetic pseudo-path or when the file can't be statted.
+fn gpx_file_stamp(path: &str) -> Option<(u64, i64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((meta.len(), mtime))
+}
+
+/// Process-wide cache of the most recently parsed ride file.
+///
+/// A single config change fans out into many commands that each need the
+/// parsed activity — the preview rebuild, one metric-range call per meter
+/// metric, the distance-slider info. Parsing a large FIT ride costs seconds of
+/// CPU, so without this cache a timeline-trim change ran ~a dozen full parses
+/// in parallel. Callers still window/resample per their own scene params.
+struct ParsedActivity {
+    path: String,
+    stamp: Option<(u64, i64)>,
+    activity: Arc<render::activity::Activity>,
+}
+static PARSED_ACTIVITY: Mutex<Option<ParsedActivity>> = Mutex::new(None);
+
+/// Parse `path` or return the cached parse if the file is unchanged.
+/// The parse deliberately happens while holding the lock: concurrent misses
+/// for the same file wait for one parse instead of racing N identical ones.
+fn load_activity_cached(path: &str) -> Result<Arc<render::activity::Activity>, String> {
+    let stamp = gpx_file_stamp(path);
+    let mut guard = PARSED_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(entry) = guard.as_ref()
+        && entry.path == path
+        && entry.stamp == stamp
+        // An unreadable stamp can't prove the file is unchanged — re-parse.
+        && entry.stamp.is_some()
+    {
+        return Ok(entry.activity.clone());
+    }
+    let activity = Arc::new(render::activity::Activity::from_file(path)?);
+    *guard = Some(ParsedActivity {
+        path: path.to_string(),
+        stamp,
+        activity: activity.clone(),
+    });
+    Ok(activity)
+}
+
 fn quick_hash(s: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -2253,11 +2303,12 @@ async fn native_demo(
             template.scene.rider_weight_kg = rider_weight_kg;
 
             let synthetic = gpx_path == "<synthetic>";
-            let activity = if synthetic {
-                render::activity::Activity::synthetic(60)
+            // Config-only rebuilds (timeline trim, element edits) reuse the
+            // parsed ride via the shared cache; only a changed file re-parses.
+            let source = if synthetic {
+                Arc::new(render::activity::Activity::synthetic(60))
             } else {
-                render::activity::Activity::from_file(&gpx_path)
-                    .map_err(|e| format!("GPX parse error: {e}"))?
+                load_activity_cached(&gpx_path).map_err(|e| format!("GPX parse error: {e}"))?
             };
             let mut preview_scene = template.scene.clone();
             preview_scene.fps = preview_fps;
@@ -2271,7 +2322,7 @@ async fn native_demo(
             preview_scene.target_duration = None;
             let mut preview_template = template.clone();
             preview_template.scene = preview_scene;
-            let activity = activity
+            let activity = source
                 .sample_for_scene(&preview_template.scene, synthetic)
                 .map_err(|e| format!("Activity timeline error: {e}"))?;
 
@@ -2408,10 +2459,9 @@ async fn native_benchmark(
     tokio::task::spawn_blocking(move || {
         let synthetic = gpx_path == "<synthetic>";
         let activity = if synthetic {
-            render::activity::Activity::synthetic(60)
+            Arc::new(render::activity::Activity::synthetic(60))
         } else {
-            render::activity::Activity::from_file(&gpx_path)
-                .map_err(|e| format!("GPX parse: {e}"))?
+            load_activity_cached(&gpx_path).map_err(|e| format!("GPX parse: {e}"))?
         };
         let activity = activity
             .sample_for_scene(&template.scene, synthetic)
@@ -3355,4 +3405,47 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_activity_cached;
+
+    /// The parsed-activity cache must return the same parse for an unchanged
+    /// file and re-parse when the file's content (stamp) changes — this is
+    /// what collapses the N-parses-per-timeline-trim storm into one.
+    #[test]
+    fn parsed_activity_cache_hits_and_invalidates() {
+        let gpx = |elev: &str| {
+            format!(
+                r#"<gpx><trk><trkseg>
+                <trkpt lat="1" lon="2"><ele>{elev}</ele><time>2026-01-01T00:00:00Z</time></trkpt>
+                <trkpt lat="1" lon="2.001"><ele>{elev}</ele><time>2026-01-01T00:00:02Z</time></trkpt>
+                </trkseg></trk></gpx>"#
+            )
+        };
+        let dir = std::env::temp_dir().join("cyclemetry-cache-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ride.gpx");
+        let path_str = path.to_string_lossy().to_string();
+
+        std::fs::write(&path, gpx("100")).unwrap();
+        let a = load_activity_cached(&path_str).unwrap();
+        let b = load_activity_cached(&path_str).unwrap();
+        assert!(
+            std::sync::Arc::ptr_eq(&a, &b),
+            "unchanged file should hit cache"
+        );
+
+        // Different content length → different stamp → fresh parse.
+        std::fs::write(&path, gpx("1234.5")).unwrap();
+        let c = load_activity_cached(&path_str).unwrap();
+        assert!(
+            !std::sync::Arc::ptr_eq(&a, &c),
+            "changed file should re-parse"
+        );
+        assert_ne!(a.elevation[0], c.elevation[0]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
