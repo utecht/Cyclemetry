@@ -15,6 +15,7 @@ import {
   MAX_CLIP_SECONDS,
 } from './lib/background'
 import { exportMp4, ExportCanceled } from './lib/exportVideo'
+import { exportPng } from './lib/exportStill'
 import {
   buildTimeline,
   overlayFrameAt,
@@ -106,6 +107,9 @@ function UploadTile({ label, hint, accept, file, onPick, onClear, disabled }) {
  * One track for the whole clip, with the overlay's animation window drawn on it:
  * drag either handle to retime the ends, drag the window itself to slide it. The
  * playhead rides the same track, so there is a single place to read the timing.
+ *
+ * The two gestures live in separate bands so they can't fight: retiming happens
+ * on the track itself, scrubbing in the strip above it (where the playhead is).
  */
 function RangeBar({
   domain,
@@ -117,6 +121,7 @@ function RangeBar({
   disabled,
   headRef,
   onChange,
+  onSeek,
 }) {
   const trackRef = useRef(null)
   const dragRef = useRef(null)
@@ -173,9 +178,27 @@ function RangeBar({
     onPointerCancel: release,
   })
 
+  // The scrub strip jumps to wherever it's pressed, then tracks the pointer —
+  // no grab offset, since the playhead is a hairline you aim at, not a knob.
+  const seekBand = {
+    onPointerDown: (e) => {
+      if (disabled) return
+      e.preventDefault()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = { handle: 'seek' }
+      onSeek(timeAt(e.clientX))
+    },
+    onPointerMove: (e) => {
+      if (dragRef.current?.handle === 'seek') onSeek(timeAt(e.clientX))
+    },
+    onPointerUp: release,
+    onPointerCancel: release,
+  }
+
   return (
     <div className={`scrub${disabled ? ' scrub-off' : ''}`}>
       <div ref={trackRef} className="scrub-track">
+        <div className="scrub-seek" {...seekBand} />
         <span ref={headRef} className="scrub-head" aria-hidden="true" />
         <div
           className={`scrub-window${grabbed === 'window' ? ' scrub-live' : ''}`}
@@ -228,6 +251,8 @@ export default function CreateClient() {
   const [startSeconds, setStartSeconds] = useState(0)
   const [revision, setRevision] = useState(0) // bumped when the ride or background changes
   const [playing, setPlaying] = useState(true)
+  const [mode, setMode] = useState('video') // what Export produces: 'video' | 'still'
+  const [headFrame, setHeadFrame] = useState(0) // the paused playhead; the frame a still exports
   const [gpxName, setGpxName] = useState(null)
   const [bgName, setBgName] = useState(null)
   const [status, setStatus] = useState('Starting render engine…')
@@ -279,6 +304,24 @@ export default function CreateClient() {
     playRef.current.startedAt = performance.now()
     playRef.current.lastIdx = -1
     lastOverlayRef.current = -1
+    setHeadFrame(0)
+  }
+
+  /** Resume the loop from the frame on screen rather than snapping back to 0. */
+  function resume() {
+    const held = Math.max(playRef.current.lastIdx, 0)
+    playRef.current.startedAt = performance.now() - (held / timelineRef.current.fps) * 1000
+    setPlaying(true)
+  }
+
+  /** Park the playhead on a frame. Scrubbing takes over from the loop. */
+  function seekTo(seconds) {
+    const tl = timelineRef.current
+    if (!tl) return
+    const frame = Math.min(Math.max(Math.round(seconds * tl.fps), 0), tl.totalFrames - 1)
+    playRef.current.lastIdx = frame
+    setPlaying(false)
+    setHeadFrame(frame) // the paused-draw effect paints it
   }
 
   /** Both ends of the overlay window come from the one scrub bar. */
@@ -345,6 +388,13 @@ export default function CreateClient() {
     }
   }, [playing, session, startSeconds])
 
+  // With the loop stopped the playhead alone says what's on screen, so a seek, a
+  // retime, or a rebuilt session all repaint through here.
+  useEffect(() => {
+    if (playing || !session) return
+    drawPreview(headFrame).catch((e) => setError(String(e?.message ?? e)))
+  }, [playing, session, headFrame, startSeconds])
+
   useEffect(() => {
     ;(async () => {
       try {
@@ -378,14 +428,29 @@ export default function CreateClient() {
   }, [])
 
   function togglePlay() {
-    setPlaying((wasPlaying) => {
-      if (!wasPlaying) {
-        // Resume where the loop left off instead of snapping back to frame 0.
-        const held = Math.max(playRef.current.lastIdx, 0)
-        playRef.current.startedAt = performance.now() - (held / timelineRef.current.fps) * 1000
-      }
-      return !wasPlaying
-    })
+    if (playing) {
+      setHeadFrame(Math.max(playRef.current.lastIdx, 0)) // park on the frame showing
+      setPlaying(false)
+    } else {
+      resume()
+    }
+  }
+
+  /**
+   * The mode picks what Export produces. A still is a frame, so choosing it stops
+   * the loop and hands the timeline over to the playhead; going back to video
+   * picks the loop up from that same frame.
+   */
+  function selectMode(next) {
+    if (next === mode) return
+    setMode(next)
+    setResult(null)
+    if (next === 'still' && playing) {
+      setHeadFrame(Math.max(playRef.current.lastIdx, 0))
+      setPlaying(false)
+    } else if (next === 'video' && !playing) {
+      resume()
+    }
   }
 
   async function onGpxPicked(file) {
@@ -438,7 +503,37 @@ export default function CreateClient() {
     setRevision((r) => r + 1)
   }
 
-  async function onExport() {
+  function save(blob, name) {
+    const url = URL.createObjectURL(blob)
+    setResult({ url, size: blob.size, name })
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+  }
+
+  /** A still is one frame, so it needs neither the progress bar nor the cancel path. */
+  async function onExportStill() {
+    setStatus('Rendering still…')
+    setBusy(true)
+    setError(null)
+    setResult(null)
+    try {
+      const blob = await exportPng({
+        mod: modRef.current,
+        timeline,
+        background: backgroundRef.current,
+        frame: headFrame,
+      })
+      save(blob, 'cyclemetry.png')
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onExportVideo() {
     cancelRef.current = false
     setPlaying(false) // the encoder needs the wasm session and the canvases
     setProgress(0)
@@ -452,12 +547,7 @@ export default function CreateClient() {
         onProgress: setProgress,
         shouldCancel: () => cancelRef.current,
       })
-      const url = URL.createObjectURL(blob)
-      setResult({ url, size: blob.size })
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'cyclemetry.mp4'
-      a.click()
+      save(blob, 'cyclemetry.mp4')
     } catch (e) {
       if (!(e instanceof ExportCanceled)) setError(String(e?.message ?? e))
     } finally {
@@ -472,6 +562,7 @@ export default function CreateClient() {
   const overlayEnd = (startSeconds ?? 0) + (overlaySeconds ?? 0)
   const domain = clipSeconds ?? MAX_OVERLAY_SECONDS
   domainRef.current = domain
+  const headSeconds = timeline ? headFrame / timeline.fps : 0
 
   return (
     <div className="create">
@@ -483,15 +574,18 @@ export default function CreateClient() {
       </header>
 
       <div className="stage">
+        {/* In still mode the playhead is the only thing that moves the frame, so
+            the loop stays out of it — otherwise the preview and the frame the
+            export takes could drift apart. */}
         <button
           type="button"
           className="preview-hit"
-          disabled={!session || exporting}
+          disabled={!session || exporting || mode === 'still'}
           aria-label={playing ? 'Pause preview' : 'Play preview'}
           onClick={togglePlay}
         >
           <canvas ref={canvasRef} className="preview" />
-          {!playing && !exporting && (
+          {!playing && !exporting && mode === 'video' && (
             <span className="preview-glyph" aria-hidden="true">
               ▶
             </span>
@@ -511,10 +605,15 @@ export default function CreateClient() {
             disabled={exporting}
             headRef={headRef}
             onChange={setRange}
+            onSeek={seekTo}
           />
           <div className="timing-read">
             <span>{startSeconds.toFixed(1)}s</span>
-            <span className="timing-len">overlay · {overlaySeconds.toFixed(1)}s</span>
+            {mode === 'still' ? (
+              <span className="timing-len">still · {headSeconds.toFixed(1)}s</span>
+            ) : (
+              <span className="timing-len">overlay · {overlaySeconds.toFixed(1)}s</span>
+            )}
             <span>{overlayEnd.toFixed(1)}s</span>
           </div>
         </div>
@@ -555,13 +654,47 @@ export default function CreateClient() {
           </div>
         </div>
       ) : (
-        <button type="button" className="btn" disabled={!session || busy} onClick={onExport}>
-          Export mp4 · {seconds.toFixed(1)}s
-        </button>
+        <div className="export">
+          <div className="seg" role="group" aria-label="What to export">
+            <button
+              type="button"
+              className={`seg-opt${mode === 'video' ? ' seg-on' : ''}`}
+              aria-pressed={mode === 'video'}
+              disabled={busy}
+              onClick={() => selectMode('video')}
+            >
+              Video
+            </button>
+            <button
+              type="button"
+              className={`seg-opt${mode === 'still' ? ' seg-on' : ''}`}
+              aria-pressed={mode === 'still'}
+              disabled={busy}
+              onClick={() => selectMode('still')}
+            >
+              Still
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="btn"
+            disabled={!session || busy}
+            onClick={mode === 'still' ? onExportStill : onExportVideo}
+          >
+            {mode === 'still'
+              ? `Export PNG · ${headSeconds.toFixed(1)}s`
+              : `Export mp4 · ${seconds.toFixed(1)}s`}
+          </button>
+
+          {mode === 'still' && (
+            <p className="msg">Drag the playhead to pick the frame.</p>
+          )}
+        </div>
       )}
 
       {result && (
-        <a className="btn-ghost btn-block" href={result.url} download="cyclemetry.mp4">
+        <a className="btn-ghost btn-block" href={result.url} download={result.name}>
           Save again · {formatSize(result.size)}
         </a>
       )}
@@ -645,13 +778,24 @@ const css = `
 /* One track = the whole clip. The filled window is when the overlay animates;
    the bare track on either side is footage it isn't over (before) or where its
    last frame holds (after). Handles are 44px tall for thumbs, but read as thin. */
-.scrub { padding: 12px 0; touch-action: none; }
+.scrub { padding: 26px 0 12px; touch-action: none; }
 .scrub-off { opacity: 0.4; pointer-events: none; }
 .scrub-track {
   position: relative;
   height: 6px;
   border-radius: 3px;
   background: #242424;
+}
+/* The scrub band sits above the track so seeking and retiming never contend for
+   the same pixels: aim above the line to move the playhead, on it to retime. */
+.scrub-seek {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -26px;
+  height: 26px;
+  cursor: ew-resize;
+  touch-action: none;
 }
 .scrub-window {
   position: absolute;
@@ -688,14 +832,27 @@ const css = `
 .scrub-grip.scrub-live::after { transform: translate(-50%, -50%) scale(1.12); }
 .scrub-head {
   position: absolute;
-  top: -5px;
+  top: -18px;
   left: 0;
   width: 2px;
-  height: 16px;
+  height: 24px;
   border-radius: 1px;
   background: #FAFAFA;
-  opacity: 0.75;
+  opacity: 0.9;
   pointer-events: none;
+}
+/* the cap reads as the thing you grab; the hit target is the band behind it */
+.scrub-head::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #FAFAFA;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
 .timing-read {
   display: flex;
@@ -785,6 +942,30 @@ const css = `
 }
 .btn-ghost:hover { background: #242424; color: #FAFAFA; }
 .btn-block { display: block; min-height: 44px; line-height: 24px; text-align: center; }
+
+/* Mode picker stays neutral — crimson is reserved for the CTA underneath it. */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: #1C1C1C;
+}
+.seg-opt {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #6F6F6F;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.seg-opt:hover:not(:disabled):not(.seg-on) { color: #A7A7A7; }
+.seg-opt:disabled { cursor: not-allowed; }
+.seg-on { background: #242424; color: #FAFAFA; }
 
 .export { display: flex; flex-direction: column; gap: 8px; }
 .bar { height: 6px; border-radius: 3px; background: #242424; overflow: hidden; }
