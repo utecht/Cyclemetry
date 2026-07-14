@@ -23,6 +23,11 @@
     markerStyle = 'checkered',
     markerColor = '#ef4444',
     onmarkerdistancechange,
+    // Race window for lap counting: { start, end } in ride seconds, or null
+    // when no lap-metric element is selected. Rendered as a second playback
+    // bar with two handles — race start (green) and race finish (checkered).
+    lapGate = null,
+    onlapgatechange,
   } = $props()
 
   // Scrubbing is bounded to the overlay render window — the bar's left
@@ -52,6 +57,28 @@
   function onMarkerScrub(e) {
     onmarkerdistancechange?.(parseFloat(e.target.value))
   }
+
+  // Race handles clamp against each other (start stays before finish) and
+  // scrub the preview to the dragged moment so the user can see themselves
+  // cross the line while positioning.
+  function onLapStartScrub(e) {
+    const v = Math.min(parseFloat(e.target.value), (lapGate?.end ?? end) - 1)
+    onlapgatechange?.('start', v)
+    seek(v)
+  }
+
+  function onLapEndScrub(e) {
+    const v = Math.max(parseFloat(e.target.value), (lapGate?.start ?? start) + 1)
+    onlapgatechange?.('end', v)
+    seek(v)
+  }
+
+  let lapStartPct = $derived(
+    lapGate && duration > 0 ? ((lapGate.start - start) / duration) * 100 : 0,
+  )
+  let lapEndPct = $derived(
+    lapGate && duration > 0 ? ((lapGate.end - start) / duration) * 100 : 100,
+  )
 
   let duration = $derived(end - start)
 
@@ -120,11 +147,11 @@
   let markerCss = $derived(`--cm-thumb: ${markerColor || '#ef4444'}`)
 </script>
 
-<div class="flex flex-col gap-2 px-4 py-3 border-t border-zinc-800">
+<div class="flex flex-col gap-2 px-5 pt-3.5 pb-4 border-t border-white/[0.06]">
   <!-- Scrub bar with buffered indicator -->
   <div class="relative h-5 flex items-center">
     <!-- Buffered ranges (visual only) -->
-    <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800 overflow-hidden">
+    <div class="absolute inset-x-0 h-1 rounded-full bg-[var(--panel3)] overflow-hidden">
       {#each buffered as s (s)}
         <div
           class="absolute h-full bg-zinc-600/50 w-[2px]"
@@ -156,7 +183,7 @@
   {#if distanceInfo && customDistanceM !== null}
     <div class="relative h-5 flex items-center">
       <div class="relative w-full h-full flex items-center">
-        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
+        <div class="absolute inset-x-0 h-1 rounded-full bg-[var(--panel3)]"></div>
         <input
           type="range"
           min={distOverlayStart}
@@ -177,7 +204,7 @@
   {#if customTimeS !== null}
     <div class="relative h-5 flex items-center">
       <div class="relative w-full h-full flex items-center">
-        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
+        <div class="absolute inset-x-0 h-1 rounded-full bg-[var(--panel3)]"></div>
         <input
           type="range"
           min={0}
@@ -193,12 +220,53 @@
     </div>
   {/if}
 
+  <!-- Race bar — visible when a lap-metric element is selected. Two handles
+       on one track: race start (green, defines the start/finish line's
+       position) and race finish (checkered). The inputs are stacked with
+       pointer-events routed to the thumbs only, so each handle drags
+       independently; dragging also scrubs the preview to that moment. -->
+  {#if lapGate}
+    <div class="relative h-5 flex items-center">
+      <div class="relative w-full h-full flex items-center">
+        <div class="absolute inset-x-0 h-1 rounded-full bg-[var(--panel3)]"></div>
+        <!-- Race window highlight between the handles -->
+        <div
+          class="absolute h-1 rounded-full bg-emerald-500/25"
+          style="left: {Math.max(0, Math.min(lapStartPct, 100))}%; width: {Math.max(0, Math.min(lapEndPct, 100) - Math.max(0, Math.min(lapStartPct, 100)))}%"
+        ></div>
+        <input
+          type="range"
+          min={start}
+          max={end}
+          step={0.1}
+          value={Math.max(start, Math.min(lapGate.start, end))}
+          oninput={onLapStartScrub}
+          style="--cm-thumb: #22c55e"
+          class="cm-slider lap-handle absolute inset-x-0 h-full w-full"
+          title="Race start: {formatTime(lapGate.start - start)} — drag to the moment you first cross the line"
+          aria-label="Race start"
+        />
+        <input
+          type="range"
+          min={start}
+          max={end}
+          step={0.1}
+          value={Math.max(start, Math.min(lapGate.end, end))}
+          oninput={onLapEndScrub}
+          class="cm-slider lap-handle marker-checkered absolute inset-x-0 h-full w-full"
+          title="Race finish: {formatTime(lapGate.end - start)} — drag to the final crossing"
+          aria-label="Race finish"
+        />
+      </div>
+    </div>
+  {/if}
+
   <!-- Course marker bar — visible when editing a selected map marker.
        Same axis as the distance bar. -->
   {#if distanceInfo && markerDistanceM !== null}
     <div class="relative h-5 flex items-center">
       <div class="relative w-full h-full flex items-center">
-        <div class="absolute inset-x-0 h-1 rounded-full bg-zinc-800"></div>
+        <div class="absolute inset-x-0 h-1 rounded-full bg-[var(--panel3)]"></div>
         <input
           type="range"
           min={distOverlayStart}
@@ -220,7 +288,7 @@
       <Tooltip content="−1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepBack}
-          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-zinc-800 hover:text-zinc-100 active:scale-90"
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-[var(--panel2)] hover:text-zinc-100 active:scale-90"
           aria-label="Step back 1 second"
         >
           <SkipBack size={14} />
@@ -229,20 +297,20 @@
 
       <button
         onclick={() => playing = !playing}
-        class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-zinc-100 transition-all duration-[80ms] hover:bg-zinc-800 active:scale-90"
+        class="flex h-[38px] w-[38px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-white text-[#050505] transition-transform duration-[80ms] hover:scale-105 active:scale-95"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {#if playing}
-          <Pause size={22} fill="currentColor" strokeWidth={0} />
+          <Pause size={17} fill="currentColor" strokeWidth={0} />
         {:else}
-          <Play size={22} fill="currentColor" strokeWidth={0} class="translate-x-[1px]" />
+          <Play size={17} fill="currentColor" strokeWidth={0} class="translate-x-[1px]" />
         {/if}
       </button>
 
       <Tooltip content="+1 second" side="top" delay={TOOLTIP_DELAY}>
         <button
           onclick={stepForward}
-          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-zinc-800 hover:text-zinc-100 active:scale-90"
+          class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-zinc-400 transition-all duration-[80ms] hover:bg-[var(--panel2)] hover:text-zinc-100 active:scale-90"
           aria-label="Step forward 1 second"
         >
           <SkipForward size={14} />
@@ -250,7 +318,7 @@
       </Tooltip>
     </div>
 
-    <span class="absolute right-0 font-mono text-[11px] text-zinc-500 tabular-nums">
+    <span class="absolute right-0 font-mono text-[11px] text-[var(--dim)] tabular-nums">
       {formatTime(readoutCurrent)} / {formatTime(readoutTotal)}
     </span>
   </div>
@@ -287,5 +355,15 @@
     height: 12px;
     margin-top: -5px;
     border-radius: 2px;
+  }
+
+  /* Dual-handle race bar: two range inputs share one track, so the inputs
+     themselves must not swallow pointer events — only their thumbs do.
+     Otherwise the top input would capture every click on the bar. */
+  .lap-handle {
+    pointer-events: none;
+  }
+  .lap-handle::-webkit-slider-thumb {
+    pointer-events: auto;
   }
 </style>

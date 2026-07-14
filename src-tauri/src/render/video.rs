@@ -8,6 +8,10 @@ pub struct VideoProbe {
     pub path: String,
     pub duration: Option<f64>,
     pub creation_time: Option<String>,
+    /// Set when `creation_time` was corrected from sibling files (e.g. GoPro
+    /// chapter files all carry chapter 1's timestamp). Surfaced in the UI so
+    /// wall-clock alignment is never silently based on rewritten metadata.
+    pub creation_time_note: Option<String>,
     pub codec: Option<String>,
     pub width: u32,
     pub height: u32,
@@ -21,6 +25,12 @@ pub struct VideoProbe {
 /// with `duration = None` if ffmpeg ran but the container had no Duration line
 /// (rare, but possible for some streamed formats).
 pub fn probe(path: &str) -> Result<VideoProbe, String> {
+    let mut probe = probe_raw(path)?;
+    adjust_gopro_chapter_time(&mut probe);
+    Ok(probe)
+}
+
+fn probe_raw(path: &str) -> Result<VideoProbe, String> {
     if !std::path::Path::new(path).exists() {
         return Err(format!("Video file not found: {path}"));
     }
@@ -102,10 +112,84 @@ fn parse_ffmpeg_metadata(path: &str, stderr: &str) -> Result<VideoProbe, String>
         path: path.to_string(),
         duration,
         creation_time,
+        creation_time_note: None,
         codec,
         width,
         height,
     })
+}
+
+/// GoPro splits long recordings into ~4 GiB chapter files (`GX01aaaa.MP4`,
+/// `GX02aaaa.MP4`, …) and stamps **every** chapter with the wall-clock time
+/// recording started — i.e. chapter 1's start, not the chapter's own. Aligning
+/// chapter 2+ by its container `creation_time` therefore lands hours/minutes
+/// early. When the earlier chapters sit next to the probed file, shift
+/// `creation_time` forward by their summed durations; if any earlier chapter is
+/// missing or unreadable, leave the timestamp untouched rather than guess.
+fn adjust_gopro_chapter_time(probe: &mut VideoProbe) {
+    use chrono::{DateTime, Duration, SecondsFormat};
+
+    let Some(ct) = probe.creation_time.as_deref() else {
+        return;
+    };
+    let path = std::path::Path::new(&probe.path);
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    // HERO6+ naming: G[XH]ccnnnn.MP4 — GX=HEVC, GH=AVC; cc = 01-based chapter
+    // number, nnnn = recording id shared by all chapters.
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return;
+    };
+    if !ext.eq_ignore_ascii_case("mp4") || stem.len() != 8 {
+        return;
+    }
+    let prefix = &stem[..2];
+    if !prefix.eq_ignore_ascii_case("GX") && !prefix.eq_ignore_ascii_case("GH") {
+        return;
+    }
+    let Ok(chapter) = stem[2..4].parse::<u32>() else {
+        return;
+    };
+    let recording_id = &stem[4..];
+    if chapter < 2 || !recording_id.bytes().all(|b| b.is_ascii_digit()) {
+        return;
+    }
+    let Ok(start) = DateTime::parse_from_rfc3339(ct) else {
+        return;
+    };
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+    let mut earlier_secs = 0.0;
+    for c in 1..chapter {
+        let sibling = dir.join(format!("{prefix}{c:02}{recording_id}.{ext}"));
+        let Ok(sibling_probe) = probe_raw(&sibling.to_string_lossy()) else {
+            return;
+        };
+        let Some(d) = sibling_probe.duration else {
+            return;
+        };
+        earlier_secs += d;
+    }
+
+    let adjusted = start + Duration::milliseconds((earlier_secs * 1000.0).round() as i64);
+    probe.creation_time = Some(adjusted.to_rfc3339_opts(SecondsFormat::Millis, true));
+    probe.creation_time_note = Some(format!(
+        "GoPro chapter {chapter}: recording start computed from chapter 1's timestamp + {} of earlier chapters",
+        format_secs(earlier_secs),
+    ));
+}
+
+fn format_secs(secs: f64) -> String {
+    let total = secs.round() as i64;
+    let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60);
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
 }
 
 fn parse_hms(s: &str) -> Option<f64> {
@@ -153,6 +237,58 @@ fn find_resolution(s: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn probe_named(name: &str) -> VideoProbe {
+        VideoProbe {
+            path: format!("/nonexistent-test-dir/{name}"),
+            duration: Some(600.0),
+            creation_time: Some("2026-07-11T20:39:31.000000Z".to_string()),
+            creation_time_note: None,
+            codec: Some("hevc".to_string()),
+            width: 3840,
+            height: 2160,
+        }
+    }
+
+    #[test]
+    fn gopro_chapter_missing_sibling_leaves_creation_time_untouched() {
+        // Chapter 2 naming, but chapter 1 doesn't exist on disk — must not guess.
+        let mut p = probe_named("GX020114.MP4");
+        adjust_gopro_chapter_time(&mut p);
+        assert_eq!(
+            p.creation_time.as_deref(),
+            Some("2026-07-11T20:39:31.000000Z")
+        );
+        assert!(p.creation_time_note.is_none());
+    }
+
+    #[test]
+    fn non_chapter_names_are_not_adjusted() {
+        // Chapter 1, non-GoPro names, and non-mp4 extensions never probe siblings
+        // (which would fail here) and never rewrite the timestamp.
+        for name in [
+            "GX010114.MP4",
+            "epoday245.mov",
+            "IMG_1234.MP4",
+            "GXAB0114.MP4",
+        ] {
+            let mut p = probe_named(name);
+            adjust_gopro_chapter_time(&mut p);
+            assert_eq!(
+                p.creation_time.as_deref(),
+                Some("2026-07-11T20:39:31.000000Z"),
+                "{name}"
+            );
+            assert!(p.creation_time_note.is_none(), "{name}");
+        }
+    }
+
+    #[test]
+    fn formats_seconds_human_readable() {
+        assert_eq!(format_secs(42.4), "42s");
+        assert_eq!(format_secs(2114.11), "35m 14s");
+        assert_eq!(format_secs(7325.0), "2h 2m 5s");
+    }
 
     const SAMPLE_HEVC: &str = "\
 Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/clip.mp4':

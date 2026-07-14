@@ -7,9 +7,9 @@ use skia_safe::{
     Canvas, Color, ISize, ImageInfo, Paint, PaintStyle, PathBuilder, Point, Rect, Typeface,
 };
 
-use crate::render::color::to_skia_color;
-use crate::render::template::{CourseMarkerConfig, PlotConfig, PointLabelConfig};
-use crate::render::units;
+use crate::color::to_skia_color;
+use crate::template::{CourseMarkerConfig, PlotConfig, PointLabelConfig};
+use crate::units;
 
 /// Pixel bounds of the data area inside a chart surface (excluding margins).
 #[derive(Debug, Clone)]
@@ -82,8 +82,13 @@ pub struct ChartCache {
     pub x_data: Vec<f64>,
     /// Y data (elevation, lat, etc.).
     pub y_data: Vec<f64>,
-    /// Activity distance in metres for each point. Populated for course plots.
+    /// Activity distance in metres for each plotted point. Populated for course
+    /// plots, where it is the distance axis of the route geometry.
     pub distance_data: Vec<f64>,
+    /// Activity distance in metres at each output frame. Populated for course
+    /// plots, where the frame grid is independent of the route geometry, so the
+    /// rider's position is found by distance rather than by index.
+    pub frame_distance: Vec<f64>,
     /// Pixel position of the chart within the full frame.
     pub x_offset: i32,
     pub y_offset: i32,
@@ -95,7 +100,7 @@ pub struct ChartCache {
     /// Pixel bounds of the plot area inside the surface.
     pub plot_bounds: PlotBounds,
     /// Point configs from the template (colour, size, etc.).
-    pub point_configs: Vec<crate::render::template::PointConfig>,
+    pub point_configs: Vec<crate::template::PointConfig>,
     /// Static markers placed along a course by activity distance.
     pub markers: Vec<CourseMarkerConfig>,
     /// Geographic mapping for course plots (None for non-GPS charts).
@@ -122,6 +127,7 @@ impl ChartCache {
         x_data: Vec<f64>,
         y_data: Vec<f64>,
         distance_data: Vec<f64>,
+        frame_distance: Vec<f64>,
         fonts_dir: &str,
     ) -> Option<Self> {
         if x_data.is_empty() || y_data.is_empty() {
@@ -135,7 +141,7 @@ impl ChartCache {
         }
 
         let margin = config.margin_fraction();
-        let is_course = config.value == crate::render::activity::ATTR_COURSE;
+        let is_course = config.value == crate::activity::ATTR_COURSE;
         // Course plots keep the margin inset so the route line and position dot
         // don't clip at the surface edge. Non-course plots (elevation, etc.) go
         // edge-to-edge so their bounding box aligns exactly with the rendered pixels.
@@ -162,7 +168,7 @@ impl ChartCache {
         let y_max = y_data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
         // Course plots use geographic aspect-ratio correction; all others get vertical padding.
-        let is_course = config.value == crate::render::activity::ATTR_COURSE;
+        let is_course = config.value == crate::activity::ATTR_COURSE;
         let geo = if is_course {
             GeoMapping::build(x_min, x_max, y_min, y_max, &plot_bounds)
         } else {
@@ -197,7 +203,7 @@ impl ChartCache {
         let point_label = config.point_label.clone();
         let label_typeface = point_label.as_ref().and_then(|pl| {
             let font = pl.font.as_deref().unwrap_or("Arial.ttf");
-            crate::render::frame::load_typeface(font, fonts_dir)
+            crate::frame::load_typeface(font, fonts_dir)
         });
 
         let past_opacity = if is_course {
@@ -216,6 +222,11 @@ impl ChartCache {
             x_data,
             y_data,
             distance_data: if is_course { distance_data } else { Vec::new() },
+            frame_distance: if is_course {
+                frame_distance
+            } else {
+                Vec::new()
+            },
             x_offset: config.x,
             y_offset: config.y,
             x_min,
@@ -263,34 +274,43 @@ impl ChartCache {
         Point::new(px, py)
     }
 
-    fn course_marker_point(&self, target_m: f64) -> Option<(Point, f32)> {
-        self.geo.as_ref()?;
-        if self.x_data.is_empty() || self.distance_data.is_empty() {
-            return None;
-        }
-        let last = self
-            .x_data
+    /// Translate a plot-local pixel position into full-frame coordinates.
+    fn to_frame(&self, local: Point) -> Point {
+        Point::new(
+            local.x + self.x_offset as f32,
+            local.y + self.y_offset as f32,
+        )
+    }
+
+    /// Index of the last usable vertex across the plotted series.
+    fn last_vertex(&self) -> usize {
+        self.x_data
             .len()
             .min(self.y_data.len())
             .min(self.distance_data.len())
-            .saturating_sub(1);
+            .saturating_sub(1)
+    }
+
+    /// Interpolate the route at `target_m` of activity distance. Returns the
+    /// data coords of that position and the index of the last route vertex at or
+    /// before it — the point where the traveled segment stops.
+    fn route_at_distance(&self, target_m: f64) -> Option<(f64, f64, usize)> {
+        if self.x_data.is_empty() || self.distance_data.is_empty() {
+            return None;
+        }
+        let last = self.last_vertex();
         if last == 0 {
-            let pt = self.data_to_pixel(self.x_data[0], self.y_data[0]);
-            return Some((
-                Point::new(pt.x + self.x_offset as f32, pt.y + self.y_offset as f32),
-                0.0,
-            ));
+            return Some((self.x_data[0], self.y_data[0], 0));
         }
 
+        // Cumulative distance is non-decreasing, so the crossing point is a
+        // binary search rather than a scan over the (now source-density) route.
         let target = target_m.clamp(self.distance_data[0], self.distance_data[last]);
-        let mut idx = 1;
-        while idx <= last && self.distance_data[idx] < target {
-            idx += 1;
-        }
-        let i0 = idx.saturating_sub(1).min(last);
-        let i1 = idx.min(last);
-        let d0 = self.distance_data[i0];
-        let d1 = self.distance_data[i1];
+        let i1 = self.distance_data[..=last]
+            .partition_point(|&d| d < target)
+            .clamp(1, last);
+        let i0 = i1 - 1;
+        let (d0, d1) = (self.distance_data[i0], self.distance_data[i1]);
         let frac = if d1 > d0 {
             ((target - d0) / (d1 - d0)).clamp(0.0, 1.0)
         } else {
@@ -298,17 +318,36 @@ impl ChartCache {
         };
         let x = self.x_data[i0] + (self.x_data[i1] - self.x_data[i0]) * frac;
         let y = self.y_data[i0] + (self.y_data[i1] - self.y_data[i0]) * frac;
-        let local_pt = self.data_to_pixel(x, y);
+        Some((x, y, i0))
+    }
+
+    fn course_marker_point(&self, target_m: f64) -> Option<(Point, f32)> {
+        self.geo.as_ref()?;
+        let (x, y, i0) = self.route_at_distance(target_m)?;
+        let i1 = (i0 + 1).min(self.last_vertex());
         let a = self.data_to_pixel(self.x_data[i0], self.y_data[i0]);
         let b = self.data_to_pixel(self.x_data[i1], self.y_data[i1]);
         let course_angle = (b.y - a.y).atan2(b.x - a.x).to_degrees();
-        Some((
-            Point::new(
-                local_pt.x + self.x_offset as f32,
-                local_pt.y + self.y_offset as f32,
-            ),
-            course_angle + 90.0,
-        ))
+        Some((self.to_frame(self.data_to_pixel(x, y)), course_angle + 90.0))
+    }
+
+    /// The rider's position in data coords at `frame_idx`, plus the index of the
+    /// last plotted vertex behind them.
+    ///
+    /// Course plots resolve this by distance travelled: the route is drawn at the
+    /// track's source density, so it has no per-frame index to look up. Every
+    /// other plot has exactly one vertex per frame and indexes directly.
+    fn marker_position(&self, frame_idx: usize) -> Option<(f64, f64, usize)> {
+        if self.geo.is_some() {
+            let last_frame = self.frame_distance.len().checked_sub(1)?;
+            let travelled = self.frame_distance[frame_idx.min(last_frame)];
+            return self.route_at_distance(travelled);
+        }
+        if frame_idx >= self.x_data.len() {
+            return None;
+        }
+        let y = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
+        Some((self.x_data[frame_idx], y, frame_idx))
     }
 
     fn draw_course_marker(&self, canvas: &Canvas, marker: &CourseMarkerConfig) {
@@ -391,27 +430,29 @@ impl ChartCache {
             None,
         );
 
+        let Some((pos_x, pos_y, past_end)) = self.marker_position(frame_idx) else {
+            return;
+        };
+
         // 2. Overdraw the traveled (past) segment at past_opacity when split is active.
         if (self.past_opacity.is_some() || self.future_opacity.is_some())
-            && frame_idx < self.x_data.len()
             && let Some(geo) = &self.geo
         {
-            let past_end = frame_idx + 1;
             let past_opacity = self.past_opacity.unwrap_or(1.0);
             let past_color = to_skia_color(&self.line_color, Some(past_opacity));
             let mut pb = PathBuilder::new();
-            for (i, (&x, &y)) in self
+            // Every route vertex behind the rider, then a final segment to their
+            // exact interpolated position so the line ends under the dot instead
+            // of at the last whole vertex.
+            let vertices = self
                 .x_data
                 .iter()
                 .zip(self.y_data.iter())
-                .take(past_end)
-                .enumerate()
-            {
-                let local_pt = geo.to_pixel(x, y, &self.plot_bounds);
-                let abs_pt = Point::new(
-                    local_pt.x + self.x_offset as f32,
-                    local_pt.y + self.y_offset as f32,
-                );
+                .take(past_end + 1)
+                .map(|(&x, &y)| (x, y))
+                .chain(std::iter::once((pos_x, pos_y)));
+            for (i, (x, y)) in vertices.enumerate() {
+                let abs_pt = self.to_frame(geo.to_pixel(x, y, &self.plot_bounds));
                 if i == 0 {
                     pb.move_to(abs_pt);
                 } else {
@@ -433,14 +474,8 @@ impl ChartCache {
         }
 
         // 4. Draw position marker (the per-frame part).
-        if frame_idx < self.x_data.len() {
-            let x = self.x_data[frame_idx];
-            let y = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
-            let local_pt = self.data_to_pixel(x, y);
-            let abs_pt = Point::new(
-                local_pt.x + self.x_offset as f32,
-                local_pt.y + self.y_offset as f32,
-            );
+        {
+            let abs_pt = self.to_frame(self.data_to_pixel(pos_x, pos_y));
 
             for pc in &self.point_configs {
                 let color = pc
@@ -472,13 +507,10 @@ impl ChartCache {
             // 5. Optional value label next to the marker (e.g. "960 M" /
             //    "3150 FT"), one line per unit, metric first.
             if let (Some(pl), Some(tf)) = (&self.point_label, &self.label_typeface) {
-                let raw = self.y_data.get(frame_idx).copied().unwrap_or(0.0);
+                let raw = pos_y;
                 let size = pl.font_size.unwrap_or(32.0);
-                let font = crate::render::frame::font_from_typeface(
-                    tf.clone(),
-                    size,
-                    pl.italic.unwrap_or(false),
-                );
+                let font =
+                    crate::frame::font_from_typeface(tf.clone(), size, pl.italic.unwrap_or(false));
                 let color = pl
                     .color
                     .as_deref()
@@ -618,7 +650,7 @@ fn render_chart_background(
     // Draw fill under the curve
     if let Some(fill_opacity) = config.fill_opacity() {
         let fill_color_str = config.fill_color();
-        let (r, g, b, _) = crate::render::color::parse_hex_color(&fill_color_str);
+        let (r, g, b, _) = crate::color::parse_hex_color(&fill_color_str);
         let alpha = (fill_opacity.clamp(0.0, 1.0) * 255.0) as u8;
         let fill_color = Color::from_argb(alpha, r, g, b);
 

@@ -11,6 +11,7 @@
   import PlaybackControls from '../canvas/PlaybackControls.svelte'
   import VideoAlignmentBar from '../canvas/VideoAlignmentBar.svelte'
   import { videoStartOnAxis } from '@/lib/videoAlignment.js'
+  import { isLapMetric } from '@/lib/elementTypes.js'
   import * as backend from '@/api/backend.js'
   import { Github } from 'lucide-svelte'
 
@@ -73,7 +74,7 @@
   }
 
   async function fetchFrame(frameIdx) {
-    const config = app.config
+    const config = app.renderConfig
     if (!config) return console.debug('[tpl-diag] fetchFrame bail: no config')
     if (!app.hasActivity) return console.debug('[tpl-diag] fetchFrame bail: no activity')
     const fps = app.previewFps ?? 1
@@ -207,6 +208,7 @@
     const _fps = app.previewFps ?? 1
     const _hasActivity = app.hasActivity
     void app.gpxFilename // reactive dep: re-run when GPX changes
+    void app.units // reactive dep: the unit-system preference flips readouts
     void previewW // reactive dep: re-render when the base target size changes
     void previewH // (export resolution, preview box size, or display pixel ratio)
 
@@ -437,6 +439,32 @@
     app.updateElement(id, { time_target: Math.round(newS) })
   }
 
+  // ── Race bar (lap start/finish gate) ────────────────────────────────────
+  // Dual-handle bar shown while a lap-metric value element is selected. The
+  // handles are the race-start and race-finish moments (scene.lap_gate);
+  // dragging one also scrubs the preview there so the user can see themselves
+  // cross the line. Defaults span the overlay window until the gate exists.
+  let lapGateForBar = $derived.by(() => {
+    if (!selectedDistanceEl || !isLapMetric(selectedDistanceEl.value)) return null
+    const gate = app.config?.scene?.lap_gate
+    return {
+      start: gate?.start ?? sceneStart,
+      end: gate?.end ?? sceneEnd,
+    }
+  })
+
+  function onLapGateChange(field, seconds) {
+    const rounded = Math.round(seconds * 10) / 10
+    // First touch materialises the whole gate at the bar's displayed defaults,
+    // so the stored config always matches what the handles show.
+    const creating = !app.config?.scene?.lap_gate
+    app.updateLapGate(
+      creating
+        ? { start: sceneStart, end: sceneEnd, [field]: rounded }
+        : { [field]: rounded },
+    )
+  }
+
   function onCourseMarkerDistanceChange(newM) {
     const id = app.selectedElementId
     const el = app.config?.elements?.find((e) => e.id === id)
@@ -582,7 +610,7 @@
     const v = computeCropView()
     if (!v) { cropVisible = false; return }
     const gen = ++cropGen
-    const config = app.config
+    const config = app.renderConfig
     const gpx = app.gpxFilename
     const fps = app.previewFps ?? 1
     const start = config?.scene?.start ?? 0
@@ -697,10 +725,10 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<main class="flex-1 flex flex-col overflow-hidden bg-[#09090b]">
+<main class="flex-1 flex flex-col overflow-hidden bg-[var(--panel)] rounded-[10px] min-w-0">
   <!-- Zoom indicator — pinned above the canvas, visible regardless of pan position -->
   {#if app.config && zoom !== 1}
-    <div class="shrink-0 flex items-center justify-end px-3 py-1 border-b border-zinc-800/60 bg-zinc-950/80">
+    <div class="shrink-0 flex items-center justify-end px-3 py-1 border-b border-white/[0.06]">
       <button
         onclick={resetZoom}
         class="cursor-pointer text-[10px] font-mono text-zinc-400 hover:text-primary transition-colors"
@@ -716,6 +744,7 @@
   <div
     bind:this={clipEl}
     class="flex-1 flex items-center justify-center p-6 overflow-hidden"
+    style="background: radial-gradient(120% 90% at 50% 0%, rgba(220, 20, 60, 0.09), transparent 58%);"
     onwheel={onCanvasWheel}
     ondblclick={resetZoom}
   >
@@ -723,12 +752,12 @@
       <!-- Aspect-ratio wrapper — always shown when a template is loaded -->
       <div
         bind:this={stageEl}
-        class="relative shadow-2xl"
+        class="relative shadow-[0_30px_60px_-20px_rgba(0,0,0,0.8)]"
         style={`width: min(100%, calc((100vh - 180px) / ${aspectRatio})); aspect-ratio: ${app.outputWidth ?? 1920} / ${app.outputHeight ?? 1080}; transform-origin: 0 0; transform: translate(${panX}px, ${panY}px) scale(${zoom});`}
       >
         <!-- Background -->
         <div
-          class="absolute inset-0 rounded-lg overflow-hidden border border-zinc-800 bg-zinc-950"
+          class="absolute inset-0 rounded-lg overflow-hidden bg-[#0a0a0a]"
           style={currentFrameData?.image ? `background-image:
             linear-gradient(45deg, #1a1a1a 25%, transparent 25%),
             linear-gradient(-45deg, #1a1a1a 25%, transparent 25%),
@@ -813,20 +842,18 @@
     {:else}
       <!-- Onboarding quick-start guide -->
       <div class="flex flex-col items-center justify-center gap-8 px-6 select-none">
-        <div class="flex flex-col items-center gap-1.5">
-          <p class="text-xs font-semibold tracking-widest uppercase text-zinc-600">Quick start</p>
-        </div>
-        <div class="flex items-stretch gap-4">
+        <p class="text-[11px] font-semibold tracking-[0.22em] uppercase text-[var(--dim)]">Quick start</p>
+        <div class="flex items-stretch gap-[18px]">
 
           <!-- Step 1 — Choose a template -->
           <button
             onclick={() => { app.showTemplatePicker = true }}
-            class="onboarding-card {quickStartStep === 1 ? 'onboarding-card--active bg-zinc-900' : quickStartStep1Complete ? 'onboarding-card--complete bg-zinc-900/60' : 'onboarding-card--dim border-zinc-800 bg-zinc-900/40 opacity-40'} w-44 rounded-xl border p-5
-                   flex flex-col items-center gap-3 text-center transition-colors duration-200
-                   hover:bg-zinc-800/80 cursor-pointer"
+            class="onboarding-card {quickStartStep === 1 ? 'onboarding-card--active' : quickStartStep1Complete ? 'onboarding-card--complete' : 'border-white/[0.06] opacity-40'} w-[196px] rounded-2xl border bg-[var(--panel2)] p-[22px]
+                   flex flex-col items-center gap-3.5 text-center transition-transform duration-200
+                   hover:-translate-y-1 cursor-pointer"
           >
-            <span class="onboarding-step-badge {quickStartStep === 1 ? 'onboarding-step-badge--active' : quickStartStep1Complete ? 'onboarding-step-badge--complete' : 'border border-zinc-700 bg-zinc-800 text-zinc-500'}
-                         w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
+            <span class="onboarding-step-badge {quickStartStep === 1 ? 'onboarding-step-badge--active' : quickStartStep1Complete ? 'onboarding-step-badge--complete' : 'border border-white/[0.06] bg-[var(--panel3)] text-zinc-500'}
+                         w-[30px] h-[30px] rounded-full flex items-center justify-center text-[13px] font-bold">
               {#if quickStartStep1Complete}
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
@@ -836,11 +863,11 @@
               {/if}
             </span>
             <div class="flex flex-col gap-1">
-              <p class="text-sm font-medium {quickStartStep === 1 || quickStartStep1Complete ? 'text-zinc-100' : 'text-zinc-400'}">Choose a Template</p>
-              <p class="text-[11px] {quickStartStep === 1 || quickStartStep1Complete ? 'text-zinc-500' : 'text-zinc-600'} leading-relaxed">Pick a layout for your overlay</p>
+              <p class="text-[15px] font-semibold {quickStartStep === 1 || quickStartStep1Complete ? 'text-zinc-100' : 'text-zinc-400'}">Choose a Template</p>
+              <p class="text-xs {quickStartStep === 1 || quickStartStep1Complete ? 'text-[var(--dim)]' : 'text-zinc-600'} leading-relaxed">Pick a layout for your overlay</p>
             </div>
             <!-- Grid icon -->
-            <svg class="w-8 h-8 {quickStartStep === 1 ? 'text-red-500/70' : quickStartStep1Complete ? 'text-emerald-400/70' : 'text-zinc-600'} mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-[30px] h-[30px] {quickStartStep === 1 ? 'text-primary opacity-80' : quickStartStep1Complete ? 'text-emerald-400/70' : 'text-zinc-600'} mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/>
             </svg>
@@ -850,10 +877,11 @@
           <button
             type="button"
             onclick={() => onopenactivity?.()}
-            class="onboarding-card {quickStartStep === 2 ? 'onboarding-card--active bg-zinc-900 cursor-pointer hover:bg-zinc-800/80' : quickStartStep2Complete ? 'onboarding-card--complete bg-zinc-900/60 cursor-pointer hover:bg-zinc-800/80' : 'onboarding-card--dim border-zinc-800 bg-zinc-900/40 opacity-70 cursor-pointer hover:bg-zinc-800/80'} w-44 rounded-xl border
-                      p-5 flex flex-col items-center gap-3 text-center transition-colors duration-200">
-            <span class="onboarding-step-badge {quickStartStep === 2 ? 'onboarding-step-badge--active' : quickStartStep2Complete ? 'onboarding-step-badge--complete' : 'border border-zinc-700 bg-zinc-800 text-zinc-500'} w-7 h-7 rounded-full
-                         flex items-center justify-center text-xs font-bold">
+            class="onboarding-card {quickStartStep === 2 ? 'onboarding-card--active' : quickStartStep2Complete ? 'onboarding-card--complete' : 'border-white/[0.06] opacity-70 hover:opacity-100'} w-[196px] rounded-2xl border bg-[var(--panel2)]
+                      p-[22px] flex flex-col items-center gap-3.5 text-center transition-[transform,opacity] duration-200
+                      hover:-translate-y-1 cursor-pointer">
+            <span class="onboarding-step-badge {quickStartStep === 2 ? 'onboarding-step-badge--active' : quickStartStep2Complete ? 'onboarding-step-badge--complete' : 'border border-white/[0.06] bg-[var(--panel3)] text-zinc-500'} w-[30px] h-[30px] rounded-full
+                         flex items-center justify-center text-[13px] font-bold">
               {#if quickStartStep2Complete}
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
@@ -863,27 +891,27 @@
               {/if}
             </span>
             <div class="flex flex-col gap-1">
-              <p class="text-sm font-medium {quickStartStep === 2 || quickStartStep2Complete ? 'text-zinc-100' : 'text-zinc-400'}">Load Activity</p>
-              <p class="text-[11px] {quickStartStep === 2 || quickStartStep2Complete ? 'text-zinc-500' : 'text-zinc-600'} leading-relaxed">Open a GPX, FIT, or TCX file</p>
+              <p class="text-[15px] font-semibold {quickStartStep === 2 || quickStartStep2Complete ? 'text-zinc-100' : 'text-zinc-400'}">Load Activity</p>
+              <p class="text-xs {quickStartStep === 2 || quickStartStep2Complete ? 'text-[var(--dim)]' : 'text-zinc-600'} leading-relaxed">Open a GPX, FIT, or TCX file</p>
             </div>
             <!-- Activity icon -->
-            <svg class="w-8 h-8 {quickStartStep === 2 ? 'text-red-500/70' : quickStartStep2Complete ? 'text-emerald-400/70' : 'text-zinc-600'} mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-[30px] h-[30px] {quickStartStep === 2 ? 'text-primary opacity-80' : quickStartStep2Complete ? 'text-emerald-400/70' : 'text-zinc-600'} mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M3 12h3l3-9 4 18 3-9h5"/>
             </svg>
           </button>
 
           <!-- Step 3 — Render (dimmed) -->
-          <div class="onboarding-card onboarding-card--dim w-44 rounded-xl border border-zinc-800 bg-zinc-900/40
-                      p-5 flex flex-col items-center gap-3 text-center opacity-40 cursor-default">
-            <span class="onboarding-step-badge w-7 h-7 rounded-full border border-zinc-700 bg-zinc-800
-                         flex items-center justify-center text-xs font-bold text-zinc-500">3</span>
+          <div class="onboarding-card w-[196px] rounded-2xl border border-white/[0.06] bg-[var(--panel2)]
+                      p-[22px] flex flex-col items-center gap-3.5 text-center opacity-40 cursor-default">
+            <span class="onboarding-step-badge w-[30px] h-[30px] rounded-full border border-white/[0.06] bg-[var(--panel3)]
+                         flex items-center justify-center text-[13px] font-bold text-zinc-500">3</span>
             <div class="flex flex-col gap-1">
-              <p class="text-sm font-medium text-zinc-400">Render Video</p>
-              <p class="text-[11px] text-zinc-600 leading-relaxed">Export the overlay to a file</p>
+              <p class="text-[15px] font-semibold text-zinc-400">Render Video</p>
+              <p class="text-xs text-zinc-600 leading-relaxed">Export the overlay to a file</p>
             </div>
             <!-- Play icon -->
-            <svg class="w-8 h-8 text-zinc-600 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-[30px] h-[30px] text-zinc-600 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653z"/>
             </svg>
@@ -918,6 +946,8 @@
     markerStyle={selectedCourseMarker?.style ?? 'checkered'}
     markerColor={selectedCourseMarker?.color ?? '#ef4444'}
     onmarkerdistancechange={onCourseMarkerDistanceChange}
+    lapGate={lapGateForBar}
+    onlapgatechange={onLapGateChange}
   />
   {/if}
 </main>

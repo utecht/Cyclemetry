@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte'
+  import { TriangleAlert } from 'lucide-svelte'
   import Switch from '../ui/Switch.svelte'
+  import { formatFileSize } from '@/lib/utils.js'
 
   let {
     // [{ value, label, container, transparent, desc }] — available export formats.
@@ -14,6 +16,11 @@
     timeFor = null,
     // (format) => "~1.5 GB" | null — estimated output file size
     sizeFor = null,
+    // (format) => bytes | null — same estimate, unformatted, for the
+    // disk-space check below
+    bytesFor = null,
+    // Free bytes on the output volume, or null when unknown
+    diskFreeBytes = null,
     // (format) => boolean — true when the codec has no same-machine
     // measurement yet, so it offers a quick test render
     testAvailableFor = null,
@@ -30,6 +37,17 @@
   // Sizing only applies to transparent overlays; stitched always fills the frame.
   let fullFrame = $state(initialFullFrame)
   let showSizing = $derived(!!selectedFormat?.transparent)
+
+  // Warn when the estimated file wouldn't fit while keeping the renderer's
+  // low-disk reserve intact (it pauses the render below ~2 GB free — see
+  // DISK_PAUSE_BYTES in render/scene.rs).
+  const DISK_RESERVE_BYTES = 2 * 1024 ** 3
+  let selectedBytes = $derived(bytesFor?.(selected) ?? null)
+  let lowDisk = $derived(
+    selectedBytes != null &&
+      diskFreeBytes != null &&
+      selectedBytes > diskFreeBytes - DISK_RESERVE_BYTES,
+  )
 
   // Shared column layout so the header cells and every row align.
   const COLS =
@@ -208,6 +226,26 @@
           ariaLabel="Full-frame export"
           onchange={(checked) => (fullFrame = checked)}
         />
+      </div>
+    {/if}
+
+    <!-- Disk-space check: rough estimate vs. free space on the output volume.
+         Starting anyway is fine — the renderer pauses itself before the disk
+         fills and resumes once space is freed. -->
+    {#if lowDisk}
+      <div
+        class="mt-4 flex items-start gap-2.5 rounded-[6px] border border-[var(--ds-warning)]/30 bg-[var(--ds-warning)]/10 px-3 py-2.5"
+      >
+        <TriangleAlert
+          size={14}
+          class="mt-0.5 shrink-0 text-[var(--ds-warning)]"
+        />
+        <p class="text-xs leading-snug text-zinc-300">
+          This export needs roughly {formatFileSize(selectedBytes)}, but the
+          output disk has only {formatFileSize(diskFreeBytes)} free. You can
+          still start — the render pauses itself before the disk fills and
+          resumes automatically when you free up space.
+        </p>
       </div>
     {/if}
 

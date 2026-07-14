@@ -7,14 +7,11 @@ const ETA_MIN_SAMPLE_SECONDS = 5
 const ETA_MAX_UPWARD_ADJUST_SECONDS = 15
 
 export default async function renderVideo(state) {
-  const {
-    config,
-    gpxFilename,
-    outputDir,
-    outputWidth,
-    outputHeight,
-    exportFormat,
-  } = state
+  const { gpxFilename, outputDir, outputWidth, outputHeight, exportFormat } =
+    state
+  // renderConfig = the working template plus app-level settings (unit system)
+  // that are injected at render time but never saved into the template.
+  const config = state.renderConfig
   if (!config?.scene) throw new Error('No valid config available')
   if (!gpxFilename) throw new Error('No GPX file selected')
   const start = config.scene.start ?? 0
@@ -122,8 +119,12 @@ export default async function renderVideo(state) {
             elapsed >= ETA_MIN_SAMPLE_SECONDS && rate > 0
               ? Math.round((p.total_frames - p.frames_rendered) / rate)
               : null
+          // While paused for low disk, elapsed time keeps growing with no
+          // frames rendered, so the measured rate is garbage — hold the ETA
+          // anchor and let it re-establish after the render resumes.
           if (
             rawRemaining != null &&
+            !p.paused_low_disk &&
             (etaAnchorRemaining == null ||
               now - etaLastReanchorAt >= ETA_REANCHOR_MS)
           ) {
@@ -137,7 +138,7 @@ export default async function renderVideo(state) {
             current: p.frames_rendered,
             total: p.total_frames,
             percent: pct,
-            status: 'rendering',
+            status: p.paused_low_disk ? 'paused-low-disk' : 'rendering',
             estimatedSecondsRemaining: currentEta(now),
             // Overlay timeline position (NOT wall-clock): how much of the
             // overlay's own duration has been rendered, so the user can sanity

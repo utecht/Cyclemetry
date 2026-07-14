@@ -1,0 +1,26 @@
+# Emscripten link configuration for the render-wasm web companion build.
+# Only applies to `--target wasm32-unknown-emscripten`; desktop builds are
+# untouched.
+[target.wasm32-unknown-emscripten]
+rustflags = [
+  "-Clink-arg=-sMODULARIZE=1",
+  "-Clink-arg=-sEXPORT_ES6=1",
+  "-Clink-arg=-sEXPORT_NAME=createCyclemetry",
+  "-Clink-arg=-sENVIRONMENT=web,worker",
+  "-Clink-arg=-sALLOW_MEMORY_GROWTH=1",
+  "-Clink-arg=-sMAXIMUM_MEMORY=2GB",
+  # Emscripten's default shadow stack is 64 KB — far too small for serde's
+  # recursive template deserialization; overflow corrupts adjacent memory.
+  "-Clink-arg=-sSTACK_SIZE=8MB",
+  "-Clink-arg=-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,UTF8ToString",
+  "-Clink-arg=-sEXPORTED_FUNCTIONS=_main,_cm_alloc,_cm_free,_cm_write_file,_cm_init,_cm_render,_cm_width,_cm_height,_cm_frame_count,_cm_fps,_cm_last_error,_cm_skia_smoke",
+  # rust-skia's prebuilt wasm binaries compile libpng with emscripten-style
+  # setjmp/longjmp, while rustc links with -fwasm-exceptions; the JS-side
+  # emscripten_longjmp shim is therefore unresolvable at link time. This is
+  # rust-skia's supported configuration for wasm: the symbol is only reached
+  # if libpng aborts on a corrupt PNG, which then surfaces as a catchable JS
+  # exception instead of a clean error.
+  "-Clink-arg=-sERROR_ON_UNDEFINED_SYMBOLS=0",
+  # Keep function names in the wasm for usable stack traces (small size cost).
+  "-Clink-arg=--profiling-funcs",
+]

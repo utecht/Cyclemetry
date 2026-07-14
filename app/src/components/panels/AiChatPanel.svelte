@@ -60,7 +60,7 @@
 
 <div class="flex flex-col h-full min-h-0">
   <!-- Header -->
-  <div class="px-4 py-3 border-b border-zinc-800 flex items-center gap-2 shrink-0">
+  <div class="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2 shrink-0">
     <Sparkles size={12} class="text-[#dc143c] shrink-0" />
     <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 flex-1">
       AI Assistant
@@ -109,7 +109,7 @@
             inputEl?.focus()
           }}
           disabled={loading}
-          class="cursor-pointer w-full text-left rounded-[6px] border border-zinc-800 px-3 py-2
+          class="cursor-pointer w-full text-left rounded-[6px] border-0 bg-[var(--panel2)] px-3 py-2
                  text-[11px] text-zinc-500 hover:border-zinc-600 hover:text-zinc-300
                  transition-colors disabled:opacity-50"
         >
@@ -164,7 +164,7 @@
   </div>
 
   <!-- Input -->
-  <div class="px-4 pb-4 pt-2 border-t border-zinc-800 shrink-0">
+  <div class="px-4 pb-4 pt-2 border-t border-white/[0.06] shrink-0">
     <div class="relative">
       <textarea
         bind:this={inputEl}

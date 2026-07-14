@@ -5,7 +5,7 @@
 //! point labels in `chart.rs`) resolves through [`resolve`] so the conversion
 //! and suffix never drift between code paths.
 
-use crate::render::activity::{
+use crate::activity::{
     ATTR_CADENCE, ATTR_DISTANCE, ATTR_ELEVATION, ATTR_GRADIENT, ATTR_HEARTRATE, ATTR_POWER,
     ATTR_POWER_TO_WEIGHT, ATTR_SPEED, ATTR_TEMPERATURE, FT_CONVERSION, KMH_CONVERSION,
     MI_CONVERSION, MPH_CONVERSION,

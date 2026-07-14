@@ -59,7 +59,7 @@
   onblur={handleBlur}
   onkeydown={handleKeydown}
   class={cn(
-    'h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2.5 text-sm text-foreground',
+    'h-7 w-full rounded-[6px] border-0 bg-[var(--panel2)] px-2.5 text-sm text-foreground',
     'placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-ring',
     'disabled:opacity-50 disabled:cursor-not-allowed',
     className,

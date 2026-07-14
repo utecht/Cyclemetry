@@ -13,9 +13,9 @@
   } = $props()
 
   const variants = {
-    default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-    outline: 'border border-zinc-700 bg-transparent hover:bg-zinc-800/60 text-muted-foreground hover:text-foreground',
-    ghost: 'hover:bg-zinc-800/60 text-muted-foreground hover:text-foreground',
+    default: 'bg-primary text-primary-foreground hover:bg-[var(--accent-hover)]',
+    outline: 'bg-[var(--panel2)] hover:bg-[var(--panel3)] text-muted-foreground hover:text-foreground',
+    ghost: 'hover:bg-[var(--panel2)] text-muted-foreground hover:text-foreground',
     destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
   }
   const sizes = {

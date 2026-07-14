@@ -70,6 +70,11 @@ pub struct RenderProgress {
     pub frames_rendered: Arc<AtomicU64>,
     pub total_frames: Arc<AtomicU64>,
     pub cancelled: Arc<AtomicBool>,
+    /// Set by the low-disk watchdog when the output volume runs low on space.
+    /// Frame production stalls while true and resumes automatically once the
+    /// user frees enough space — FFmpeg stays alive with the file open, so
+    /// nothing already rendered is lost.
+    pub paused_low_disk: Arc<AtomicBool>,
 }
 
 impl RenderProgress {
@@ -78,6 +83,7 @@ impl RenderProgress {
             frames_rendered: Arc::new(AtomicU64::new(0)),
             total_frames: Arc::new(AtomicU64::new(0)),
             cancelled: Arc::new(AtomicBool::new(false)),
+            paused_low_disk: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -341,6 +347,7 @@ pub fn render_video(
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(chunk_size);
 
         let cancelled = &progress.cancelled;
+        let paused = &progress.paused_low_disk;
 
         let producer = s.spawn(move || -> (bool, Duration) {
             let mut sent = 0usize;
@@ -348,6 +355,16 @@ pub fn render_video(
             while sent < total_frames {
                 if cancelled.load(Ordering::Relaxed) {
                     return (true, total_render);
+                }
+                // Low disk space: stall instead of letting FFmpeg hit ENOSPC
+                // (which corrupts the container — the moov index only lands at
+                // finalization). The watchdog clears the flag once the user
+                // frees space and the render picks up exactly where it left off.
+                while paused.load(Ordering::Relaxed) {
+                    if cancelled.load(Ordering::Relaxed) {
+                        return (true, total_render);
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
                 }
                 let chunk_end = (sent + chunk_size).min(total_frames);
                 let t0 = Instant::now();
@@ -427,6 +444,15 @@ pub fn render_video(
         // Cancel watchdog: poll the cancel flag every 10ms.
         // When cancelled, kill FFmpeg — this breaks the stdin pipe so the consumer's
         // write_all returns EPIPE immediately instead of blocking until disk I/O drains.
+        // Doubles as the disk watchdog: every couple of seconds it checks free
+        // space on the output volume and pauses/resumes the producer. The resume
+        // threshold sits above the pause threshold so the render doesn't flap
+        // while the user is still deleting files.
+        let output_volume = std::path::Path::new(output_path)
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let mut last_disk_check = Instant::now();
         loop {
             if cancelled.load(Ordering::Relaxed) {
                 log::info!("render_video: cancel detected in watchdog — killing FFmpeg");
@@ -435,6 +461,27 @@ pub fn render_video(
             }
             if consumer.is_finished() {
                 break;
+            }
+            if last_disk_check.elapsed() >= Duration::from_secs(2) {
+                last_disk_check = Instant::now();
+                if let Some(free) = available_disk_bytes(&output_volume) {
+                    let is_paused = paused.load(Ordering::Relaxed);
+                    if !is_paused && free < DISK_PAUSE_BYTES {
+                        log::warn!(
+                            "render_video: pausing — only {} MB free on output volume \
+                             (resumes above {} MB)",
+                            free / 1_000_000,
+                            DISK_RESUME_BYTES / 1_000_000
+                        );
+                        paused.store(true, Ordering::Relaxed);
+                    } else if is_paused && free >= DISK_RESUME_BYTES {
+                        log::info!(
+                            "render_video: resuming — {} MB free on output volume",
+                            free / 1_000_000
+                        );
+                        paused.store(false, Ordering::Relaxed);
+                    }
+                }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -451,6 +498,9 @@ pub fn render_video(
         Ok((total_render, total_drain))
     });
 
+    // Frame production is over — whatever happens during finalization, the
+    // render is no longer "paused" from the UI's point of view.
+    progress.paused_low_disk.store(false, Ordering::Relaxed);
     log::info!("render_video: scope exited — stdin EOF sent, awaiting FFmpeg");
 
     let (total_render_time, total_drain_time) = match scope_result {
@@ -536,6 +586,18 @@ pub fn render_video(
         if std::path::Path::new(output_path).exists() {
             let _ = std::fs::remove_file(output_path);
         }
+        // The low-disk watchdog pauses well before the volume fills, but
+        // another process can still race it to zero. A partial MOV has no
+        // index and is unusable, so all we can offer is a clear explanation.
+        if ffmpeg_stderr.contains("No space left on device")
+            || ffmpeg_stderr.contains("not enough space")
+        {
+            return Err(
+                "The disk filled up while writing the video, so the export could not be saved. \
+                 Free up space and export again."
+                    .to_string(),
+            );
+        }
         return Err(if ffmpeg_stderr.is_empty() {
             format!("FFmpeg failed ({})", status)
         } else {
@@ -567,6 +629,50 @@ pub fn render_video(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Pause frame production when the output volume has less free space than
+/// this. The margin covers what's already in flight when the pause lands
+/// (up to one channel of raw frames, FFmpeg's internal buffering) plus the
+/// moov/index write at finalization, with room to spare for other processes.
+const DISK_PAUSE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Resume once free space recovers past this. Kept a little above the pause
+/// threshold (hysteresis) so the render doesn't flap on/off while the user is
+/// still emptying the trash.
+const DISK_RESUME_BYTES: u64 = DISK_PAUSE_BYTES + 512 * 1024 * 1024;
+
+/// Free bytes available to this process on the volume containing `path`.
+/// `None` when the query fails (nonexistent path, exotic filesystem) — callers
+/// treat that as "unknown" and never pause on it.
+#[cfg(unix)]
+pub(crate) fn available_disk_bytes(path: &std::path::Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut st) } == 0 {
+        Some(st.f_bavail as u64 * st.f_frsize as u64)
+    } else {
+        None
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn available_disk_bytes(path: &std::path::Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetDiskFreeSpaceExW(
+            directory_name: *const u16,
+            free_bytes_available: *mut u64,
+            total_bytes: *mut u64,
+            total_free_bytes: *mut u64,
+        ) -> i32;
+    }
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide.push(0);
+    let (mut avail, mut total, mut free) = (0u64, 0u64, 0u64);
+    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
+    (ok != 0).then_some(avail)
+}
 
 /// Write a human-readable placement file next to the cropped `.mov`. The crop
 /// trims the transparent margin, so the video is smaller than the footage
@@ -1002,6 +1108,14 @@ fn ensure_executable(_path: &std::path::Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disk_space_query_returns_a_value() {
+        // The temp dir always exists, so the platform call must succeed and
+        // report a sane (nonzero) amount of free space.
+        let free = available_disk_bytes(&std::env::temp_dir());
+        assert!(free.is_some_and(|b| b > 0), "got {free:?}");
+    }
 
     #[test]
     fn parses_ffmpeg_encoder_names() {

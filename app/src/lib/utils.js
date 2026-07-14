@@ -25,7 +25,7 @@ export function formatHomePath(path) {
   return path
 }
 
-function formatFileSize(bytes) {
+export function formatFileSize(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
   return `${Math.max(1, Math.round(bytes / 1e6))} MB`
 }
@@ -58,7 +58,7 @@ export const DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND = 0.12
 // sharpen it as renders accumulate. `calibration` is { bps, n } or null,
 // already resolved for the chosen export format by the caller; `fallbackBps`
 // is the prior to use until then.
-export function estimateExportFileSize(
+export function estimateExportBytes(
   width,
   height,
   fps,
@@ -69,7 +69,26 @@ export function estimateExportFileSize(
   const pixelsPerExport = width * height * fps * durationSecs
   if (!(pixelsPerExport > 0)) return null
   const bps = calibration?.bps > 0 ? calibration.bps : fallbackBps
-  return formatFileSize((pixelsPerExport * bps) / 8)
+  return (pixelsPerExport * bps) / 8
+}
+
+export function estimateExportFileSize(
+  width,
+  height,
+  fps,
+  durationSecs,
+  calibration = null,
+  fallbackBps = DEFAULT_BITS_PER_PIXEL_SECOND,
+) {
+  const bytes = estimateExportBytes(
+    width,
+    height,
+    fps,
+    durationSecs,
+    calibration,
+    fallbackBps,
+  )
+  return bytes == null ? null : formatFileSize(bytes)
 }
 
 // Native file-open dialog filters match extensions case-sensitively on some

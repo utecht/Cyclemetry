@@ -139,12 +139,12 @@
 </script>
 
 <aside
-  class="w-[272px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden"
+  class="w-[284px] shrink-0 flex flex-col bg-[var(--panel)] rounded-[10px] overflow-hidden"
 >
   {#if app.config?.scene}
     {#if app.hasActivity}
       <!-- Overlay timeline -->
-      <section class="border-b border-zinc-800">
+      <section class="border-b border-white/[0.06]">
         <button
           onclick={() => (timelineCollapsed = !timelineCollapsed)}
           class="w-full flex items-center justify-between px-4 py-3 cursor-pointer group"
@@ -187,7 +187,7 @@
             onpointercancel={endTrackDrag}
           >
             <div
-              class="absolute inset-x-0 top-2 h-1 rounded-full bg-zinc-800"
+              class="absolute inset-x-0 top-2 h-1 rounded-full bg-[var(--panel3)]"
             ></div>
             <div
               class="absolute top-2 h-1 bg-primary/70 rounded-full"
@@ -235,8 +235,8 @@
                 })
               else e.target.value = secToTimecode(app.config.scene.start ?? 0)
             }}
-            class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
-              {timelineError ? 'border-red-500' : 'border-zinc-700'}"
+            class="h-7 w-full rounded-[6px] border bg-[var(--panel2)] px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
+              {timelineError ? 'border-red-500' : 'border-transparent'}"
           />
           <span class="text-zinc-600 text-xs shrink-0">→</span>
           <input
@@ -267,8 +267,8 @@
                   app.config.scene.end ?? app.timelineDuration,
                 )
             }}
-            class="h-7 w-full rounded-[6px] border bg-zinc-800/60 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
-              {timelineError ? 'border-red-500' : 'border-zinc-700'}"
+            class="h-7 w-full rounded-[6px] border bg-[var(--panel2)] px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono
+              {timelineError ? 'border-red-500' : 'border-transparent'}"
           />
         </div>
         {#if timelineError}
@@ -277,7 +277,7 @@
         </div>
 
         <!-- Time-lapse: sweep the whole range into a short summary clip -->
-        <div class="space-y-1.5 border-t border-zinc-800/70 pt-3">
+        <div class="space-y-1.5 border-t border-white/[0.06] pt-3">
           <label class="flex items-center justify-between cursor-pointer group">
             <span class="text-[11px] text-zinc-500 group-hover:text-zinc-400 transition-colors duration-[150ms]">Time-lapse</span>
             <input
@@ -296,7 +296,7 @@
                 inputmode="decimal"
                 value={app.config.scene.target_duration ?? TIMELAPSE_DEFAULT_SECS}
                 onchange={(e) => setTargetDuration(e.target.value)}
-                class="h-7 w-full rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
+                class="h-7 w-full rounded-[6px] border-0 bg-[var(--panel2)] px-2 text-xs
                        text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <span class="text-zinc-600 text-xs shrink-0">sec</span>
@@ -317,7 +317,7 @@
     {/if}
 
     <!-- Scene settings -->
-    <section class="border-b border-zinc-800">
+    <section class="border-b border-white/[0.06]">
       <button
         onclick={() => (sceneCollapsed = !sceneCollapsed)}
         class="w-full flex items-center justify-between px-4 py-3 cursor-pointer group"
@@ -351,52 +351,6 @@
         />
       </div>
 
-      <!-- Unit system — every readout on "Auto" follows this; per-element
-           unit overrides still win. -->
-      <div class="space-y-1">
-        <span class="text-[11px] text-zinc-500">Units</span>
-        <Select
-          value={app.config.scene.units ?? 'metric'}
-          options={[
-            { value: 'metric', label: 'Metric (km, m, °C)' },
-            { value: 'imperial', label: 'Imperial (mi, ft, °F)' },
-          ]}
-          onchange={(v) => app.updateScene({ units: v === 'imperial' ? 'imperial' : undefined })}
-        />
-      </div>
-
-      <!-- Rider weight — powers the W/kg metric. Stored on this device only and
-           never written into the template, so sharing a template can't leak it. -->
-      <div class="space-y-1">
-        <span class="text-[11px] text-zinc-500">Rider weight</span>
-        <div class="flex items-center gap-1.5">
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            inputmode="decimal"
-            placeholder="—"
-            value={app.riderWeight ?? ''}
-            oninput={(e) => (app.riderWeight = e.target.value)}
-            class="min-w-0 flex-1 h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
-                   text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <div class="shrink-0 w-20">
-            <Select
-              value={app.riderWeightUnit}
-              options={[
-                { value: 'kg', label: 'kg' },
-                { value: 'lb', label: 'lb' },
-              ]}
-              onchange={(v) => (app.riderWeightUnit = v)}
-            />
-          </div>
-        </div>
-        <p class="text-[10px] text-zinc-600">
-          Used only for W/kg. Stored on this device — never saved to templates.
-        </p>
-      </div>
-
       <!-- Color variables -->
       <div class="space-y-1.5">
         <div class="flex items-center justify-between">
@@ -411,7 +365,7 @@
             }}
             title="Add color variable"
             class="h-5 w-5 rounded flex items-center justify-center text-zinc-500 cursor-pointer
-                   hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                   hover:text-zinc-200 hover:bg-[var(--panel3)] transition-colors"
           >
             <Plus size={12} />
           </button>
@@ -426,7 +380,7 @@
                 vars[name] = e.target.value
                 app.updateScene({ vars })
               }}
-              class="h-7 w-7 shrink-0 rounded-[4px] border border-zinc-700 bg-transparent cursor-pointer p-0.5"
+              class="h-7 w-7 shrink-0 rounded-[4px] border border-white/10 bg-transparent cursor-pointer p-0.5"
               title={value}
             />
             <input
@@ -444,7 +398,7 @@
                 )
                 app.updateScene({ vars })
               }}
-              class="min-w-0 flex-1 h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-2 text-xs
+              class="min-w-0 flex-1 h-7 rounded-[6px] border-0 bg-[var(--panel2)] px-2 text-xs
                      text-zinc-300 font-mono focus:outline-none focus:ring-1 focus:ring-ring"
               title="Variable name — reference as ${name} in any color field"
             />
@@ -459,7 +413,7 @@
               }}
               title="Remove variable"
               class="h-5 w-5 shrink-0 rounded flex items-center justify-center text-zinc-600 cursor-pointer
-                     hover:text-zinc-300 hover:bg-zinc-700 transition-colors"
+                     hover:text-zinc-300 hover:bg-[var(--panel3)] transition-colors"
             >
               <X size={11} />
             </button>

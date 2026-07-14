@@ -6,17 +6,18 @@ use skia_safe::{
 };
 use std::collections::HashMap;
 
-use crate::render::activity::{
-    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, RUN_TIME, SUM_TOTAL_TIME,
-    decode_gear, is_summary_metric, running_base_metric, unit_base_metric,
+use crate::activity::{
+    ATTR_DISTANCE, ATTR_GEAR, ATTR_POWER_TO_WEIGHT, ATTR_TIME, Activity, LAP_FRACTION,
+    LAP_LAPS_TO_GO, RUN_TIME, SUM_TOTAL_TIME, decode_gear, decode_lap_fraction, is_lap_metric,
+    is_summary_metric, running_base_metric, unit_base_metric,
 };
-use crate::render::chart::ChartCache;
-use crate::render::color::{hex_with_opacity, lerp_gradient};
-use crate::render::template::{
+use crate::chart::ChartCache;
+use crate::color::{hex_with_opacity, lerp_gradient};
+use crate::template::{
     Element, GaugeConfig, ImageConfig, LabelConfig, MeterConfig, PlotConfig, RangeBound,
     RangeKeyword, RectConfig, SceneConfig, Template, ValueConfig,
 };
-use crate::render::units;
+use crate::units;
 
 const ITALIC_SKEW_X: f32 = -0.25;
 
@@ -210,6 +211,11 @@ impl ValueConfig {
         if is_summary_metric(&self.value) {
             return activity.summary_value(&self.value, self.summary_scope.as_deref());
         }
+        // Lap counters resolve off the gate pre-pass series, not a source
+        // attribute — they read 0 until a start/finish gate is configured.
+        if is_lap_metric(&self.value) {
+            return activity.get_lap(&self.value, frame_idx);
+        }
         // Running counters (running_time / running_distance / running_elevation_*)
         // accumulate to the current frame. They aren't raw source attributes, so
         // resolve them before the valid_attributes gate, checking their base
@@ -260,7 +266,7 @@ impl OverlayElement for ValueConfig {
 
     fn measure(&self, ctx: &ElementCtx, frame_idx: usize) -> Option<ElementBounds> {
         let raw = self.sample(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
-        let text = format_value(raw, self);
+        let text = format_value(raw, self, !ctx.activity.laps_completed.is_empty());
         let font_name = self
             .font
             .as_deref()
@@ -294,6 +300,10 @@ impl OverlayElement for ValueConfig {
     fn draw(&self, canvas: &Canvas, ctx: &ElementCtx, frame_idx: usize) {
         let available = if is_summary_metric(&self.value) {
             ctx.activity.has_summary(&self.value)
+        } else if is_lap_metric(&self.value) {
+            // Lap counters resolve off the gate pre-pass, not a source
+            // attribute — always drawable (they read 0 until a gate is set).
+            true
         } else if let Some(base) = running_base_metric(&self.value) {
             ctx.activity.valid_attributes.iter().any(|a| a == base)
         } else {
@@ -303,7 +313,7 @@ impl OverlayElement for ValueConfig {
             return;
         }
         let raw = self.sample(ctx.activity, frame_idx, ctx.scene.rider_weight_kg);
-        let display = format_value(raw, self);
+        let display = format_value(raw, self, !ctx.activity.laps_completed.is_empty());
 
         let font_name = self
             .font
@@ -341,12 +351,24 @@ impl OverlayElement for ValueConfig {
 impl OverlayElement for PlotConfig {
     fn build_chart(&self, activity: &Activity, fonts_dir: &str) -> Option<ChartCache> {
         let (x_data, y_data) = activity.plot_data(&self.value);
-        let distance_data = if self.value == crate::render::activity::ATTR_COURSE {
-            activity.distance.clone()
+        let is_course = self.value == crate::activity::ATTR_COURSE;
+        // `distance_data` is the distance axis of the plotted geometry, so for a
+        // course it must align with the source-density route, not the frame grid.
+        // `frame_distance` is how far the rider has travelled at each frame, and
+        // is what locates them along that route.
+        let (distance_data, frame_distance) = if is_course {
+            (activity.route_distance.clone(), activity.distance.clone())
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
-        ChartCache::build(self, x_data, y_data, distance_data, fonts_dir)
+        ChartCache::build(
+            self,
+            x_data,
+            y_data,
+            distance_data,
+            frame_distance,
+            fonts_dir,
+        )
     }
 
     fn measure(&self, _ctx: &ElementCtx, _frame_idx: usize) -> Option<ElementBounds> {
@@ -951,7 +973,7 @@ impl OverlayElement for GaugeConfig {
         // Background circle.
         if let Some(bg_op) = self.background_opacity.filter(|&op| op > 0.0) {
             let bg_str = self.background_color.as_deref().unwrap_or("#000000");
-            let (r2, g2, b2, _) = crate::render::color::parse_hex_color(bg_str);
+            let (r2, g2, b2, _) = crate::color::parse_hex_color(bg_str);
             let alpha = (bg_op.clamp(0.0, 1.0) * 255.0) as u8;
             let mut bg_paint = Paint::default();
             bg_paint.set_anti_alias(true);
@@ -1554,13 +1576,21 @@ fn render_base_frame(w: u32, h: u32) -> Result<skia_safe::Image, String> {
 
 // ─── Font loading ──────────────────────────────────────────────────────────
 
+/// User-installed custom fonts directory, injected by the host application at
+/// startup (the core crate has no notion of per-platform app-data paths).
+static USER_FONTS_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+pub fn set_user_fonts_dir(dir: std::path::PathBuf) {
+    let _ = USER_FONTS_DIR.set(dir);
+}
+
 pub(crate) fn load_typeface(font_name: &str, fonts_dir: &str) -> Option<Typeface> {
     let mgr = FontMgr::default();
     // Bundled fonts first, then user-installed custom fonts.
-    let candidates = [
-        std::path::PathBuf::from(format!("{fonts_dir}/{font_name}")),
-        crate::fonts_user_dir().join(font_name),
-    ];
+    let mut candidates = vec![std::path::PathBuf::from(format!("{fonts_dir}/{font_name}"))];
+    if let Some(user_dir) = USER_FONTS_DIR.get() {
+        candidates.push(user_dir.join(font_name));
+    }
     for path in candidates {
         if let Ok(bytes) = std::fs::read(&path) {
             let data = skia_safe::Data::new_copy(&bytes);
@@ -1740,18 +1770,35 @@ fn draw_tabular_str(
 
 // ─── Value formatting ──────────────────────────────────────────────────────
 
-fn format_value(raw: f64, cfg: &ValueConfig) -> String {
+fn format_value(raw: f64, cfg: &ValueConfig, gate_configured: bool) -> String {
     let suffix = resolve_suffix(cfg);
     let append = |text: String| match &suffix {
         Some(s) => format!("{text}{s}"),
         None => text,
     };
 
+    // Race countdown never reads "0" (broadcast style): the bell lap shows
+    // LAST LAP and everything after the finish crossing shows FINISH, both
+    // replacing the number and its suffix. Without a configured gate the
+    // metric stays a plain numeric 0 so the editor state is honest.
+    if cfg.value == LAP_LAPS_TO_GO && gate_configured {
+        return match raw.round() as i64 {
+            n if n <= 0 => "FINISH".to_string(),
+            1 => "LAST LAP".to_string(),
+            n => append(n.to_string()),
+        };
+    }
+
     if cfg.value == ATTR_GEAR {
         let text = decode_gear(raw)
             .map(|(front, rear)| format!("{front}x{rear}"))
             .unwrap_or_else(|| "0x0".to_string());
         return append(text);
+    }
+
+    if cfg.value == LAP_FRACTION {
+        let (lap, total) = decode_lap_fraction(raw);
+        return append(format!("{lap}/{total}"));
     }
 
     if cfg.value == ATTR_TIME || cfg.value == SUM_TOTAL_TIME || cfg.value == RUN_TIME {
@@ -1997,7 +2044,7 @@ impl OverlayElement for ImageConfig {
 
 /// Resolve an asset filename against an ordered list of search directories.
 /// Checks absolute path first, then each directory in order.
-pub(crate) fn resolve_asset_path(file: &str, search_dirs: &[&str]) -> Option<std::path::PathBuf> {
+pub fn resolve_asset_path(file: &str, search_dirs: &[&str]) -> Option<std::path::PathBuf> {
     let p = std::path::Path::new(file);
     if p.is_absolute() && p.exists() {
         return Some(p.to_path_buf());
@@ -2087,7 +2134,66 @@ fn load_svg_image(path: &std::path::Path) -> Option<skia_safe::Image> {
 
 #[cfg(test)]
 mod tests {
-    use crate::render::template::Template;
+    use crate::template::Template;
+
+    /// The laps_to_go countdown never displays "0" during a race: the bell
+    /// lap reads LAST LAP and anything past the finish crossing reads FINISH
+    /// (both drop the manual suffix). Numbers ≥ 2 keep the suffix, and with
+    /// no gate configured the raw 0 stays numeric so the editor is honest.
+    #[test]
+    fn laps_to_go_formats_last_lap_and_finish_without_zero() {
+        use crate::template::Element;
+
+        let raw = serde_json::json!({
+            "scene": { "width": 100, "height": 100 },
+            "elements": [
+                { "type": "value", "id": "v", "value": "laps_to_go",
+                  "suffix": " to go", "x": 0, "y": 0 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let Element::Value(cfg) = &t.elements[0] else {
+            panic!("expected value element")
+        };
+
+        assert_eq!(super::format_value(21.0, cfg, true), "21 to go");
+        assert_eq!(super::format_value(2.0, cfg, true), "2 to go");
+        assert_eq!(super::format_value(1.0, cfg, true), "LAST LAP");
+        assert_eq!(super::format_value(0.0, cfg, true), "FINISH");
+        // No gate yet: the raw 0 renders as a plain number, not FINISH.
+        assert_eq!(super::format_value(0.0, cfg, false), "0 to go");
+    }
+
+    /// Lap counters resolve off the gate pre-pass, never a source attribute —
+    /// they are absent from `valid_attributes`, and the value draw gate must
+    /// still render them (regression: laps_to_go drew blank in the editor).
+    #[test]
+    fn lap_metric_value_draws_without_source_attribute() {
+        use crate::activity::Activity;
+
+        let activity = Activity {
+            laps_completed: vec![2.0; 10],
+            total_laps: 5.0,
+            ..Activity::default()
+        };
+        // valid_attributes deliberately left empty.
+
+        let raw = serde_json::json!({
+            "scene": { "width": 200, "height": 100, "font": "rajdhani-bold.ttf" },
+            "elements": [
+                { "type": "value", "id": "v", "value": "laps_to_go",
+                  "font_size": 60, "x": 10, "y": 80 }
+            ]
+        });
+        let t = Template::from_value(raw).unwrap();
+        let fonts_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/fonts");
+        let cache = super::SceneCache::build(&activity, &t, fonts_dir, &[]).unwrap();
+        let rgba = super::render_frame(0, &cache, &activity, &t, None, None);
+        assert!(
+            rgba.chunks_exact(4).any(|px| px[3] != 0),
+            "laps_to_go value element rendered nothing"
+        );
+    }
 
     /// Unified model: explicit `scene.layers` ids drive draw order; elements
     /// not listed fall back to array order after the listed ones.
@@ -2112,8 +2218,8 @@ mod tests {
     /// defaults to one decimal place.
     #[test]
     fn power_to_weight_divides_power_by_rider_weight() {
-        use crate::render::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
-        use crate::render::template::Element;
+        use crate::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
+        use crate::template::Element;
 
         let activity = Activity {
             power: vec![300.0],
@@ -2135,12 +2241,12 @@ mod tests {
 
         // No weight set yet → empty-state 0.0, formatted to one decimal.
         assert_eq!(
-            super::format_value(cfg.sample(&activity, 0, None), cfg),
+            super::format_value(cfg.sample(&activity, 0, None), cfg, false),
             "0.0"
         );
         // 300 W / 72 kg ≈ 4.2 W/kg.
         assert_eq!(
-            super::format_value(cfg.sample(&activity, 0, Some(72.0)), cfg),
+            super::format_value(cfg.sample(&activity, 0, Some(72.0)), cfg, false),
             "4.2"
         );
     }
@@ -2174,10 +2280,10 @@ mod tests {
     /// unit/time rules (km suffix, elevation metres, hh:mm:ss).
     #[test]
     fn summary_metrics_format_via_base_metric() {
-        use crate::render::activity::{
+        use crate::activity::{
             ATTR_DISTANCE, ATTR_ELEVATION, ATTR_TIME, Activity, ActivitySummary,
         };
-        use crate::render::template::Element;
+        use crate::template::Element;
 
         let full = ActivitySummary {
             total_distance: 42_195.0, // metres
@@ -2218,7 +2324,7 @@ mod tests {
             let Element::Value(cfg) = &t.elements[i] else {
                 panic!("expected value element")
             };
-            super::format_value(cfg.sample(&activity, 0, None), cfg)
+            super::format_value(cfg.sample(&activity, 0, None), cfg, false)
         };
 
         assert_eq!(fmt(0), "42.2 km"); // whole activity, km, 1 decimal
@@ -2232,8 +2338,8 @@ mod tests {
     /// in metres. They also hide when the base telemetry attribute is absent.
     #[test]
     fn running_metrics_resolve_and_format_via_base_metric() {
-        use crate::render::activity::{ATTR_DISTANCE, ATTR_ELEVATION, ATTR_TIME, Activity};
-        use crate::render::template::Element;
+        use crate::activity::{ATTR_DISTANCE, ATTR_ELEVATION, ATTR_TIME, Activity};
+        use crate::template::Element;
 
         let activity = Activity {
             elapsed_seconds: vec![0.0, 61.0, 3661.0],
@@ -2263,7 +2369,7 @@ mod tests {
             let Element::Value(cfg) = &t.elements[i] else {
                 panic!("expected value element")
             };
-            super::format_value(cfg.sample(&activity, frame, None), cfg)
+            super::format_value(cfg.sample(&activity, frame, None), cfg, false)
         };
 
         // Frame 2: 3661 s → 1:01:01, 5000 m → 5.0 km, 250 m climbed.
@@ -2288,7 +2394,7 @@ mod tests {
     /// counting value (and its trailing suffix) doesn't reflow frame to frame.
     #[test]
     fn tabular_figures_keep_equal_length_numbers_equal_width() {
-        let fonts_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/fonts");
+        let fonts_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/fonts");
         let font = super::load_font("rajdhani-bold.ttf", 100.0, fonts_dir, false)
             .expect("bundled font should load");
         let cell = super::digit_cell_width(&font, None);
@@ -2309,8 +2415,8 @@ mod tests {
     /// drops any suffix, "custom"/absent keep the manual `suffix` verbatim.
     #[test]
     fn suffix_mode_resolves_auto_none_and_custom() {
-        use crate::render::activity::{ATTR_DISTANCE, ATTR_SPEED, Activity, ActivitySummary};
-        use crate::render::template::Element;
+        use crate::activity::{ATTR_DISTANCE, ATTR_SPEED, Activity, ActivitySummary};
+        use crate::template::Element;
 
         let activity = Activity {
             speed: vec![10.0], // 10 m/s
@@ -2347,7 +2453,7 @@ mod tests {
             let Element::Value(cfg) = &t.elements[i] else {
                 panic!("expected value element")
             };
-            super::format_value(cfg.sample(&activity, 0, None), cfg)
+            super::format_value(cfg.sample(&activity, 0, None), cfg, false)
         };
 
         assert_eq!(fmt(0), "22 mph"); // 10 m/s → 22.37 mph, auto suffix
@@ -2362,8 +2468,8 @@ mod tests {
     /// metric/imperial distinction are untouched.
     #[test]
     fn scene_units_imperial_fills_unset_convertible_metrics() {
-        use crate::render::activity::{ATTR_DISTANCE, ATTR_POWER, ATTR_SPEED, Activity};
-        use crate::render::template::Element;
+        use crate::activity::{ATTR_DISTANCE, ATTR_POWER, ATTR_SPEED, Activity};
+        use crate::template::Element;
 
         let activity = Activity {
             speed: vec![10.0], // 10 m/s
@@ -2391,7 +2497,7 @@ mod tests {
             let Element::Value(cfg) = &t.elements[i] else {
                 panic!("expected value element")
             };
-            super::format_value(cfg.sample(&activity, 0, None), cfg)
+            super::format_value(cfg.sample(&activity, 0, None), cfg, false)
         };
 
         assert_eq!(fmt(0), "22 mph"); // inherited imperial
@@ -2405,7 +2511,7 @@ mod tests {
     /// 0..0 range when no weight is set).
     #[test]
     fn power_to_weight_range_scales_by_rider_weight() {
-        use crate::render::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
+        use crate::activity::{ATTR_POWER, ATTR_POWER_TO_WEIGHT, Activity};
 
         let activity = Activity {
             power: vec![100.0, 400.0],
@@ -2445,13 +2551,13 @@ mod tests {
         });
         let t = Template::from_value(raw).unwrap();
         let (vx, vy) = match &t.elements[1] {
-            crate::render::template::Element::Value(c) => (c.x, c.y),
+            crate::template::Element::Value(c) => (c.x, c.y),
             _ => unreachable!(),
         };
         // Gauge center (250, 350) + offset (0, -10).
         assert_eq!((vx, vy), (250, 340));
         let (ix, iy) = match &t.elements[2] {
-            crate::render::template::Element::Image(c) => (c.x, c.y),
+            crate::template::Element::Image(c) => (c.x, c.y),
             _ => unreachable!(),
         };
         // Gauge bottom-center (250, 500); image centers its own 50×50 box there.

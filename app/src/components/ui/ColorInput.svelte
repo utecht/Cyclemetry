@@ -36,7 +36,7 @@
   {#if isVar}
     <!-- Static swatch showing the resolved variable color -->
     <div
-      class="h-7 w-10 shrink-0 rounded border border-zinc-700 cursor-default"
+      class="h-7 w-10 shrink-0 rounded border border-white/10 cursor-default"
       style="background:{swatchHex()}"
       title="Resolved from {value}"
     ></div>
@@ -46,7 +46,7 @@
       type="color"
       value={swatchHex()}
       oninput={(e) => onchange?.(e.target.value)}
-      class="h-7 w-10 shrink-0 rounded border border-zinc-700 bg-zinc-800 cursor-pointer p-0.5"
+      class="h-7 w-10 shrink-0 rounded border border-white/10 bg-[var(--panel2)] cursor-pointer p-0.5"
     />
   {/if}
 
@@ -59,7 +59,7 @@
         // Switching to "Custom" seeds the hex with the currently resolved color
         onchange?.(v === '' ? swatchHex() : v)
       }}
-      class="shrink-0 h-7 rounded-[6px] border border-zinc-700 bg-zinc-800/60 pl-1.5 pr-1
+      class="shrink-0 h-7 rounded-[6px] border-0 bg-[var(--panel2)] pl-1.5 pr-1
              text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring"
       title="Pick a scene color variable"
     >

@@ -2,6 +2,7 @@
   import { getContext, onMount } from 'svelte'
   import { X } from 'lucide-svelte'
   import { formatHomePath } from '../../lib/utils.js'
+  import Select from '../ui/Select.svelte'
 
   const app = getContext('app')
 
@@ -50,6 +51,65 @@
 
     <!-- Body -->
     <div class="px-5 py-4 space-y-6">
+      <!-- Unit system — applies to every readout left on Auto; per-element
+           unit overrides in the template still win. -->
+      <div class="space-y-2">
+        <p
+          class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+        >
+          Units
+        </p>
+        <p class="text-[11px] text-zinc-500">
+          Used by every readout set to Auto. Per-element unit overrides still
+          apply.
+        </p>
+        <Select
+          value={app.units}
+          options={[
+            { value: 'metric', label: 'Metric (km, m, °C)' },
+            { value: 'imperial', label: 'Imperial (mi, ft, °F)' },
+          ]}
+          onchange={(v) => (app.units = v)}
+        />
+      </div>
+
+      <!-- Rider weight — powers the W/kg metric. Stored on this device only and
+           never written into the template, so sharing a template can't leak it. -->
+      <div class="space-y-2">
+        <p
+          class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+        >
+          Rider Weight
+        </p>
+        <p class="text-[11px] text-zinc-500">
+          Used only for the W/kg metric. Stored on this device — never saved to
+          templates.
+        </p>
+        <div class="flex items-center gap-1.5">
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            inputmode="decimal"
+            placeholder="—"
+            value={app.riderWeight ?? ''}
+            oninput={(e) => (app.riderWeight = e.target.value)}
+            class="min-w-0 flex-1 h-7 rounded-[6px] border-0 bg-[var(--panel2)] px-2 text-xs
+                   text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div class="shrink-0 w-20">
+            <Select
+              value={app.riderWeightUnit}
+              options={[
+                { value: 'kg', label: 'kg' },
+                { value: 'lb', label: 'lb' },
+              ]}
+              onchange={(v) => (app.riderWeightUnit = v)}
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Output folder -->
       <div class="space-y-2">
         <p

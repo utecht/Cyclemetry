@@ -114,6 +114,16 @@ export function createAppState() {
     Number.isFinite(storedRiderWeight) ? storedRiderWeight : null,
   )
   let riderWeightUnit = $state(localStorage.getItem('riderWeightUnit') ?? 'kg')
+  // Unit system ("metric" | "imperial") for every readout left on Auto —
+  // per-element unit overrides still win. An app-level preference like rider
+  // weight: configured once in Settings, stored on this device, injected into
+  // the config at render time (withAppSettings) and never saved into the
+  // template. Seeded from a pre-existing scene.units so upgrading keeps the
+  // user's current choice.
+  let units = $state(
+    localStorage.getItem('units') ??
+      (_persisted?.scene?.units === 'imperial' ? 'imperial' : 'metric'),
+  )
   let outputDir = $state(localStorage.getItem('outputDir') ?? null)
   let defaultOutputDir = $state(null)
   let outputWidth = $state(
@@ -224,6 +234,9 @@ export function createAppState() {
     localStorage.setItem('riderWeightUnit', riderWeightUnit)
   })
   $effect(() => {
+    localStorage.setItem('units', units)
+  })
+  $effect(() => {
     localStorage.setItem('outputWidth', String(outputWidth))
   })
   $effect(() => {
@@ -290,6 +303,7 @@ export function createAppState() {
         path: probe.path,
         duration: probe.duration,
         creationTime: probe.creation_time,
+        creationTimeNote: probe.creation_time_note ?? null,
         codec: probe.codec,
         width: probe.width,
         height: probe.height,
@@ -491,7 +505,7 @@ export function createAppState() {
     calibratingFormat = calibrationFormat(format)
     try {
       const r = await backend.nativeCalibrateExport(
-        config,
+        withAppSettings(config),
         gpxFilename,
         calibratingFormat,
         CALIBRATION_SECONDS,
@@ -623,9 +637,31 @@ export function createAppState() {
 
   // ── Config mutation helpers ───────────────────────────────────────────────
 
+  // The config as sent to the renderer: the working template plus app-level
+  // settings that live outside the template so they are never saved into or
+  // shared via it. Units slot into scene.units, which the Rust side fans out
+  // to every element left on Auto; rider weight rides as a separate render
+  // argument (riderWeightKg).
+  function withAppSettings(cfg) {
+    return cfg ? { ...cfg, scene: { ...cfg.scene, units } } : cfg
+  }
+
   function updateScene(updates) {
     if (!config?.scene) return
     commitConfig({ ...config, scene: { ...config.scene, ...updates } })
+  }
+
+  // Merge into the scene's start/finish gate (scene.lap_gate), creating it on
+  // first touch with the race assumed to start at the overlay window start.
+  function updateLapGate(updates) {
+    if (!config?.scene) return
+    updateScene({
+      lap_gate: {
+        start: config.scene.start ?? 0,
+        ...config.scene.lap_gate,
+        ...updates,
+      },
+    })
   }
 
   // Find an element by stable id. Returns { idx, el } or null.
@@ -804,9 +840,11 @@ export function createAppState() {
       return base
     })
 
+    // units moved to an app-level preference (see `units` state) — strip the
+    // legacy scene field so it never rides in saved templates again.
     const sceneBase = Object.fromEntries(
       Object.entries(config.scene ?? {}).filter(
-        ([k]) => k !== 'editor' && k !== 'groups',
+        ([k]) => k !== 'editor' && k !== 'groups' && k !== 'units',
       ),
     )
     return { ...config, scene: { ...sceneBase, groups }, elements }
@@ -1262,7 +1300,7 @@ export function createAppState() {
     benchmarking = true
     try {
       const result = await backend.nativeBenchmark(
-        config,
+        withAppSettings(config),
         gpxFilename,
         90,
         outputWidth,
@@ -1445,6 +1483,17 @@ export function createAppState() {
     pickOutputDir,
     resetOutputDir,
     // Rider weight (local-only; feeds the W/kg metric, never saved to templates).
+    get units() {
+      return units
+    },
+    set units(v) {
+      units = v === 'imperial' ? 'imperial' : 'metric'
+    },
+    // Config with app-level settings (unit system) injected — what every
+    // render/preview call sends; template saves keep using `config`.
+    get renderConfig() {
+      return withAppSettings(config)
+    },
     get riderWeight() {
       return riderWeight
     },
@@ -1589,6 +1638,7 @@ export function createAppState() {
       errorMessage = null
     },
     updateScene,
+    updateLapGate,
     updateElement,
     updateElementPos,
     updateElementPositions,

@@ -9,8 +9,8 @@
 </script>
 
 <aside
-  class="shrink-0 border-l border-zinc-800 bg-zinc-900/30 overflow-hidden flex flex-col transition-[width] duration-150
-         {aiChatOpen ? 'w-[320px]' : 'w-[272px]'}"
+  class="shrink-0 bg-[var(--panel)] rounded-[10px] overflow-hidden flex flex-col transition-[width] duration-150
+         {aiChatOpen ? 'w-[320px]' : 'w-[292px]'}"
 >
   {#if aiAssistantEnabled}
     <!-- AI chat panel — always mounted so message history persists across element-click switches -->

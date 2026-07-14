@@ -1,5 +1,6 @@
 mod recent;
 mod render;
+mod strava;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 use serde::{Deserialize, Serialize};
@@ -872,6 +873,21 @@ fn backend_default_output_dir() -> String {
     default_output_dir().to_string_lossy().to_string()
 }
 
+/// Free space on the volume holding the render output directory. The export
+/// dialog compares it against the estimated file size to warn before starting
+/// a render that won't fit. `free_bytes` is null when the query fails.
+#[tauri::command]
+fn backend_disk_free(output_dir: Option<String>) -> String {
+    let dir = output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_output_dir);
+    serde_json::json!({
+        "dir": dir.to_string_lossy(),
+        "free_bytes": render::scene::available_disk_bytes(&dir),
+    })
+    .to_string()
+}
+
 /// Single source of truth for available fonts:
 /// bundled font files, user-installed font files, and system font families.
 #[tauri::command]
@@ -1534,6 +1550,7 @@ async fn backend_activity_distance_info(
         vars: std::collections::HashMap::new(),
         rider_weight_kg: None,
         units: None,
+        lap_gate: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
     Ok(serde_json::json!({
@@ -1595,6 +1612,7 @@ async fn backend_activity_metric_range(
         vars: std::collections::HashMap::new(),
         rider_weight_kg: None,
         units: None,
+        lap_gate: None,
     };
     let activity = activity.sample_for_scene(&scene, synthetic)?;
 
@@ -2085,6 +2103,7 @@ async fn native_render(
             frames_rendered: s.progress.frames_rendered.clone(),
             total_frames: s.progress.total_frames.clone(),
             cancelled: s.progress.cancelled.clone(),
+            paused_low_disk: s.progress.paused_low_disk.clone(),
         }
     };
     let state_clone = state.inner().clone();
@@ -2154,6 +2173,7 @@ async fn native_progress(state: tauri::State<'_, SharedRenderState>) -> Result<S
         "total_frames": total,
         "fraction": fraction,
         "is_running": s.is_running,
+        "paused_low_disk": s.progress.paused_low_disk.load(std::sync::atomic::Ordering::Relaxed),
         "error": s.error,
     })
     .to_string())
@@ -2553,6 +2573,10 @@ fn record_gpx_opened(app: tauri::AppHandle, path: String) {
 // ─── App entry point ──────────────────────────────────────────────────────────
 
 pub fn run() {
+    // The render core can't know per-platform app-data paths; hand it the
+    // user fonts dir so load_typeface can find custom fonts.
+    render::frame::set_user_fonts_dir(fonts_user_dir());
+
     // On Windows (release), panics produce no visible output — write a crash file
     // to %TEMP% so the user can report it. Also write a startup marker so we know
     // the process launched at all if there are no logs.
@@ -2607,6 +2631,7 @@ pub fn run() {
             backend_import_template,
             backend_open_templates,
             backend_default_output_dir,
+            backend_disk_free,
             backend_list_fonts,
             backend_import_font,
             backend_list_assets,
@@ -2635,6 +2660,11 @@ pub fn run() {
             backend_activity_start_time_ms,
             backend_activity_metric_range,
             record_gpx_opened,
+            strava::strava_status,
+            strava::strava_connect,
+            strava::strava_disconnect,
+            strava::strava_activities,
+            strava::strava_import_activity,
         ])
         .setup(move |app| {
             // Init logging FIRST — if anything below panics/fails, we at least have a log.

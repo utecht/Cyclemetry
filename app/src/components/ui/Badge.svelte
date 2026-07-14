@@ -3,7 +3,7 @@
   let { variant = 'default', class: className = '', children } = $props()
   const variants = {
     default: 'bg-primary/15 text-primary border border-primary/30',
-    secondary: 'bg-zinc-800 text-zinc-300 border border-zinc-700',
+    secondary: 'bg-[var(--panel3)] text-zinc-300 border border-transparent',
     destructive: 'bg-destructive/15 text-destructive border border-destructive/30',
     success: 'bg-green-500/15 text-green-400 border border-green-500/30',
     outline: 'border border-zinc-700 text-muted-foreground',

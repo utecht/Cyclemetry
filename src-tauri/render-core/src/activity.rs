@@ -52,6 +52,24 @@ pub const RUN_DISTANCE: &str = "running_distance";
 pub const RUN_ELEVATION_GAIN: &str = "running_elevation_gain";
 pub const RUN_ELEVATION_LOSS: &str = "running_elevation_loss";
 
+// ─── Lap metrics ────────────────────────────────────────────────────────────
+// Crit lap counters derived from a scene-level start/finish gate
+// (`SceneConfig::lap_gate`). A pre-pass in `sample_for_scene` counts GPS
+// crossings of the gate over the full activity (so crossings before a trimmed
+// overlay window still count) into `Activity::laps_completed`; each token
+// resolves through [`Activity::get_lap`]. All are unitless counts.
+pub const ATTR_LAP: &str = "lap";
+pub const LAP_LAPS_TO_GO: &str = "laps_to_go";
+pub const LAP_FRACTION: &str = "lap_fraction";
+
+/// Whether `name` is a lap metric token.
+pub fn is_lap_metric(name: &str) -> bool {
+    matches!(name, ATTR_LAP | LAP_LAPS_TO_GO | LAP_FRACTION)
+}
+
+/// Default start/finish detection radius in metres.
+pub const LAP_GATE_DEFAULT_RADIUS_M: f64 = 25.0;
+
 /// Minimum sustained altitude change (metres) that counts toward elevation
 /// gain/loss. Elevation is already Savitzky-Golay smoothed at parse time, so a
 /// gentle floor here just rejects residual jitter without swallowing real hills.
@@ -192,6 +210,16 @@ pub struct Activity {
     pub elapsed_seconds: Vec<f64>,
     pub course: Vec<(f64, f64)>,
     pub distance: Vec<f64>,
+    /// The GPS track at its source recording density, covering the rendered
+    /// window. Unlike `course` — which is resampled onto the output frame grid
+    /// and so has exactly one entry per frame — this keeps every recorded point,
+    /// so the drawn route stays faithful even when the frame grid is far coarser
+    /// than the track (a 3-second time-lapse of a two-hour ride is 90 frames).
+    /// Course plots draw from this and locate the rider along it by distance.
+    pub route: Vec<(f64, f64)>,
+    /// Cumulative activity distance (metres) at each `route` vertex, aligned 1:1.
+    /// Maps a frame's `distance` onto a position along the route.
+    pub route_distance: Vec<f64>,
     pub elevation: Vec<f64>,
     pub gradient: Vec<f64>,
     pub heartrate: Vec<f64>,
@@ -210,6 +238,14 @@ pub struct Activity {
     pub cumulative_elevation_gain: Vec<f64>,
     /// Running descent (metres), counterpart to `cumulative_elevation_gain`.
     pub cumulative_elevation_loss: Vec<f64>,
+    /// Completed lap count at each sample (0 during lap 1), from the
+    /// start/finish gate pre-pass (`compute_laps`). Empty when the scene has no
+    /// lap gate — lap metrics then read 0.
+    pub laps_completed: Vec<f64>,
+    /// Total race laps for `laps_to_go` / `lap_fraction`: the gate's manual
+    /// override, else auto-detected as every crossing from the gate anchor to
+    /// the end of the activity. 0 when no gate is set.
+    pub total_laps: f64,
     pub valid_attributes: Vec<String>,
     /// Total cumulative distance (metres) of the full activity before any trim.
     pub total_activity_distance: f64,
@@ -489,7 +525,8 @@ impl Activity {
                                 pt.power = current_text.parse().ok();
                             }
                             "Speed" if in_extensions => {
-                                pt.speed = current_text.parse::<f64>().ok().filter(|v| v.is_finite());
+                                pt.speed =
+                                    current_text.parse::<f64>().ok().filter(|v| v.is_finite());
                             }
                             "front_gear" | "frontGear" | "front_gear_num" if in_extensions => {
                                 pt.front_gear = current_text.parse().ok();
@@ -587,7 +624,13 @@ impl Activity {
         let mut reader = Reader::from_str(content);
         reader.config_mut().trim_text(true);
 
-        let mut points: Vec<TrackPoint> = Vec::new();
+        // `wpt`s are standalone waypoints (POIs, cue sheet entries), not part of
+        // the recorded track: they carry no timestamps and sit wherever the
+        // author dropped them. Folding them in would both warp the route and
+        // break the timestamp axis, so they are only used as the track when the
+        // file has no `trkpt`s at all (hand-authored, waypoint-only GPX).
+        let mut track_points: Vec<TrackPoint> = Vec::new();
+        let mut way_points: Vec<TrackPoint> = Vec::new();
         let mut current: Option<TrackPoint> = None;
         let mut in_extensions = false;
         let mut in_tpx = false; // inside TrackPointExtension container
@@ -664,7 +707,8 @@ impl Activity {
                                 pt.power = current_text.parse().ok();
                             }
                             "speed" => {
-                                pt.speed = current_text.parse::<f64>().ok().filter(|v| v.is_finite());
+                                pt.speed =
+                                    current_text.parse::<f64>().ok().filter(|v| v.is_finite());
                             }
                             "TrackPointExtension" => {
                                 in_tpx = false;
@@ -674,7 +718,11 @@ impl Activity {
                             }
                             tag if !current_point_tag.is_empty() && tag == current_point_tag => {
                                 if let Some(pt) = current.take() {
-                                    points.push(pt);
+                                    if tag == "wpt" {
+                                        way_points.push(pt);
+                                    } else {
+                                        track_points.push(pt);
+                                    }
                                 }
                                 current_point_tag.clear();
                             }
@@ -690,6 +738,11 @@ impl Activity {
             buf.clear();
         }
 
+        let points = if track_points.is_empty() {
+            way_points
+        } else {
+            track_points
+        };
         if points.is_empty() {
             return Err("No track points found in GPX file".to_string());
         }
@@ -855,6 +908,10 @@ impl Activity {
             activity.gradient = grad.iter().map(|&v| v * GRADIENT_SCALE).collect();
         }
 
+        // Source-density route geometry, before any frame-grid resampling.
+        activity.route = activity.course.clone();
+        activity.route_distance = activity.distance.clone();
+
         activity.total_activity_distance = cum_dist;
         activity.total_activity_elapsed = activity.elapsed_seconds.last().copied().unwrap_or(0.0);
         activity.activity_summary = activity.compute_summary();
@@ -918,6 +975,11 @@ impl Activity {
                 _ => {}
             }
         }
+        // Not a source attribute, so outside the valid_attributes loop: the
+        // lap counter steps at crossings, exactly like the gears.
+        if !self.laps_completed.is_empty() {
+            self.laps_completed = step_interp(&self.laps_completed, fps);
+        }
     }
 
     pub fn data_len(&self) -> usize {
@@ -938,10 +1000,15 @@ impl Activity {
     }
 
     pub fn sample_for_scene(
-        self,
-        scene: &crate::render::template::SceneConfig,
+        mut self,
+        scene: &crate::template::SceneConfig,
         synthetic: bool,
     ) -> Result<Self, String> {
+        // Lap counting must see the full activity — crossings before a trimmed
+        // overlay window still advance the counter.
+        if let Some(gate) = &scene.lap_gate {
+            self.compute_laps(gate);
+        }
         let fps = scene.fps.max(1);
         let start = scene.start.unwrap_or(0.0).max(0.0);
         self.resample_wall_clock(start, scene.end, fps, scene.target_duration, synthetic)
@@ -969,6 +1036,8 @@ impl Activity {
             if synthetic {
                 let mut cloned = self.clone();
                 cloned.interpolate(fps);
+                cloned.route = cloned.course.clone();
+                cloned.route_distance = cloned.distance.clone();
                 return Ok(cloned);
             }
             return Err("Wall-clock timeline requires activity timestamps".to_string());
@@ -998,6 +1067,7 @@ impl Activity {
             // Whole-ride totals survive the trim; overlay totals are recomputed
             // from the trimmed series below.
             activity_summary: self.activity_summary.clone(),
+            total_laps: self.total_laps,
             ..Activity::default()
         };
 
@@ -1031,6 +1101,33 @@ impl Activity {
             out.front_gear.push(sample.front_gear);
             out.rear_gear.push(sample.rear_gear);
             out.gear.push(sample.gear);
+            out.laps_completed.push(sample.laps_completed);
+        }
+        // No lap gate → keep the series empty so lap metrics read 0, not lap 1.
+        if self.laps_completed.is_empty() {
+            out.laps_completed.clear();
+        }
+
+        // Route geometry is kept at source density, independent of the frame
+        // grid: a time-lapse has far fewer frames than recorded points, and
+        // drawing the course from the per-frame series would decimate it into a
+        // corner-cutting scribble. Take every recorded point inside the window.
+        let (route, route_distance): (Vec<(f64, f64)>, Vec<f64>) = self
+            .elapsed_seconds
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| **t >= start && **t <= end)
+            .filter_map(|(i, _)| Some((*self.course.get(i)?, *self.distance.get(i)?)))
+            .unzip();
+        // A window shorter than the recording interval can span fewer than two
+        // points; the resampled series still has a vertex per frame, so fall
+        // back to it rather than leaving the plot with nothing to draw.
+        if route.len() >= 2 {
+            out.route = route;
+            out.route_distance = route_distance;
+        } else {
+            out.route = out.course.clone();
+            out.route_distance = out.distance.clone();
         }
 
         // Running ascent/descent over the resampled elevation series, so the
@@ -1102,6 +1199,7 @@ impl Activity {
             front_gear: self.front_gear.get(index).copied().unwrap_or_default(),
             rear_gear: self.rear_gear.get(index).copied().unwrap_or_default(),
             gear: self.gear.get(index).copied().unwrap_or_default(),
+            laps_completed: self.laps_completed.get(index).copied().unwrap_or_default(),
         }
     }
 
@@ -1130,6 +1228,8 @@ impl Activity {
             front_gear: self.front_gear.get(prev).copied().unwrap_or_default(),
             rear_gear: self.rear_gear.get(prev).copied().unwrap_or_default(),
             gear: self.gear.get(prev).copied().unwrap_or_default(),
+            // Steps like the gears: a lap only advances at a crossing sample.
+            laps_completed: self.laps_completed.get(prev).copied().unwrap_or_default(),
         }
     }
 
@@ -1335,6 +1435,127 @@ impl Activity {
         }
     }
 
+    /// How far past the race-finish handle a crossing's closest-approach
+    /// sample may sit and still count. The handle is placed by eye on the
+    /// finish frame; GPS cadence means the detected crossing sample can trail
+    /// it slightly.
+    const LAP_GATE_END_GRACE_S: f64 = 2.0;
+
+    /// Count start/finish gate crossings into the `laps_completed` series and
+    /// resolve `total_laps`. Must run on the full-resolution activity before
+    /// any trim/resample so crossings outside the overlay window still count.
+    ///
+    /// The gate point is the track position at ride time `gate.start` — the
+    /// rider is on the line at the race-start moment. Each contiguous stretch
+    /// of samples within the detection radius is one pass, counted at its
+    /// closest-approach sample; passes are deduped by requiring real
+    /// along-track travel between them so GPS jitter at the radius boundary
+    /// can't double-count. The pass containing the gate anchor starts lap 1 —
+    /// earlier passes (warm-up laps) don't count, and passes after `gate.end`
+    /// (cooldown) don't either.
+    pub fn compute_laps(&mut self, gate: &crate::template::LapGateConfig) {
+        let n = self.data_len();
+        self.laps_completed = vec![0.0; n];
+        self.total_laps = 0.0;
+        if n < 2
+            || self.course.len() != n
+            || self.distance.len() != n
+            || self.elapsed_seconds.len() != n
+        {
+            return;
+        }
+
+        let gate_idx = self
+            .elapsed_seconds
+            .partition_point(|&t| t < gate.start)
+            .min(n - 1);
+        let (gate_lat, gate_lon) = self.course[gate_idx];
+        // Equirectangular metres — exact enough at gate-radius scale.
+        let m_per_deg_lat = 111_320.0;
+        let m_per_deg_lon = 111_320.0 * gate_lat.to_radians().cos();
+        let gate_dist_m = |(lat, lon): (f64, f64)| {
+            let dy = (lat - gate_lat) * m_per_deg_lat;
+            let dx = (lon - gate_lon) * m_per_deg_lon;
+            (dx * dx + dy * dy).sqrt()
+        };
+        let radius = gate
+            .radius
+            .filter(|r| r.is_finite() && *r > 0.0)
+            .unwrap_or(LAP_GATE_DEFAULT_RADIUS_M);
+
+        // Closest-approach sample of every in-radius pass, in ride order.
+        let mut passes: Vec<usize> = Vec::new();
+        let mut best: Option<(f64, usize)> = None;
+        for i in 0..n {
+            let d = gate_dist_m(self.course[i]);
+            if d <= radius {
+                if best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, i));
+                }
+            } else if let Some((_, bi)) = best.take() {
+                passes.push(bi);
+            }
+        }
+        if let Some((_, bi)) = best {
+            passes.push(bi);
+        }
+        let min_gap_m = (radius * 3.0).max(50.0);
+        passes.dedup_by(|next, prev| self.distance[*next] - self.distance[*prev] < min_gap_m);
+
+        // The pass containing the gate anchor (the anchor sample is always
+        // in-radius — it is 0 m from itself) starts lap 1.
+        let Some(start_pos) = passes
+            .iter()
+            .position(|&p| (self.distance[p] - self.distance[gate_idx]).abs() < min_gap_m)
+        else {
+            return;
+        };
+        // Crossings between race start and race finish; later passes are the
+        // cooldown and never advance the counter (nor inflate the auto total).
+        let cutoff = gate.end.map(|e| e + Self::LAP_GATE_END_GRACE_S);
+        let lap_marks: Vec<usize> = passes[start_pos + 1..]
+            .iter()
+            .copied()
+            .filter(|&p| cutoff.is_none_or(|c| self.elapsed_seconds[p] <= c))
+            .collect();
+
+        let mut mark = 0;
+        for (i, out) in self.laps_completed.iter_mut().enumerate() {
+            if mark < lap_marks.len() && lap_marks[mark] <= i {
+                mark += 1;
+            }
+            *out = mark as f64;
+        }
+        self.total_laps = gate
+            .total_laps
+            .map(|t| t as f64)
+            .unwrap_or(lap_marks.len() as f64);
+    }
+
+    /// Resolve a lap metric at `index`. `lap` is the 1-based lap currently
+    /// being ridden, capped at the race total; `laps_to_go` includes the
+    /// current lap (bell lap reads 1, finished reads 0); `lap_fraction` packs
+    /// current lap and total into one sample (see [`decode_lap_fraction`]).
+    /// All read 0 when no gate is configured.
+    pub fn get_lap(&self, name: &str, index: usize) -> f64 {
+        if self.laps_completed.is_empty() {
+            return 0.0;
+        }
+        let completed = self.laps_completed.get(index).copied().unwrap_or(0.0);
+        let total = self.total_laps;
+        let current = if total > 0.0 {
+            (completed + 1.0).min(total)
+        } else {
+            completed + 1.0
+        };
+        match name {
+            ATTR_LAP => current,
+            LAP_LAPS_TO_GO => (total - completed).max(0.0),
+            LAP_FRACTION => current * 10_000.0 + total,
+            _ => 0.0,
+        }
+    }
+
     /// Build (x, y) data arrays for a plot of the given attribute.
     pub fn plot_data(&self, attribute: &str) -> (Vec<f64>, Vec<f64>) {
         let scalar = |data: &[f64]| -> (Vec<f64>, Vec<f64>) {
@@ -1355,8 +1576,9 @@ impl Activity {
             ATTR_REAR_GEAR => scalar(&self.rear_gear),
             ATTR_GEAR => scalar(&self.gear),
             ATTR_COURSE => {
-                let x: Vec<f64> = self.course.iter().map(|c| c.1).collect(); // lon
-                let y: Vec<f64> = self.course.iter().map(|c| c.0).collect(); // lat
+                // Source-density geometry, not the per-frame series — see `route`.
+                let x: Vec<f64> = self.route.iter().map(|c| c.1).collect(); // lon
+                let y: Vec<f64> = self.route.iter().map(|c| c.0).collect(); // lat
                 (x, y)
             }
             _ => (vec![], vec![]),
@@ -1379,6 +1601,7 @@ struct ActivitySample {
     front_gear: f64,
     rear_gear: f64,
     gear: f64,
+    laps_completed: f64,
 }
 
 // ─── Raw track point from XML ──────────────────────────────────────────────
@@ -1598,6 +1821,16 @@ fn parse_timestamp_millis(t: Option<&str>) -> Option<i64> {
         .map(|dt| dt.timestamp_millis())
 }
 
+/// Unpack a `lap_fraction` sample (encoded in [`Activity::get_lap`] as
+/// `lap * 10_000 + total`, mirroring the gear encoding) into (lap, total).
+pub fn decode_lap_fraction(raw: f64) -> (i64, i64) {
+    if !raw.is_finite() || raw < 0.0 {
+        return (0, 0);
+    }
+    let encoded = raw.round() as i64;
+    (encoded / 10_000, encoded % 10_000)
+}
+
 pub fn encode_gear(front: f64, rear: f64) -> f64 {
     front.round() * 100.0 + rear.round()
 }
@@ -1641,7 +1874,7 @@ fn fit_f64(value: &fitparser::Value) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::template::SceneConfig;
+    use crate::template::SceneConfig;
 
     fn wall_clock_scene(start: f64, end: f64, fps: u32) -> SceneConfig {
         SceneConfig {
@@ -1658,11 +1891,87 @@ mod tests {
             color: None,
             opacity: None,
             rider_weight_kg: None,
+            lap_gate: None,
             layers: None,
             groups: Vec::new(),
             vars: std::collections::HashMap::new(),
             units: None,
         }
+    }
+
+    /// A winding 1 Hz track: a full circle, so a decimated polyline is easy to
+    /// tell from a faithful one (it cuts across the arc).
+    fn circling_gpx(points: usize) -> String {
+        let mut s = String::from("<gpx><trk><trkseg>");
+        for i in 0..points {
+            let angle = (i as f64 / points as f64) * std::f64::consts::TAU;
+            let lat = 37.8 + 0.01 * angle.sin();
+            let lon = -122.4 + 0.01 * angle.cos();
+            s.push_str(&format!(
+                "<trkpt lat=\"{lat:.6}\" lon=\"{lon:.6}\"><ele>10</ele>\
+                 <time>2026-01-01T00:{:02}:{:02}Z</time></trkpt>",
+                i / 60,
+                i % 60,
+            ));
+        }
+        s.push_str("</trkseg></trk></gpx>");
+        s
+    }
+
+    /// A time-lapse has far fewer frames than recorded points. The route must
+    /// keep its source density regardless, or the course plot degenerates into a
+    /// coarse scribble that cuts every corner.
+    #[test]
+    fn timelapse_keeps_route_at_source_density() {
+        let activity = Activity::parse_gpx(&circling_gpx(600)).expect("gpx parses");
+        assert_eq!(activity.route.len(), 600);
+
+        let mut scene = wall_clock_scene(0.0, 599.0, 30);
+        scene.target_duration = Some(3.0); // whole ride compressed into 3 s
+        let out = activity.sample_for_scene(&scene, false).expect("resamples");
+
+        // The frame grid collapses to 3 s × 30 fps …
+        assert_eq!(out.data_len(), 90);
+        // … but the drawn geometry keeps every recorded point in the window.
+        assert_eq!(out.route.len(), 600);
+        assert_eq!(out.route_distance.len(), out.route.len());
+        assert!(out.route_distance.windows(2).all(|w| w[1] >= w[0]));
+
+        // Course plots draw from `route`, so the plotted line stays full-density.
+        let (x, y) = out.plot_data(ATTR_COURSE);
+        assert_eq!(x.len(), 600);
+        assert_eq!(y.len(), 600);
+    }
+
+    /// Waypoints (cue sheet / POI entries, which many route exports carry) are
+    /// not part of the recorded track: they'd warp the route and, being
+    /// timestamp-less, take the whole timeline down with them.
+    #[test]
+    fn waypoints_are_not_treated_as_track_points() {
+        let gpx = "<gpx>\
+             <wpt lat=\"0.0\" lon=\"0.0\"><name>Coffee stop</name></wpt>\
+             <trk><trkseg>\
+               <trkpt lat=\"37.80\" lon=\"-122.40\"><time>2026-01-01T00:00:00Z</time></trkpt>\
+               <trkpt lat=\"37.81\" lon=\"-122.41\"><time>2026-01-01T00:00:01Z</time></trkpt>\
+             </trkseg></trk></gpx>";
+        let activity = Activity::parse_gpx(gpx).expect("gpx parses");
+
+        assert_eq!(activity.route.len(), 2);
+        assert!(!activity.route.contains(&(0.0, 0.0)));
+        // The waypoint carried no <time>; the track's own axis must survive it.
+        assert_eq!(activity.elapsed_seconds, vec![0.0, 1.0]);
+    }
+
+    /// `start`/`end` still trim the route — a clip shows only the ridden portion.
+    #[test]
+    fn route_is_trimmed_to_the_scene_window() {
+        let activity = Activity::parse_gpx(&circling_gpx(600)).expect("gpx parses");
+        let out = activity
+            .sample_for_scene(&wall_clock_scene(100.0, 199.0, 30), false)
+            .expect("resamples");
+
+        assert_eq!(out.route.len(), 100);
+        assert_eq!(out.route_distance.len(), 100);
     }
 
     #[test]
@@ -1723,6 +2032,182 @@ mod tests {
         assert_eq!(a.summary_value(SUM_AVG_SPEED, Some("activity")), 10.0);
         assert!(a.has_summary(SUM_TOTAL_DISTANCE));
         assert!(!a.has_summary(SUM_AVG_POWER)); // power not in valid_attributes
+    }
+
+    /// Synthetic crit track: each entry is (lat, cumulative distance m); the
+    /// gate sits at lon 5.0 and lat 40.0, ~0.0001° lat ≈ 11 m.
+    fn lap_activity(points: &[(f64, f64)]) -> Activity {
+        let mut a = Activity::default();
+        a.course = points.iter().map(|&(lat, _)| (lat, 5.0)).collect();
+        a.distance = points.iter().map(|&(_, d)| d).collect();
+        a.speed = vec![10.0; points.len()];
+        // One sample per second, so sample index == ride time.
+        a.elapsed_seconds = (0..points.len()).map(|i| i as f64).collect();
+        a
+    }
+
+    fn lap_gate(
+        start: f64,
+        end: Option<f64>,
+        total_laps: Option<u32>,
+    ) -> crate::template::LapGateConfig {
+        crate::template::LapGateConfig {
+            start,
+            end,
+            radius: None,
+            total_laps,
+        }
+    }
+
+    #[test]
+    fn compute_laps_counts_gate_crossings() {
+        const FAR: f64 = 40.004; // ≈445 m from the gate
+        let mut a = lap_activity(&[
+            (40.0, 0.0), // start at the line
+            (FAR, 300.0),
+            (FAR, 600.0),
+            (40.0001, 900.0), // lap 1
+            (FAR, 1200.0),
+            (FAR, 1500.0),
+            (40.0, 1800.0), // lap 2
+            (FAR, 2100.0),
+            (FAR, 2400.0),
+            (40.0001, 2700.0), // lap 3 — finish
+            (FAR, 3000.0),     // cooldown
+        ]);
+        a.compute_laps(&lap_gate(0.0, None, None));
+
+        assert_eq!(
+            a.laps_completed,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0]
+        );
+        assert_eq!(a.total_laps, 3.0);
+        assert_eq!(a.get_lap(ATTR_LAP, 0), 1.0);
+        assert_eq!(a.get_lap(ATTR_LAP, 4), 2.0);
+        // Current lap caps at the race total after the finish crossing.
+        assert_eq!(a.get_lap(ATTR_LAP, 10), 3.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 0), 3.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 3), 2.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 10), 0.0);
+        assert_eq!(decode_lap_fraction(a.get_lap(LAP_FRACTION, 4)), (2, 3));
+    }
+
+    #[test]
+    fn compute_laps_ignores_warmup_and_honours_total_override() {
+        const FAR: f64 = 40.004;
+        let mut a = lap_activity(&[
+            (40.0, 0.0), // warm-up pass — before the gate anchor
+            (FAR, 300.0),
+            (FAR, 600.0),
+            (40.0, 900.0), // gate anchor: race start
+            (FAR, 1200.0),
+            (40.0, 1500.0), // lap 1
+            (FAR, 1800.0),
+            (40.0, 2100.0), // lap 2
+        ]);
+        a.compute_laps(&lap_gate(3.0, None, Some(5)));
+
+        assert_eq!(
+            a.laps_completed,
+            vec![0.0; 5]
+                .into_iter()
+                .chain([1.0, 1.0, 2.0])
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(a.total_laps, 5.0);
+        assert_eq!(a.get_lap(ATTR_LAP, 6), 2.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 6), 4.0);
+    }
+
+    #[test]
+    fn compute_laps_dedupes_jitter_at_radius_boundary() {
+        const FAR: f64 = 40.004;
+        let mut a = lap_activity(&[
+            (40.0, 0.0),
+            (FAR, 300.0),
+            (FAR, 600.0),
+            (40.0001, 900.0),  // lap 1: in radius
+            (40.00027, 920.0), // ~30 m: just outside
+            (40.00007, 940.0), // back inside — same pass, must not double-count
+            (FAR, 1200.0),
+            (40.0, 1500.0), // lap 2
+        ]);
+        a.compute_laps(&lap_gate(0.0, None, None));
+
+        assert_eq!(a.laps_completed.last(), Some(&2.0));
+        assert_eq!(a.total_laps, 2.0);
+    }
+
+    #[test]
+    fn compute_laps_race_end_excludes_cooldown_crossings() {
+        const FAR: f64 = 40.004;
+        let mut a = lap_activity(&[
+            (40.0, 0.0), // race start at t=0
+            (FAR, 300.0),
+            (FAR, 600.0),
+            (40.0, 900.0), // lap 1 at t=3
+            (FAR, 1200.0),
+            (FAR, 1500.0),
+            (40.0, 1800.0), // lap 2 — finish, t=6
+            (FAR, 2100.0),
+            (FAR, 2400.0),
+            (40.0, 2700.0), // cooldown pass at t=9 — must not count
+        ]);
+        a.compute_laps(&lap_gate(0.0, Some(6.0), None));
+
+        // Auto total stops at the finish handle; the cooldown crossing
+        // advances nothing.
+        assert_eq!(a.total_laps, 2.0);
+        assert_eq!(a.laps_completed.last(), Some(&2.0));
+        assert_eq!(a.get_lap(ATTR_LAP, 9), 2.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 9), 0.0);
+    }
+
+    #[test]
+    fn lap_metrics_read_zero_without_gate() {
+        let a = lap_activity(&[(40.0, 0.0), (40.004, 300.0)]);
+        assert_eq!(a.get_lap(ATTR_LAP, 1), 0.0);
+        assert_eq!(a.get_lap(LAP_LAPS_TO_GO, 1), 0.0);
+        assert_eq!(a.get_lap(LAP_FRACTION, 1), 0.0);
+    }
+
+    #[test]
+    fn lap_counter_survives_scene_resampling_as_step_series() {
+        const FAR: f64 = 40.004;
+        // One-second cadence: gate at t=0, lap crossing at t=3, ride ends t=5.
+        let mut a = lap_activity(&[
+            (40.0, 0.0),
+            (FAR, 300.0),
+            (FAR, 600.0),
+            (40.0, 900.0), // lap 1 at t=3
+            (FAR, 1200.0),
+            (FAR, 1500.0),
+        ]);
+        a.elapsed_seconds = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+
+        let mut scene = wall_clock_scene(0.0, 5.0, 2);
+        scene.lap_gate = Some(lap_gate(0.0, None, None));
+        let sampled = a.sample_for_scene(&scene, false).unwrap();
+
+        assert_eq!(sampled.total_laps, 1.0);
+        // Steps (never interpolates) from 0 to 1 exactly at the crossing.
+        let mid = sampled
+            .laps_completed
+            .iter()
+            .position(|&c| c == 1.0)
+            .expect("crossing must survive resampling");
+        assert!(sampled.laps_completed[..mid].iter().all(|&c| c == 0.0));
+        assert!(sampled.laps_completed[mid..].iter().all(|&c| c == 1.0));
+        assert_eq!(sampled.get_lap(ATTR_LAP, 0), 1.0);
+
+        // Without a gate the resampled series stays empty → metrics read 0.
+        let mut b = lap_activity(&[(40.0, 0.0), (FAR, 300.0), (40.0, 600.0)]);
+        b.elapsed_seconds = vec![0.0, 1.0, 2.0];
+        let sampled = b
+            .sample_for_scene(&wall_clock_scene(0.0, 2.0, 2), false)
+            .unwrap();
+        assert!(sampled.laps_completed.is_empty());
+        assert_eq!(sampled.get_lap(ATTR_LAP, 0), 0.0);
     }
 
     #[test]
@@ -1804,7 +2289,10 @@ mod tests {
         };
 
         // bare <speed> (GPX 1.0, direct child of trkpt)
-        assert_eq!(speeds("<speed>5.0</speed>", "<speed>7.5</speed>"), vec![5.0, 7.5]);
+        assert_eq!(
+            speeds("<speed>5.0</speed>", "<speed>7.5</speed>"),
+            vec![5.0, 7.5]
+        );
 
         // Garmin TrackPointExtension v2: <gpxtpx:speed> inside <extensions>
         assert_eq!(

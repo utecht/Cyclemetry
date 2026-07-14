@@ -15,6 +15,7 @@
   import {
     videoStartOnAxis as computeStartOnAxis,
     offsetForVideoStart,
+    wallClockDeltaSec,
   } from '@/lib/videoAlignment.js'
 
   const app = getContext('app')
@@ -110,10 +111,17 @@
     app.setVideoOffset(offsetForVideoStart(app.gpxStartTime, video, sceneStart))
   }
 
+  // Deliberate wall-clock placement: userOffsetSec 0 with both timestamps
+  // known means the band sits exactly at the camera's recorded position
+  // (the "align to recording time" button). Auto-snap must never override it.
+  let wallClockAligned = $derived(
+    videoUserOffset === 0 && wallClockDeltaSec(app.gpxStartTime, video) != null,
+  )
+
   // Auto-snap: move to timeline start when the video is entirely outside
   // the overlay window and the user isn't actively dragging.
   $effect(() => {
-    if (!hasOverlap && videoDuration > 0 && !drag) {
+    if (!hasOverlap && videoDuration > 0 && !drag && !wallClockAligned) {
       moveVideoToTimelineStart()
     }
   })
@@ -135,7 +143,7 @@
       onpointerup={endDrag}
       onpointercancel={endDrag}
     >
-      <div class="absolute inset-x-0 top-2 h-1 rounded-full bg-zinc-900"></div>
+      <div class="absolute inset-x-0 top-2 h-1 rounded-full bg-[var(--panel3)]"></div>
       {#if widthPct > 0}
         <button
           type="button"

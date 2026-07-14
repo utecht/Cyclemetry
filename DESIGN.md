@@ -25,18 +25,20 @@
 
 ## Color
 - **Approach:** Restrained — color is rare and purposeful. When the accent appears, it means something.
-- **Background:** `#09090B` — Zinc 950, slightly warmer than pure black. Better for long editing sessions.
-- **Surface:** `#18181B` — Zinc 900, panels and cards
-- **Surface 2:** `#1F1F23` — hover states, nested surfaces
-- **Border:** `#27272A` — Zinc 800, primary dividers
-- **Border 2:** `#3F3F46` — Zinc 700, secondary / interactive borders
-- **Dim:** `#52525B` — icon defaults, tertiary text
-- **Muted:** `#A1A1AA` — secondary text, labels, placeholders
+- **Background:** `#000000` — solid black canvas. Panels float on it; the black shows through the 8px gaps between zones.
+- **Panel:** `#121212` — one rounded panel per zone (header, sidebars, center canvas)
+- **Panel 2:** `#1C1C1C` — filled controls (inputs, selects, chips) and row hover states
+- **Panel 3:** `#242424` — nested surfaces, control hover, slider tracks
+- **Hairline:** `rgba(255,255,255,0.06)` — internal dividers *within* a panel only. Zones are separated by gaps, never borders. Controls are filled, not outlined.
+- **Dim:** `#6F6F6F` — icon defaults, tertiary text
+- **Muted:** `#A7A7A7` — secondary text, labels, placeholders
 - **Primary text:** `#FAFAFA`
-- **Accent:** `#DC143C` — Crimson. Used only for: active element states, primary CTAs, the section dot indicators. Not for errors. Not scattered.
-- **Accent dim:** `#7F0A22` — hover/pressed accent backgrounds
+- **Accent:** `#DC143C` — Crimson. Used only for: active element states, primary CTAs (Render is solid crimson with a soft glow), selected rows, the canvas wash. Not for errors. Not scattered.
+- **Accent hover:** `#F04060` — hover state for solid-crimson buttons and links
+- **Accent dim:** `#7F0A22` — pressed accent backgrounds
+- **Canvas wash:** `radial-gradient(120% 90% at 50% 0%, rgba(220,20,60,0.09), transparent 58%)` — soft crimson glow behind the preview
 - **Success:** `#22C55E` — saved state, render complete
-- **Warning:** `#F59E0B` — modified state, unsaved changes
+- **Warning:** `#F5B544` — modified state, unsaved changes
 - **Error:** `#EF4444` — distinct from accent red, for actual error states only
 - **Dark mode:** App is dark-only. No light mode needed — this is a video editing context.
 
@@ -46,13 +48,13 @@
 - **Scale:** 2(2px) 4(4px) 6(6px) 8(8px) 12(12px) 16(16px) 24(24px) 32(32px) 48(48px) 64(64px)
 
 ## Layout
-- **Approach:** Grid-disciplined — functional, predictable
-- **Primary layout:** Two-panel: fixed-width control panel (280px) left, preview canvas right
+- **Approach:** Floating panels ("Faithful Spotify") — the app frame is solid black with 8px padding; each zone (header 52px, left sidebar 284px, center canvas, right panel 292px) is its own `#121212` panel with 10px radius, separated by 8px gaps. No borders between zones.
 - **Max content width:** 1440px
 - **Border radius:**
   - `--r-sm: 6px` — inputs, data fields, small elements. Tight = precise tool, not consumer app.
-  - `--r-md: 10px` — cards, element list items, dropdowns
-  - `--r-lg: 14px` — modals, the app window chrome, panels
+  - `--r-ctl: 8px` — header chips/buttons
+  - `--r-md: 10px` — zone panels, cards, dropdowns
+  - `--r-lg: 14px` — modals
 
 ## Motion
 - **Approach:** Minimal-functional — only transitions that aid comprehension
@@ -68,3 +70,4 @@
 | 2026-04-08 | 6px border radius on data elements | High radius reads "consumer toy" on tool UIs; tighter corners signal precision |
 | 2026-04-08 | Dark-only, no light mode      | Video editing context — always dark |
 | 2026-04-08 | Industrial Precision aesthetic | The overlay is the product; the editor should disappear |
+| 2026-07-10 | "Faithful Spotify" shell redesign | Solid `#000` canvas with `#121212` panels floating on 8px gaps replaces bordered zones; controls are filled (`#1C1C1C`), not outlined; Render CTA is solid crimson with glow; soft crimson wash behind the preview. From claude.ai/design project "Cyclemetry Redesign" (option 1a). |

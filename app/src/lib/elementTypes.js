@@ -70,6 +70,25 @@
  */
 
 /**
+ * Start/finish line for lap counting (crits), set from the dual race-playhead
+ * bar. `start` = ride seconds of the race start (the rider is on the line at
+ * that moment — that GPS position becomes the gate); `end` = ride seconds of
+ * the race finish, bounding lap counting so cooldown crossings don't count.
+ * One gate per scene.
+ * @typedef {Object} LapGateConfig
+ * @property {number} start
+ * @property {number} [end] Absent = end of activity
+ * @property {number} [radius] Detection radius in metres (default 25)
+ * @property {number} [total_laps] Manual race total; absent = auto-detect
+ */
+
+/** Lap counter metrics driven by the scene-level start/finish gate. */
+export const LAP_METRICS = ['lap', 'laps_to_go', 'lap_fraction']
+
+/** Whether a value-element metric token is a lap counter. */
+export const isLapMetric = (m) => LAP_METRICS.includes(m)
+
+/**
  * @typedef {Object} SceneConfig
  * @property {number} width
  * @property {number} height
@@ -85,6 +104,7 @@
  * @property {string[]} [layers]
  * @property {GroupConfig[]} [groups]
  * @property {'metric'|'imperial'} [units]
+ * @property {LapGateConfig} [lap_gate]
  */
 
 /**

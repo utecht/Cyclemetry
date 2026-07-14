@@ -14,6 +14,13 @@ app/dist/
 resources/ffmpeg
 resources/ffmpeg.exe
 
+# Local secrets (Strava client secret; CI injects from Actions secrets)
+src-tauri/.env
+
+# npm lockfiles (pnpm is the package manager; demo/ tooling installs ad hoc)
+app/package-lock.json
+demo/package-lock.json
+
 # App specifics
 next/
 *.mov
@@ -22,3 +29,7 @@ next/
 .pytest_cache/
 app/public/preview*.png
 tauri_build.log
+
+# Web companion build artifacts (synced by scripts/sync-wasm-web.mjs)
+website/public/wasm/
+website/public/create-demo/

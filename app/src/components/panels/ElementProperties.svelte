@@ -5,7 +5,7 @@
    */
   import { getContext } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
-  import { AlertTriangle, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Folder, FolderOpen, Lock, LockOpen, Ungroup } from 'lucide-svelte'
+  import { AlertTriangle, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, BarChart2, Folder, FolderOpen, Gauge as GaugeIcon, Hash, Image as ImageIcon, Lock, LockOpen, Map as MapIcon, Square, Thermometer, Type, Ungroup } from 'lucide-svelte'
   import Input from '../ui/Input.svelte'
   import OpacityControl from '../ui/OpacityControl.svelte'
   import Select from '../ui/Select.svelte'
@@ -14,7 +14,8 @@
   import ColorInput from '../ui/ColorInput.svelte'
   import AssetPicker from '../overlays/AssetPicker.svelte'
   import * as backend from '../../api/backend.js'
-  import { elementTypeName } from '../../lib/elementTypes.js'
+  import { elementMeta, elementTypeName, LAP_METRICS as ALL_LAP_METRICS, isLapMetric } from '../../lib/elementTypes.js'
+  import { formatTime } from '../../lib/utils.js'
   import { metricRangeIssues, metricValueIssue } from '../../lib/metricLimits.js'
   import { normalizeElementField, normalizeTemplateIntegerField } from '../../lib/templateSchema.js'
 
@@ -70,6 +71,10 @@
   const ALL_RUNNING_METRICS = Object.keys(RUNNING_BASE)
   const isRunningMetric = (m) => m in RUNNING_BASE
 
+  // Lap metrics (imported as ALL_LAP_METRICS): crit lap counters driven by
+  // the scene-level start/finish gate (scene.lap_gate) — see the race bar in
+  // PlaybackControls. They need GPS course data to detect crossings.
+
   // Friendly labels for metrics whose raw key isn't self-explanatory.
   const METRIC_LABELS = {
     power_to_weight: 'W/kg',
@@ -90,6 +95,9 @@
     running_distance: 'Running distance',
     running_elevation_gain: 'Running climb',
     running_elevation_loss: 'Running descent',
+    lap: 'Current lap',
+    laps_to_go: 'Laps to go',
+    lap_fraction: 'Lap count (2/20)',
   }
   const metricLabel = (m) => METRIC_LABELS[m] ?? m
   const ALL_PLOT_METRICS = ['elevation', 'speed', 'heartrate', 'power', 'cadence', 'gradient', 'temperature', 'front_gear', 'rear_gear', 'course', 'distance']
@@ -117,14 +125,24 @@
     return list.filter((m) => valid.includes(RUNNING_BASE[m]))
   }
 
+  // Lap metrics all detect crossings from the GPS track, so they're available
+  // exactly when the activity has course data.
+  function filterLap(list) {
+    const valid = app.activityMetrics
+    if (!valid) return list
+    return valid.includes('course') ? list : []
+  }
+
   const METRICS = $derived(filterMetrics(ALL_METRICS))
   const SUMMARY_METRICS = $derived(filterSummary(ALL_SUMMARY_METRICS))
   const RUNNING_METRICS = $derived(filterRunning(ALL_RUNNING_METRICS))
+  const LAP_METRICS = $derived(filterLap(ALL_LAP_METRICS))
   // Value-element dropdown: live metrics first, then running counters, then
   // summary metrics, each in its own labeled group.
   const VALUE_METRIC_OPTIONS = $derived([
     ...METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Live' })),
     ...RUNNING_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Running' })),
+    ...LAP_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Laps' })),
     ...SUMMARY_METRICS.map((m) => ({ value: m, label: metricLabel(m), group: 'Summary' })),
   ])
   const PLOT_METRICS = $derived(filterMetrics(ALL_PLOT_METRICS))
@@ -296,9 +314,10 @@
     return DEFAULT_UNIT[metric]
   }
 
-  // Scene-wide unit system ("metric" | "imperial"), default metric.
+  // App-wide unit system ("metric" | "imperial"), default metric — set once
+  // in Settings, injected into the scene at render time.
   function sceneUnitSystem() {
-    return app.config?.scene?.units === 'imperial' ? 'imperial' : 'metric'
+    return app.units === 'imperial' ? 'imperial' : 'metric'
   }
   // Concrete token a metric resolves to under the current scene system —
   // used to label the "Auto (…)" picker row so it names what it inherits.
@@ -581,6 +600,13 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
     setCourseMarkers(next)
     app.selectedCourseMarkerId = next[0]?.id ?? null
   }
+
+  // ── Start/finish gate (scene.lap_gate) driving the lap metrics ────────────
+  // One gate per scene: every lap element counts crossings of the same line.
+  // Race start/finish moments are set on the dual-handle race bar under the
+  // preview (PlaybackControls); this panel holds the numeric knobs.
+
+  const lapGate = () => app.config?.scene?.lap_gate ?? null
 
   // Point label (value text next to the chart marker, e.g. "960 M").
   const POINT_LABEL_DEFAULT = {
@@ -912,7 +938,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <label for="group-name" class="block text-[10px] text-zinc-500 mb-1">Name</label>
           <input
             id="group-name"
-            class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-primary transition-colors"
+            class="w-full bg-[var(--panel2)] border border-transparent rounded px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-primary transition-colors"
             value={group.name}
             onchange={(e) => app.renameGroup(group.id, e.currentTarget.value)}
           />
@@ -921,7 +947,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">{group.element_ids.length} element{group.element_ids.length !== 1 ? 's' : ''}</span>
           <button
             onclick={() => app.deleteGroup(group.id)}
-            class="cursor-pointer flex items-center gap-1.5 px-2 py-1 rounded text-xs text-zinc-400 hover:text-destructive hover:bg-zinc-800 transition-colors"
+            class="cursor-pointer flex items-center gap-1.5 px-2 py-1 rounded text-xs text-zinc-400 hover:text-destructive hover:bg-[var(--panel2)] transition-colors"
             title="Ungroup (elements remain)"
           >
             <Ungroup size={12} />
@@ -937,12 +963,18 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
     </div>
   {:else}
     {@const { id, item, type } = selected()}
+    {@const meta = elementMeta(item)}
+    {@const HeaderIcon = { type: Type, hash: Hash, bar: BarChart2, map: MapIcon, meter: Thermometer, gauge: GaugeIcon, rect: Square, image: ImageIcon }[meta.icon] ?? BarChart2}
 
-    <!-- Header: element type name -->
-    <div class="mb-3">
-      <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-        {elementTypeName(item)}
-      </p>
+    <!-- Header: element icon chip + name + type -->
+    <div class="-mx-4 mb-4 flex items-center gap-2.5 border-b border-white/[0.06] px-4 pb-3">
+      <span class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+        <HeaderIcon size={15} />
+      </span>
+      <div class="min-w-0">
+        <p class="truncate text-sm font-semibold capitalize text-zinc-100">{meta.name}</p>
+        <p class="truncate font-mono text-[11px] text-[var(--dim)]">{elementTypeName(item).toLowerCase()}</p>
+      </div>
     </div>
 
     <!-- Advanced toggle -->
@@ -962,7 +994,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <button
           onclick={() => app.alignSelected('h')}
           aria-label="Center horizontally on canvas"
-          class="cursor-pointer rounded-[6px] border border-zinc-800 bg-zinc-900/40 p-1.5 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+          class="cursor-pointer rounded-[6px] border border-transparent bg-[var(--panel2)] p-1.5 text-zinc-400 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-100"
         >
           <AlignHorizontalJustifyCenter size={14} />
         </button>
@@ -971,7 +1003,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <button
           onclick={() => app.alignSelected('v')}
           aria-label="Center vertically on canvas"
-          class="cursor-pointer rounded-[6px] border border-zinc-800 bg-zinc-900/40 p-1.5 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+          class="cursor-pointer rounded-[6px] border border-transparent bg-[var(--panel2)] p-1.5 text-zinc-400 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-100"
         >
           <AlignVerticalJustifyCenter size={14} />
         </button>
@@ -992,7 +1024,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">Size</span>
           <Input type="number" value={numVal(item, 'font_size')} placeholder="Scene default" oninput={(e) => update('font_size', e.target.value)} />
         </label>
-        <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
+        <label class="flex items-center justify-between gap-3 rounded-[6px] border border-transparent bg-[var(--panel2)] px-2.5 py-2">
           <span class="text-xs text-zinc-500">Italic</span>
           <Switch checked={item.italic ?? false} ariaLabel="Italic text" onchange={(v) => update('italic', v ? true : undefined)} />
         </label>
@@ -1071,6 +1103,39 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <Select value={item.time_format ?? 'hh:mm:ss'} options={TIME_FORMATS} onchange={(v) => update('time_format', v)} />
         </label>
         {/if}
+
+        {:else if isLapMetric(item.value)}
+        {@const gate = lapGate()}
+        <div class="space-y-2 rounded-[6px] border border-transparent bg-[var(--panel2)] p-2">
+          <p class="text-[10px] uppercase tracking-wider text-zinc-600">Start / Finish line</p>
+          <p class="text-[10px] text-zinc-600">
+            Drag the handles on the race bar under the preview: green to the
+            moment you first cross the line (race start — that position becomes
+            the line), checkered to the final crossing (race finish).
+          </p>
+          {#if gate}
+            <div class="grid grid-cols-2 gap-2 font-mono text-[11px] tabular-nums">
+              <div class="space-y-1">
+                <p class="font-sans text-xs text-zinc-500">Race start</p>
+                <p class="text-emerald-500">{formatTime(gate.start ?? 0)}</p>
+              </div>
+              <div class="space-y-1">
+                <p class="font-sans text-xs text-zinc-500">Race finish</p>
+                <p class="text-zinc-300">{gate.end != null ? formatTime(gate.end) : 'activity end'}</p>
+              </div>
+            </div>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Total laps (blank = auto-detect)</span>
+              <Input type="number" value={gate.total_laps ?? ''} min={1} step={1}
+                oninput={(e) => app.updateLapGate({ total_laps: e.target.value === '' ? undefined : Math.max(1, Math.round(Number(e.target.value))) })} />
+            </label>
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Detection radius (m)</span>
+              <Input type="number" value={gate.radius ?? 25} min={5} step={5}
+                oninput={(e) => app.updateLapGate({ radius: e.target.value === '' ? undefined : Math.max(1, Number(e.target.value)) })} />
+            </label>
+          {/if}
+        </div>
 
         {:else if item.value === 'distance'}
         <label class="space-y-1 block">
@@ -1228,7 +1293,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <ColorInput value={item.color ?? '#ffffff'} vars={sceneVars} onchange={(v) => update('color', v)} />
         </label>
         {#if showAdvanced}
-        <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
+        <label class="flex items-center justify-between gap-3 rounded-[6px] border border-transparent bg-[var(--panel2)] px-2.5 py-2">
           <span class="text-xs text-zinc-500">Italic</span>
           <Switch checked={item.italic ?? false} ariaLabel="Italic text" onchange={(v) => update('italic', v ? true : undefined)} />
         </label>
@@ -1384,7 +1449,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
             <span class="text-xs text-zinc-500">Size</span>
             <Input type="number" value={pl.font_size ?? 64} min={1} oninput={(e) => updatePL('font_size', e.target.value)} />
           </label>
-          <label class="flex items-center justify-between gap-3 rounded-[6px] border border-zinc-800 bg-zinc-900/40 px-2.5 py-2">
+          <label class="flex items-center justify-between gap-3 rounded-[6px] border border-transparent bg-[var(--panel2)] px-2.5 py-2">
             <span class="text-xs text-zinc-500">Italic</span>
             <Switch checked={pl.italic ?? false} ariaLabel="Italic point label" onchange={(v) => updatePL('italic', v ? true : undefined)} />
           </label>
@@ -1448,7 +1513,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
                 class="cursor-pointer rounded-[6px] border px-2 py-1 text-[11px] transition-colors
                   {(selectedCourseMarker()?.id ?? courseMarkers()[0]?.id) === marker.id
                     ? 'border-primary bg-primary/10 text-zinc-100'
-                    : 'border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'}"
+                    : 'border-transparent bg-[var(--panel2)] text-zinc-400 hover:bg-[var(--panel3)] hover:text-zinc-200'}"
                 onclick={() => (app.selectedCourseMarkerId = marker.id)}
               >
                 {marker.name || `Marker ${i + 1}`}
@@ -1551,7 +1616,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <button
           type="button"
           onclick={applyMeterActivityRange}
-          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+          class="w-full cursor-pointer rounded-[6px] border-0 bg-[var(--panel2)] px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-100"
         >
           Set min/max from activity
         </button>
@@ -1814,7 +1879,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
         <button
           type="button"
           onclick={applyGaugeActivityRange}
-          class="w-full cursor-pointer rounded-[6px] border border-zinc-700 bg-zinc-900/50 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+          class="w-full cursor-pointer rounded-[6px] border-0 bg-[var(--panel2)] px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-100"
         >
           Set min/max from activity
         </button>
@@ -2015,7 +2080,7 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <button
             onclick={() => (showAssetPicker = true)}
             class="cursor-pointer shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-medium
-                   border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 transition-colors"
+                   bg-[var(--panel2)] text-zinc-300 hover:bg-[var(--panel3)] hover:text-zinc-100 transition-colors"
           >
             <FolderOpen size={11} />
             Browse

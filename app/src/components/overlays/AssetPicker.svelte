@@ -66,7 +66,7 @@
 >
   <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
 
-  <div class="relative z-10 flex flex-col w-[520px] max-h-[72vh] rounded-[14px] border border-zinc-800 bg-[#09090B] shadow-2xl">
+  <div class="relative z-10 flex flex-col w-[520px] max-h-[72vh] rounded-[14px] border border-white/[0.08] bg-[var(--panel)] shadow-2xl">
 
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">

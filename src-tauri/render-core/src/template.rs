@@ -65,6 +65,30 @@ pub struct SceneConfig {
     /// call from a local-only editor setting and set on the scene after parsing.
     #[serde(skip)]
     pub rider_weight_kg: Option<f32>,
+    /// Start/finish line for lap counting (crits). When set, a pre-pass counts
+    /// GPS crossings of the gate and the `lap` / `laps_to_go` / `lap_fraction`
+    /// metrics become live. One gate per scene — every lap element shares it.
+    pub lap_gate: Option<LapGateConfig>,
+}
+
+/// Start/finish gate for lap counting, expressed as two moments on the ride
+/// timeline (the editor's dual race-playhead bar). The rider is on the line at
+/// `start`, so that GPS position becomes the gate point; a lap is counted each
+/// time the rider re-enters `radius` metres of it after having left it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LapGateConfig {
+    /// Ride time (seconds from activity start) of the race start — the moment
+    /// the rider crosses the line for lap 1. Defines the gate position;
+    /// crossings before this (warm-up laps) don't count.
+    pub start: f64,
+    /// Ride time of the race finish (the final crossing). Crossings after this
+    /// are cooldown and don't count. Absent = end of activity.
+    pub end: Option<f64>,
+    /// Detection radius in metres around the gate point (default 25).
+    pub radius: Option<f64>,
+    /// Total race laps for `laps_to_go` / `lap_fraction`. Absent = auto:
+    /// every gate crossing between `start` and `end`.
+    pub total_laps: Option<u32>,
 }
 
 /// A named collection of element IDs used for list organisation and bulk
@@ -893,8 +917,8 @@ fn resolve_vars(value: &mut serde_json::Value, vars: &HashMap<String, String>) {
 /// Whether a metric (or the base metric of a summary/running metric) has a
 /// metric/imperial distinction the scene unit system should drive.
 fn convertible_metric(metric: &str) -> bool {
-    use crate::render::activity::unit_base_metric;
-    crate::render::units::has_unit_system(unit_base_metric(metric))
+    use crate::activity::unit_base_metric;
+    crate::units::has_unit_system(unit_base_metric(metric))
 }
 
 /// Set `unit` to the scene system token when the element left it unset and its
@@ -925,7 +949,7 @@ mod tests {
     fn bundled_flyover_template_parses() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../templates/flyover/flyover.json"
+            "/../../templates/flyover/flyover.json"
         );
         let text = std::fs::read_to_string(path).expect("flyover template should exist");
         let raw: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");

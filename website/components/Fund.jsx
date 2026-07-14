@@ -142,7 +142,7 @@ export function Fund() {
       <div className="showcase-hero">
         <div className="showcase-hero-kicker">SUPPORT</div>
         <h1 className="showcase-hero-title">
-          To hell with the sketchy install
+          Make the install just work
         </h1>
         <p className="showcase-hero-desc">
           Cyclemetry is free and open source. Signing and notarizing the macOS

@@ -152,6 +152,15 @@ export const openDownloads = (dir) =>
 export const defaultOutputDir = () => invoke('backend_default_output_dir')
 
 /**
+ * Free space on the volume holding the render output directory.
+ * `free_bytes` is null when the platform query fails.
+ * @param {string} [dir]
+ * @returns {Promise<{dir: string, free_bytes: number|null}>}
+ */
+export const diskFree = (dir) =>
+  invoke('backend_disk_free', { outputDir: dir ?? null })
+
+/**
  * @param {string} filename
  * @returns {Promise<void>}
  */
@@ -531,3 +540,55 @@ export const imageSize = (filename) =>
  * @returns {Promise<void>}
  */
 export const recordGpxOpened = (path) => invoke('record_gpx_opened', { path })
+
+// ─── Strava ──────────────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} StravaStatus
+ * @property {boolean} connected
+ * @property {string|null} athlete - display name when connected
+ */
+
+/**
+ * @typedef {Object} StravaActivity
+ * @property {number} id
+ * @property {string} name
+ * @property {string|null} sport_type
+ * @property {string} start_date - ISO 8601, pass back verbatim on import
+ * @property {number} start_ms
+ * @property {number|null} duration_s
+ * @property {number|null} distance_m
+ * @property {[number, number][]} track - unit-square route preview
+ */
+
+/** @returns {Promise<StravaStatus>} */
+export const stravaStatus = () => invoke('strava_status')
+
+/**
+ * Opens the system browser for OAuth and resolves once the user authorizes
+ * (or rejects with a message on decline/timeout).
+ * @returns {Promise<StravaStatus>}
+ */
+export const stravaConnect = () => invoke('strava_connect')
+
+/** @returns {Promise<void>} */
+export const stravaDisconnect = () => invoke('strava_disconnect')
+
+/**
+ * One page (10 items) of the athlete's most recent activities, newest first.
+ * @param {number} page - 1-based
+ * @returns {Promise<StravaActivity[]>}
+ */
+export const stravaActivities = (page) => invoke('strava_activities', { page })
+
+/**
+ * Download an activity's streams as a GPX into the uploads dir.
+ * @param {StravaActivity} a
+ * @returns {Promise<string>} saved filename, loadable via loadSavedActivity
+ */
+export const stravaImportActivity = (a) =>
+  invoke('strava_import_activity', {
+    id: a.id,
+    name: a.name,
+    startDate: a.start_date,
+  })

@@ -457,7 +457,7 @@
         <button
           onclick={groupSelectedElements}
           title="Group selected elements"
-          class="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          class="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-[var(--panel2)] transition-colors"
         >
           <FolderPlus size={13} />
         </button>
@@ -466,7 +466,7 @@
         onclick={() => (addMenuOpen = !addMenuOpen)}
         disabled={!app.config}
         aria-expanded={addMenuOpen}
-        class="inline-flex h-7 items-center gap-1.5 rounded-[6px] border border-zinc-700 bg-zinc-900/70 px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-[var(--panel2)] px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         title="Add element"
       >
         <Plus size={12} />
@@ -502,7 +502,7 @@
               class={`group/grp flex items-center gap-1 px-1.5 py-1.5 rounded-[6px] cursor-grab active:cursor-grabbing transition-colors
                 ${groupSelected
                   ? 'bg-primary/10 border border-primary/30 text-primary'
-                  : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'}
+                  : 'text-zinc-400 hover:bg-[var(--panel2)] hover:text-zinc-200'}
                 ${dropGroupId === item.id ? 'ring-1 ring-primary bg-primary/5' : ''}`}
               role="button"
               tabindex="0"
@@ -511,7 +511,7 @@
             >
               <button
                 data-layer-action
-                class="shrink-0 p-0.5 rounded cursor-pointer hover:bg-zinc-700/60 transition-colors"
+                class="shrink-0 p-0.5 rounded cursor-pointer hover:bg-[var(--panel3)] transition-colors"
                 onclick={(e) => { e.stopPropagation(); toggleCollapse(item.id) }}
                 title={collapsed ? 'Expand' : 'Collapse'}
               >
@@ -526,7 +526,7 @@
               {#if renamingGroupId === item.id}
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
-                  class="flex-1 min-w-0 bg-zinc-800 border border-zinc-600 rounded px-1 py-0.5 text-xs text-zinc-100 outline-none focus:border-primary"
+                  class="flex-1 min-w-0 bg-[var(--panel3)] border border-transparent rounded px-1 py-0.5 text-xs text-zinc-100 outline-none focus:border-primary"
                   value={renameValue}
                   oninput={(e) => (renameValue = e.currentTarget.value)}
                   onblur={commitRename}
@@ -580,12 +580,12 @@
                         cursor-grab active:cursor-grabbing
                         ${selected
                           ? 'bg-primary/10 text-primary border border-primary/30'
-                          : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100'}`}
+                          : 'text-zinc-300 hover:bg-[var(--panel2)] hover:text-zinc-100'}`}
                     >
                       <Icon size={12} class="shrink-0 opacity-60" />
                       <span class="truncate font-mono text-xs">{el.name}</span>
                       {#if el.unit}
-                        <span class="shrink-0 text-[9px] font-medium px-1 py-0.5 rounded bg-zinc-700/60 text-zinc-400 uppercase tracking-wide">{el.unit === 'imperial' ? 'imp' : el.unit}</span>
+                        <span class="shrink-0 text-[9px] font-medium px-1 py-0.5 rounded bg-[var(--panel3)] text-[var(--dim)] uppercase tracking-wide">{el.unit === 'imperial' ? 'imp' : el.unit}</span>
                       {/if}
                     </button>
                     <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/el:opacity-100 transition-opacity">
@@ -644,12 +644,12 @@
                 cursor-grab active:cursor-grabbing
                 ${selected
                   ? 'bg-primary/10 text-primary border border-primary/30'
-                  : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100'}`}
+                  : 'text-zinc-300 hover:bg-[var(--panel2)] hover:text-zinc-100'}`}
             >
               <Icon size={12} class="shrink-0 opacity-60" />
               <span class="truncate font-mono text-xs">{el.name}</span>
               {#if el.unit}
-                <span class="shrink-0 text-[9px] font-medium px-1 py-0.5 rounded bg-zinc-700/60 text-zinc-400 uppercase tracking-wide">{el.unit === 'imperial' ? 'imp' : el.unit}</span>
+                <span class="shrink-0 text-[9px] font-medium px-1 py-0.5 rounded bg-[var(--panel3)] text-[var(--dim)] uppercase tracking-wide">{el.unit === 'imperial' ? 'imp' : el.unit}</span>
               {/if}
             </button>
             <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/el:opacity-100 transition-opacity">
@@ -698,15 +698,15 @@
   >
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
 
-    <div class="relative z-10 w-[420px] max-w-full rounded-[12px] border border-zinc-800 bg-[#09090B] shadow-2xl">
-      <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+    <div class="relative z-10 w-[420px] max-w-full rounded-[12px] border border-white/[0.08] bg-[var(--panel)] shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
         <div>
           <p class="text-sm font-semibold text-zinc-100">Add element</p>
           <p class="mt-0.5 text-[11px] text-zinc-500">Choose an overlay type to place on the canvas.</p>
         </div>
         <button
           onclick={() => (addMenuOpen = false)}
-          class="cursor-pointer rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          class="cursor-pointer rounded p-1 text-zinc-500 transition-colors hover:bg-[var(--panel3)] hover:text-zinc-200"
           title="Close"
         >
           <X size={15} />
@@ -718,10 +718,10 @@
           {@const Icon = ICONS[preset.icon]}
           <button
             onclick={() => addPreset(preset)}
-            class="group flex min-h-16 cursor-pointer items-center gap-3 rounded-[8px] border border-zinc-800 bg-zinc-900/55 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800/75"
+            class="group flex min-h-16 cursor-pointer items-center gap-3 rounded-[8px] bg-[var(--panel2)] px-3 py-2 text-left transition-colors hover:bg-[var(--panel3)]"
             title={preset.title}
           >
-            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[7px] border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors group-hover:border-zinc-600 group-hover:text-zinc-100">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[7px] bg-[var(--panel3)] text-zinc-400 transition-colors group-hover:text-zinc-100">
               <Icon size={15} />
             </span>
             <span class="min-w-0">

@@ -43,12 +43,13 @@
   } from 'lucide-svelte'
   import {
     formatTime,
-    estimateExportFileSize,
+    formatFileSize,
+    estimateExportBytes,
     DEFAULT_BITS_PER_PIXEL_SECOND,
     DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND,
     TOOLTIP_DELAY,
   } from './lib/utils.js'
-  import { wallClockApplicable } from './lib/videoAlignment.js'
+  import { wallClockDeltaSec } from './lib/videoAlignment.js'
 
   // ── State ──────────────────────────────────────────────────────────────────
   const app = createAppState()
@@ -152,7 +153,32 @@
     return path.split(/[\\/]/).pop()
   }
 
+  function humanGap(sec) {
+    const s = Math.round(Math.abs(sec))
+    if (s < 120) return `${s}s`
+    if (s < 7200) return `${Math.round(s / 60)}m`
+    const h = Math.floor(s / 3600)
+    const m = Math.round((s % 3600) / 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  // Never fail silently: when the camera's recorded timestamp puts the video
+  // entirely outside the activity, explain the mismatch instead of moving the
+  // band somewhere useless. Common causes: re-encoded/stitched exports carry
+  // the export time, or the camera clock/timezone is wrong.
   function moveVideoToRecordingTime() {
+    const delta = wallClockDeltaSec(app.gpxStartTime, app.video)
+    if (delta == null) return
+    const videoEnd = delta + (app.video?.duration ?? 0)
+    if (videoEnd <= 0 || delta >= app.timelineDuration) {
+      const gap = videoEnd <= 0 ? videoEnd : delta - app.timelineDuration
+      app.errorMessage =
+        `Can't align: the video's recorded timestamp (${app.video.creationTime}) is ` +
+        `${humanGap(gap)} ${videoEnd <= 0 ? 'before the activity starts' : 'after the activity ends'}. ` +
+        `The file's creation time is probably not the recording time — stitched or re-encoded exports ` +
+        `carry the export time, and a wrong camera clock or timezone shifts it. Drag the video band to align manually.`
+      return
+    }
     app.setVideoOffset(0)
   }
 
@@ -168,9 +194,11 @@
     showResolutionMenu = false
   }
 
+  // Offer the align button whenever both timestamps exist — even when the
+  // wall-clock placement would land outside the activity, so pressing it can
+  // explain the metadata problem instead of the button silently vanishing.
   let canUseRecordingTime = $derived(
-    app.hasActivity &&
-      wallClockApplicable(app.gpxStartTime, app.video, app.timelineDuration),
+    app.hasActivity && wallClockDeltaSec(app.gpxStartTime, app.video) != null,
   )
 
   // ── Template toolbar helpers ───────────────────────────────────────────────
@@ -470,6 +498,17 @@
   // Render is a two-step flow: the button opens the export-format dialog,
   // confirming there starts the actual render.
   let showExportFormatDialog = $state(false)
+  // Free space on the output volume, fetched when the export dialog opens so
+  // it can warn when the estimated file won't fit. null = unknown/not loaded.
+  let exportDiskFreeBytes = $state(null)
+  $effect(() => {
+    if (!showExportFormatDialog) return
+    exportDiskFreeBytes = null
+    backend.diskFree(app.outputDir).then(
+      (r) => (exportDiskFreeBytes = r?.free_bytes ?? null),
+      () => {},
+    )
+  })
   // Whether the full render-progress dialog is open. Renders show the ambient
   // header chip by default; expanding opens the dialog on demand.
   let renderExpanded = $state(false)
@@ -569,7 +608,7 @@
     return Math.round((outputDurationFor(format) * fps) / renderFps)
   }
 
-  function renderFileSizeEstFor(format) {
+  function renderFileSizeBytesFor(format) {
     if (!app.config?.scene || !app.hasActivity) return null
     const fps = app.config.scene.fps ?? 30
     const duration = outputDurationFor(format)
@@ -583,7 +622,7 @@
       format === 'stitched'
         ? DEFAULT_STITCHED_BITS_PER_PIXEL_SECOND
         : DEFAULT_BITS_PER_PIXEL_SECOND
-    return estimateExportFileSize(
+    return estimateExportBytes(
       app.outputWidth,
       app.outputHeight,
       fps,
@@ -591,6 +630,11 @@
       calibration,
       fallbackBps,
     )
+  }
+
+  function renderFileSizeEstFor(format) {
+    const bytes = renderFileSizeBytesFor(format)
+    return bytes == null ? null : formatFileSize(bytes)
   }
 
   let renderEstimateSecs = $derived(renderEstimateSecsFor(app.exportFormat))
@@ -655,7 +699,7 @@
 />
 
 <div
-  class="h-screen flex flex-col bg-[#09090b] text-foreground overflow-hidden select-none"
+  class="h-screen flex flex-col gap-2 bg-black p-2 text-foreground overflow-hidden select-none"
 >
   <ErrorToast />
   <UpdateBanner />
@@ -698,6 +742,8 @@
       initialFullFrame={app.exportFullFrame}
       timeFor={exportTimeEstimateFor}
       sizeFor={exportSizeEstimateFor}
+      bytesFor={renderFileSizeBytesFor}
+      diskFreeBytes={exportDiskFreeBytes}
       testAvailableFor={exportTestAvailableFor}
       calibrating={app.calibratingFormat}
       oncalibrate={(fmt) => app.calibrateExportEstimate(fmt)}
@@ -755,8 +801,15 @@
   <header
     onmousedown={onHeaderMousedown}
     ondblclick={onHeaderDblclick}
-    class="h-14 shrink-0 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm flex items-center gap-3 pr-4 pl-[96px] z-50"
+    class="h-[52px] shrink-0 bg-[var(--panel)] rounded-[10px] flex items-center gap-2 pr-3 pl-[88px] z-50"
   >
+    <!-- Logo chip -->
+    <span
+      class="w-5 h-5 shrink-0 rounded-md bg-primary text-[#050505] font-mono font-bold text-xs flex items-center justify-center select-none"
+      >C</span
+    >
+    <div class="h-5 w-px bg-white/[0.07] shrink-0"></div>
+
     <!-- ── Template toolbar ─────────────────────────────────────────────────── -->
     <div class="flex items-center gap-1 shrink-0">
       <!-- Template picker -->
@@ -791,8 +844,8 @@
             onclick={toggleAiChat}
             class="hdr-btn hdr-btn-icon shrink-0 cursor-pointer transition-colors
                  {showAiChat
-              ? 'border-[#dc143c]/60 bg-[#dc143c]/10 text-[#dc143c]'
-              : 'text-zinc-500 hover:border-[#dc143c]/40 hover:text-[#dc143c]'}"
+              ? 'bg-primary/20 text-primary hover:bg-primary/25'
+              : 'bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary'}"
             aria-label={showAiChat ? 'Close AI assistant' : 'Open AI assistant'}
             aria-pressed={showAiChat}
           ><Sparkles size={12} /></button>
@@ -807,8 +860,8 @@
               app.saveTemplate().catch((e) => {
                 app.errorMessage = e?.message ?? String(e)
               })}
-            class="hdr-btn hdr-btn-icon shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-400
-                   hover:border-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+            class="hdr-btn hdr-btn-icon shrink-0 bg-amber-400/10 text-amber-400
+                   hover:bg-amber-400/20 hover:text-amber-300"
             ><Save size={12} /></button
           >
         </Tooltip>
@@ -839,7 +892,7 @@
       {/if}
     </div>
 
-    <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+    <div class="h-5 w-px bg-white/[0.07] shrink-0"></div>
 
     <!-- Activity file picker -->
     <Tooltip content="Choose an activity" side="bottom" delay={TOOLTIP_DELAY}>
@@ -855,7 +908,7 @@
     </Tooltip>
 
     <!-- Video — always shown, dashed border signals optional -->
-    <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+    <div class="h-5 w-px bg-white/[0.07] shrink-0"></div>
     {#if !app.video}
       <Tooltip
         content="Adding video is only for preview. The exported overlay will not include the video."
@@ -864,7 +917,7 @@
       >
         <button
           onclick={() => app.pickAndLoadVideo()}
-          class="hdr-btn px-2.5 gap-1.5 border-dashed"
+          class="hdr-btn px-2.5 gap-1.5 border-dashed border-[var(--panel3)] bg-transparent hover:bg-[var(--panel2)]"
         >
           <Film size={12} class="shrink-0" />
           Add video…
@@ -908,7 +961,9 @@
         {#if canUseRecordingTime}
           <button
             onclick={moveVideoToRecordingTime}
-            title="Align to camera recording time"
+            title={app.video.creationTimeNote
+              ? `Align to camera recording time — ${app.video.creationTimeNote}`
+              : 'Align to camera recording time'}
             class="hdr-btn hdr-btn-icon shrink-0"><Clock size={12} /></button
           >
         {/if}
@@ -922,9 +977,9 @@
           <button
             onclick={() =>
               app.setVideoUnderlayVisible(!app.videoUnderlayVisible)}
-            class="hdr-btn hdr-btn-icon shrink-0 {app.videoUnderlayVisible
+            class="hdr-btn hdr-btn-icon hdr-btn-ghost shrink-0 {app.videoUnderlayVisible
               ? ''
-              : 'text-zinc-500'}"
+              : 'text-[var(--dim)]'}"
             aria-label={app.videoUnderlayVisible
               ? 'Hide video underlay'
               : 'Show video underlay'}
@@ -946,7 +1001,7 @@
 
     <!-- ── Scene toolbar: resolution + FPS (shown when a template is loaded) ── -->
     {#if app.config?.scene}
-      <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+      <div class="h-5 w-px bg-white/[0.07] shrink-0"></div>
 
       <!-- Resolution popover -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -963,7 +1018,7 @@
               showResolutionMenu = !showResolutionMenu
             }}
             class="hdr-btn px-2.5 gap-1.5 min-w-[112px] justify-between {showResolutionMenu
-              ? 'border-zinc-500 bg-zinc-800 text-zinc-200'
+              ? 'bg-[var(--panel3)] text-zinc-100'
               : ''}"
             aria-haspopup="menu"
             aria-expanded={showResolutionMenu}
@@ -978,7 +1033,7 @@
 
         {#if showResolutionMenu}
           <div
-            class="resolution-popover absolute left-0 top-[calc(100%+6px)] z-[80] w-56 rounded-[8px] border border-zinc-700 bg-zinc-950/98 p-2 shadow-2xl shadow-black/50"
+            class="resolution-popover absolute left-0 top-[calc(100%+6px)] z-[80] w-56 rounded-[10px] border border-white/[0.08] bg-[#181818] p-2 shadow-2xl shadow-black/60"
             role="menu"
           >
             <div class="grid grid-cols-2 gap-1">
@@ -1003,7 +1058,7 @@
               {/each}
             </div>
 
-            <div class="mt-2 border-t border-zinc-800 pt-2">
+            <div class="mt-2 border-t border-white/[0.06] pt-2">
               <button
                 type="button"
                 onclick={() => {
@@ -1033,8 +1088,8 @@
                     if (v > 0) app.outputWidth = v
                   }}
                   class="h-7 min-w-0 flex-1 rounded-[6px] border px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring {customResActive
-                    ? 'border-zinc-700 bg-zinc-900 text-foreground'
-                    : 'border-zinc-800 bg-zinc-950/70 text-zinc-500'}"
+                    ? 'border-transparent bg-[var(--panel3)] text-foreground'
+                    : 'border-transparent bg-[var(--panel2)] text-zinc-500'}"
                   aria-label="Output width"
                 />
                 <span class="text-zinc-600 text-xs">×</span>
@@ -1051,8 +1106,8 @@
                     if (v > 0) app.outputHeight = v
                   }}
                   class="h-7 min-w-0 flex-1 rounded-[6px] border px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring {customResActive
-                    ? 'border-zinc-700 bg-zinc-900 text-foreground'
-                    : 'border-zinc-800 bg-zinc-950/70 text-zinc-500'}"
+                    ? 'border-transparent bg-[var(--panel3)] text-foreground'
+                    : 'border-transparent bg-[var(--panel2)] text-zinc-500'}"
                   aria-label="Output height"
                 />
               </div>
@@ -1062,11 +1117,11 @@
       </div>
 
       {#if app.hasActivity}
-        <div class="h-5 w-px bg-zinc-800 shrink-0"></div>
+        <div class="h-5 w-px bg-white/[0.07] shrink-0"></div>
 
         <!-- FPS -->
-        <div class="flex items-center gap-1.5 shrink-0">
-          <span class="text-xs text-zinc-500">FPS</span>
+        <div class="flex items-center gap-2 shrink-0 pl-1">
+          <span class="text-xs text-[var(--dim)]">FPS</span>
           <input
             type="number"
             min="1"
@@ -1076,7 +1131,7 @@
               const v = parseInt(e.target.value)
               if (v > 0) app.updateScene({ fps: v })
             }}
-            class="h-7 w-14 rounded-[6px] border border-zinc-700 bg-zinc-800/60 px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+            class="h-[30px] w-[52px] rounded-lg border-0 bg-[var(--panel2)] px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
           />
         </div>
       {/if}
@@ -1093,13 +1148,13 @@
           <Button
             onclick={handleRender}
             disabled={!app.config || !app.hasActivity}
-            class="gap-1.5 min-w-[104px] border border-primary/70 bg-primary/15 text-zinc-100 hover:border-primary hover:bg-primary/25 {onboardingStep ===
-              0 && !hasRenderedOnce
-              ? 'onboarding-glow'
-              : ''}"
+            class="h-[34px] gap-1.5 min-w-[104px] rounded-lg px-4 font-semibold text-white
+                   shadow-[0_4px_14px_-4px_rgba(220,20,60,0.6)] hover:bg-[var(--accent-hover)]
+                   disabled:bg-primary/25 disabled:text-white/60 disabled:opacity-100 disabled:shadow-none
+                   {onboardingStep === 0 && !hasRenderedOnce ? 'onboarding-glow' : ''}"
             size="sm"
           >
-            <Play size={13} />
+            <Play size={13} fill="currentColor" strokeWidth={0} />
             Render Video
           </Button>
         </Tooltip>
@@ -1107,8 +1162,8 @@
     </div>
   </header>
 
-  <!-- ── Three-panel layout ─────────────────────────────────────────────────── -->
-  <div class="flex-1 flex overflow-hidden min-h-0">
+  <!-- ── Three-panel layout — panels float on the black canvas with 8px gaps ── -->
+  <div class="flex-1 flex gap-2 overflow-hidden min-h-0">
     {#if app.config && app.hasActivity}
       <LeftSidebar />
     {/if}
