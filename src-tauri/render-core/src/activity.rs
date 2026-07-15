@@ -1000,17 +1000,27 @@ impl Activity {
     }
 
     pub fn sample_for_scene(
-        mut self,
+        &self,
         scene: &crate::template::SceneConfig,
         synthetic: bool,
     ) -> Result<Self, String> {
-        // Lap counting must see the full activity — crossings before a trimmed
-        // overlay window still advance the counter.
-        if let Some(gate) = &scene.lap_gate {
-            self.compute_laps(gate);
-        }
         let fps = scene.fps.max(1);
         let start = scene.start.unwrap_or(0.0).max(0.0);
+        // Lap counting must see the full activity — crossings before a trimmed
+        // overlay window still advance the counter. It mutates, so it runs on
+        // a clone; the source parse (shared via Arc in the app shell) must
+        // stay pristine.
+        if let Some(gate) = &scene.lap_gate {
+            let mut with_laps = self.clone();
+            with_laps.compute_laps(gate);
+            return with_laps.resample_wall_clock(
+                start,
+                scene.end,
+                fps,
+                scene.target_duration,
+                synthetic,
+            );
+        }
         self.resample_wall_clock(start, scene.end, fps, scene.target_duration, synthetic)
     }
 

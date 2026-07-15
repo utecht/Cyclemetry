@@ -11,6 +11,28 @@ use crate::color::to_skia_color;
 use crate::template::{CourseMarkerConfig, PlotConfig, PointLabelConfig};
 use crate::units;
 
+/// Banded per-segment coloring driven by a second attribute (`color_by`).
+pub struct Banding {
+    /// Color-driving series in display units, aligned with x/y data.
+    pub data: Vec<f64>,
+    /// (upper bound, hex color) sorted ascending; values at or above the last
+    /// bound clamp to it.
+    pub bands: Vec<(f64, String)>,
+    /// Band-color the under-curve fill (non-course plots only).
+    pub fill: bool,
+    /// Band-color the line itself.
+    pub line: bool,
+}
+
+/// Index of the band `v` falls in: first band whose upper bound exceeds `v`,
+/// clamping to the last band (also the NaN fallback).
+fn band_index(bands: &[(f64, String)], v: f64) -> usize {
+    bands
+        .iter()
+        .position(|(max, _)| v < *max)
+        .unwrap_or(bands.len().saturating_sub(1))
+}
+
 /// Pixel bounds of the data area inside a chart surface (excluding margins).
 #[derive(Debug, Clone)]
 pub struct PlotBounds {
@@ -119,6 +141,8 @@ pub struct ChartCache {
     pub line_color: String,
     /// Line width (needed for per-frame past-segment drawing).
     pub line_width: f32,
+    /// Banded coloring by a second attribute (None = single-color plot).
+    pub banding: Option<Banding>,
 }
 
 impl ChartCache {
@@ -128,6 +152,7 @@ impl ChartCache {
         y_data: Vec<f64>,
         distance_data: Vec<f64>,
         frame_distance: Vec<f64>,
+        color_data: Vec<f64>,
         fonts_dir: &str,
     ) -> Option<Self> {
         if x_data.is_empty() || y_data.is_empty() {
@@ -183,6 +208,22 @@ impl ChartCache {
             (y_min - y_pad, y_max + y_pad)
         };
 
+        // Band thresholds are authored in display units; convert the color
+        // series once so lookups compare like with like.
+        let banding = config.color_by.as_ref().and_then(|cb| {
+            let bands = cb.resolved_bands();
+            if bands.is_empty() || color_data.len() != x_data.len() {
+                return None;
+            }
+            let (conv, _) = units::resolve(cb.attr(), cb.unit.as_deref());
+            Some(Banding {
+                data: color_data.iter().map(|&v| conv.apply(v)).collect(),
+                bands,
+                fill: cb.color_fill(is_course),
+                line: cb.color_line(is_course),
+            })
+        });
+
         let background = render_chart_background(
             surf_w,
             surf_h,
@@ -197,6 +238,7 @@ impl ChartCache {
             },
             config,
             geo.as_ref(),
+            banding.as_ref(),
         );
 
         // Load the point-label typeface once (None when no label configured).
@@ -251,6 +293,7 @@ impl ChartCache {
             future_opacity,
             line_color: config.line_color(),
             line_width: config.line_width(),
+            banding,
         })
     }
 
@@ -439,33 +482,61 @@ impl ChartCache {
             && let Some(geo) = &self.geo
         {
             let past_opacity = self.past_opacity.unwrap_or(1.0);
-            let past_color = to_skia_color(&self.line_color, Some(past_opacity));
-            let mut pb = PathBuilder::new();
             // Every route vertex behind the rider, then a final segment to their
             // exact interpolated position so the line ends under the dot instead
             // of at the last whole vertex.
-            let vertices = self
+            let pts: Vec<Point> = self
                 .x_data
                 .iter()
                 .zip(self.y_data.iter())
                 .take(past_end + 1)
                 .map(|(&x, &y)| (x, y))
-                .chain(std::iter::once((pos_x, pos_y)));
-            for (i, (x, y)) in vertices.enumerate() {
-                let abs_pt = self.to_frame(geo.to_pixel(x, y, &self.plot_bounds));
-                if i == 0 {
-                    pb.move_to(abs_pt);
-                } else {
-                    pb.line_to(abs_pt);
+                .chain(std::iter::once((pos_x, pos_y)))
+                .map(|(x, y)| self.to_frame(geo.to_pixel(x, y, &self.plot_bounds)))
+                .collect();
+            if let Some(b) = self.banding.as_ref().filter(|b| b.line) {
+                // Segment i takes the band of its start vertex; the final
+                // interpolated segment (to the rider dot) reuses the last
+                // route vertex's band.
+                let idx: Vec<usize> = (0..pts.len() - 1)
+                    .map(|i| band_index(&b.bands, b.data[i.min(b.data.len() - 1)]))
+                    .collect();
+                // Bound the opacity layer to the chart area (inflated by the
+                // stroke) so the per-frame layer allocation stays small.
+                let pad = self.line_width;
+                let layer_rect = Rect::from_xywh(
+                    self.x_offset as f32 - pad,
+                    self.y_offset as f32 - pad,
+                    self.plot_bounds.right + 2.0 * pad,
+                    self.plot_bounds.bottom + 2.0 * pad,
+                );
+                draw_banded_polyline(
+                    canvas,
+                    &pts,
+                    &idx,
+                    &b.bands,
+                    self.line_width,
+                    past_opacity,
+                    layer_rect,
+                );
+            } else {
+                let past_color = to_skia_color(&self.line_color, Some(past_opacity));
+                let mut pb = PathBuilder::new();
+                for (i, &pt) in pts.iter().enumerate() {
+                    if i == 0 {
+                        pb.move_to(pt);
+                    } else {
+                        pb.line_to(pt);
+                    }
                 }
+                let path = pb.snapshot();
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(past_color);
+                paint.set_stroke_width(self.line_width);
+                paint.set_style(PaintStyle::Stroke);
+                canvas.draw_path(&path, &paint);
             }
-            let path = pb.snapshot();
-            let mut paint = Paint::default();
-            paint.set_anti_alias(true);
-            paint.set_color(past_color);
-            paint.set_stroke_width(self.line_width);
-            paint.set_style(PaintStyle::Stroke);
-            canvas.draw_path(&path, &paint);
         }
 
         // 3. Draw static course markers over the route.
@@ -598,6 +669,7 @@ fn render_chart_background(
     bounds: &DataBounds,
     config: &PlotConfig,
     geo: Option<&GeoMapping>,
+    banding: Option<&Banding>,
 ) -> skia_safe::Image {
     let DataBounds {
         x_min,
@@ -648,7 +720,14 @@ fn render_chart_background(
     let line_path = pb.snapshot();
 
     // Draw fill under the curve
-    if let Some(fill_opacity) = config.fill_opacity() {
+    let usable_banding = banding.filter(|b| b.data.len() == x_data.len() && x_data.len() >= 2);
+    if let Some(b) = usable_banding.filter(|b| b.fill) {
+        // Banded fill defaults to fully opaque (TdF profiles are solid).
+        let alpha = config.fill_opacity().unwrap_or(1.0).clamp(0.0, 1.0);
+        if alpha > 0.0 {
+            draw_banded_fill(canvas, plot_bounds, x_data, y_data, b, &to_px, y_min, alpha);
+        }
+    } else if let Some(fill_opacity) = config.fill_opacity() {
         let fill_color_str = config.fill_color();
         let (r, g, b, _) = crate::color::parse_hex_color(&fill_color_str);
         let alpha = (fill_opacity.clamp(0.0, 1.0) * 255.0) as u8;
@@ -681,20 +760,288 @@ fn render_chart_background(
     } else {
         None
     };
-    let line_color = to_skia_color(&config.line_color(), split_opacity);
-    let mut line_paint = Paint::default();
-    line_paint.set_anti_alias(true);
-    line_paint.set_color(line_color);
-    line_paint.set_stroke_width(config.line_width());
-    line_paint.set_style(PaintStyle::Stroke);
-    canvas.draw_path(&line_path, &line_paint);
+    if let Some(b) = usable_banding.filter(|b| b.line) {
+        let pts: Vec<Point> = x_data
+            .iter()
+            .zip(y_data.iter())
+            .map(|(&x, &y)| to_px(x, y))
+            .collect();
+        let idx: Vec<usize> = b.data.iter().map(|&v| band_index(&b.bands, v)).collect();
+        let layer_rect = Rect::from_iwh(surf_w, surf_h);
+        draw_banded_polyline(
+            canvas,
+            &pts,
+            &idx,
+            &b.bands,
+            config.line_width(),
+            split_opacity.unwrap_or(1.0),
+            layer_rect,
+        );
+    } else {
+        let line_color = to_skia_color(&config.line_color(), split_opacity);
+        let mut line_paint = Paint::default();
+        line_paint.set_anti_alias(true);
+        line_paint.set_color(line_color);
+        line_paint.set_stroke_width(config.line_width());
+        line_paint.set_style(PaintStyle::Stroke);
+        canvas.draw_path(&line_path, &line_paint);
+    }
 
     surface.image_snapshot()
 }
 
+/// Fill the area under the curve with per-band colors, TdF-profile style.
+///
+/// Samples the curve once per pixel column, groups consecutive columns that
+/// share a band into run polygons, and draws each run extended one column
+/// into both neighbours: the overlap lets the next opaque run cover the
+/// previous run's anti-aliased edge, so band boundaries blend over 1px
+/// instead of leaving a hairline seam. Translucency is applied by drawing
+/// opaque runs inside an alpha layer — overlaps must not double-blend.
+#[allow(clippy::too_many_arguments)]
+fn draw_banded_fill(
+    canvas: &Canvas,
+    plot_bounds: &PlotBounds,
+    x_data: &[f64],
+    y_data: &[f64],
+    banding: &Banding,
+    to_px: &dyn Fn(f64, f64) -> Point,
+    y_base: f64,
+    alpha: f32,
+) -> Option<()> {
+    let n = y_data.len();
+    let cols_n = plot_bounds.width().floor() as i32;
+    if n < 2 || cols_n < 1 {
+        return None;
+    }
+    let base_y = to_px(*x_data.first()?, y_base).y;
+
+    // Per pixel column: (x px, curve y px, band index).
+    let cols: Vec<(f32, f32, usize)> = (0..=cols_n)
+        .map(|c| {
+            let pos = c as f64 / cols_n as f64 * (n - 1) as f64;
+            let i = pos.floor() as usize;
+            let j = (i + 1).min(n - 1);
+            let f = pos - i as f64;
+            let x = x_data[i] + (x_data[j] - x_data[i]) * f;
+            let y = y_data[i] + (y_data[j] - y_data[i]) * f;
+            let v = banding.data[i] + (banding.data[j] - banding.data[i]) * f;
+            let pt = to_px(x, y);
+            (pt.x, pt.y, band_index(&banding.bands, v))
+        })
+        .collect();
+
+    let layered = alpha < 1.0;
+    if layered {
+        canvas.save_layer_alpha_f(
+            Rect::from_ltrb(
+                plot_bounds.left,
+                plot_bounds.top,
+                plot_bounds.right,
+                plot_bounds.bottom,
+            ),
+            alpha,
+        );
+    }
+    let mut run_start = 0usize;
+    while run_start < cols.len() {
+        let band = cols[run_start].2;
+        let mut run_end = run_start;
+        while run_end + 1 < cols.len() && cols[run_end + 1].2 == band {
+            run_end += 1;
+        }
+        let draw_start = run_start.saturating_sub(1);
+        let draw_end = (run_end + 1).min(cols.len() - 1);
+        let mut pb = PathBuilder::new();
+        pb.move_to(Point::new(cols[draw_start].0, base_y));
+        for col in &cols[draw_start..=draw_end] {
+            pb.line_to(Point::new(col.0, col.1));
+        }
+        pb.line_to(Point::new(cols[draw_end].0, base_y));
+        pb.close();
+
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        paint.set_color(to_skia_color(&banding.bands[band].1, None));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_path(&pb.snapshot(), &paint);
+        run_start = run_end + 1;
+    }
+    if layered {
+        canvas.restore();
+    }
+    Some(())
+}
+
+/// Stroke a polyline in per-band colors. Segment i takes the band of its
+/// start point; consecutive same-band segments are stroked as one path,
+/// sharing the boundary point with the next run so the line stays continuous
+/// (round caps/joins hide the joint). Translucency is applied via an alpha
+/// layer so the overlapping caps at run joints don't double-blend.
+fn draw_banded_polyline(
+    canvas: &Canvas,
+    pts: &[Point],
+    band_idx: &[usize],
+    bands: &[(f64, String)],
+    width: f32,
+    alpha: f32,
+    layer_rect: Rect,
+) {
+    if pts.len() < 2 || alpha <= 0.0 {
+        return;
+    }
+    let layered = alpha < 1.0;
+    if layered {
+        canvas.save_layer_alpha_f(layer_rect, alpha);
+    }
+    let n_seg = pts.len() - 1;
+    let mut seg = 0usize;
+    while seg < n_seg {
+        let band = band_idx[seg];
+        let mut end = seg;
+        while end + 1 < n_seg && band_idx[end + 1] == band {
+            end += 1;
+        }
+        let mut pb = PathBuilder::new();
+        pb.move_to(pts[seg]);
+        for pt in &pts[seg + 1..=end + 1] {
+            pb.line_to(*pt);
+        }
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        paint.set_color(to_skia_color(&bands[band].1, None));
+        paint.set_stroke_width(width);
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_cap(skia_safe::PaintCap::Round);
+        paint.set_stroke_join(skia_safe::PaintJoin::Round);
+        canvas.draw_path(&pb.snapshot(), &paint);
+        seg = end + 1;
+    }
+    if layered {
+        canvas.restore();
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_point_label;
+    use super::{ChartCache, band_index, draw_banded_polyline, format_point_label};
+    use skia_safe::{Color, ISize, ImageInfo, Point, Rect};
+
+    fn bands() -> Vec<(f64, String)> {
+        vec![
+            (0.0, "#3b82f6".to_string()),
+            (4.0, "#22c55e".to_string()),
+            (f64::INFINITY, "#dc2626".to_string()),
+        ]
+    }
+
+    #[test]
+    fn band_index_picks_first_band_above_value_and_clamps() {
+        let b = bands();
+        assert_eq!(band_index(&b, -5.0), 0);
+        assert_eq!(band_index(&b, 0.0), 1); // bounds are exclusive upper
+        assert_eq!(band_index(&b, 3.9), 1);
+        assert_eq!(band_index(&b, 4.0), 2);
+        assert_eq!(band_index(&b, 99.0), 2);
+        assert_eq!(band_index(&b, f64::NAN), 2); // NaN clamps to last
+    }
+
+    /// Read one BGRA pixel from a Skia image.
+    fn pixel(img: &skia_safe::Image, x: i32, y: i32) -> (u8, u8, u8, u8) {
+        let info = ImageInfo::new(
+            ISize::new(1, 1),
+            skia_safe::ColorType::BGRA8888,
+            skia_safe::AlphaType::Premul,
+            None,
+        );
+        let mut buf = [0u8; 4];
+        assert!(img.read_pixels(
+            &info,
+            &mut buf,
+            4,
+            (x, y),
+            skia_safe::image::CachingHint::Disallow,
+        ));
+        (buf[0], buf[1], buf[2], buf[3]) // B, G, R, A
+    }
+
+    #[test]
+    fn banded_fill_colors_under_curve_by_band() {
+        // Elevation ramp colored by a gradient series: first half 2.0 (green
+        // band of the built-in defaults), second half 8.0 (orange band).
+        let config: crate::template::PlotConfig = serde_json::from_value(serde_json::json!({
+            "id": "plot-0",
+            "type": "plot",
+            "value": "elevation",
+            "x": 0, "y": 0, "width": 400, "height": 150,
+            "color_by": { "value": "gradient" }
+        }))
+        .unwrap();
+        let n = 100;
+        let x: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let y: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let grade: Vec<f64> = (0..n).map(|i| if i < n / 2 { 2.0 } else { 8.0 }).collect();
+        let cache = ChartCache::build(&config, x, y, Vec::new(), Vec::new(), grade, "/nonexistent")
+            .unwrap();
+        assert!(cache.banding.is_some());
+
+        // Deep under the curve on each half. Defaults: 2% → #22c55e, 8% → #f97316.
+        assert_eq!(pixel(&cache.background, 100, 140), (0x5e, 0xc5, 0x22, 0xff));
+        assert_eq!(pixel(&cache.background, 300, 140), (0x16, 0x73, 0xf9, 0xff));
+        // Above the curve stays transparent.
+        assert_eq!(pixel(&cache.background, 100, 10), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn banded_polyline_strokes_runs_and_applies_layer_alpha() {
+        let info = ImageInfo::new(
+            ISize::new(100, 100),
+            skia_safe::ColorType::BGRA8888,
+            skia_safe::AlphaType::Premul,
+            None,
+        );
+        let mut surface = skia_safe::surfaces::raster(&info, None, None).unwrap();
+        surface.canvas().clear(Color::TRANSPARENT);
+        let pts = [
+            Point::new(10.0, 50.0),
+            Point::new(50.0, 50.0),
+            Point::new(90.0, 50.0),
+        ];
+        // Segment bands: first green (idx 1), second red (idx 2).
+        draw_banded_polyline(
+            surface.canvas(),
+            &pts,
+            &[1, 2],
+            &bands(),
+            10.0,
+            1.0,
+            Rect::from_iwh(100, 100),
+        );
+        let img = surface.image_snapshot();
+        assert_eq!(pixel(&img, 30, 50), (0x5e, 0xc5, 0x22, 0xff)); // #22c55e
+        assert_eq!(pixel(&img, 70, 50), (0x26, 0x26, 0xdc, 0xff)); // #dc2626
+
+        // Translucent variant: alpha applied once via the layer, even where
+        // the two runs' round caps overlap at the shared point.
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_banded_polyline(
+            surface.canvas(),
+            &pts,
+            &[1, 2],
+            &bands(),
+            10.0,
+            0.5,
+            Rect::from_iwh(100, 100),
+        );
+        let img = surface.image_snapshot();
+        let (_, _, _, a_mid) = pixel(&img, 30, 50);
+        let (_, _, _, a_joint) = pixel(&img, 50, 50);
+        assert!((a_mid as i32 - 128).abs() <= 2, "alpha was {a_mid}");
+        assert!(
+            (a_joint as i32 - 128).abs() <= 2,
+            "joint alpha was {a_joint} (double-blend?)"
+        );
+    }
 
     #[test]
     fn elevation_metric_and_imperial_match_screenshot_format() {

@@ -162,6 +162,20 @@ export const isLapMetric = (m) => LAP_METRICS.includes(m)
  */
 
 /**
+ * @typedef {Object} ColorBand
+ * @property {number} [max] Upper bound (exclusive) in display units; absent = catch-all top band.
+ * @property {string} color
+ */
+
+/**
+ * @typedef {Object} ColorByConfig Band-colors plot segments by a second metric (TdF-style climb profiles).
+ * @property {string} [value] Metric driving the color (default 'gradient').
+ * @property {string} [unit] Unit token for band thresholds (e.g. 'mph'); absent = metric display unit.
+ * @property {'fill'|'line'|'both'} [mode] What gets colored (default 'fill'; course plots always color the line).
+ * @property {ColorBand[]} [bands] Ordered bands; absent falls back to built-in gradient bands.
+ */
+
+/**
  * @typedef {Object} PlotElement
  * @property {'plot'} type
  * @property {string} id
@@ -175,12 +189,56 @@ export const isLapMetric = (m) => LAP_METRICS.includes(m)
  * @property {number} [opacity]
  * @property {LineConfig} [line]
  * @property {FillConfig} [fill]
+ * @property {ColorByConfig} [color_by]
  * @property {number} [margin]
  * @property {PointConfig} [point]
  * @property {CourseMarkerConfig[]} [markers]
  * @property {PointLabelConfig} [point_label]
  * @property {number} [rotation]
  */
+
+// Mirrors DEFAULT_GRADIENT_BANDS in src-tauri/src/render/template.rs: descent,
+// then TdF-style climb categories. Thresholds in percent grade.
+export const GRADIENT_COLOR_BANDS = [
+  { max: 0, color: '#3b82f6' },
+  { max: 4, color: '#22c55e' },
+  { max: 7, color: '#eab308' },
+  { max: 10, color: '#f97316' },
+  { max: 14, color: '#dc2626' },
+  { color: '#7f1d1d' },
+]
+
+// Cold→hot ramp used to seed bands for non-gradient color-by metrics.
+const COLOR_BY_RAMP = ['#3b82f6', '#22c55e', '#eab308', '#f97316', '#dc2626']
+
+// Starter thresholds per metric, in the unit band values are authored in
+// (speed km/h, power W, heartrate bpm, cadence rpm, temperature °C, elevation m).
+const COLOR_BY_THRESHOLDS = {
+  speed: [10, 20, 30, 40],
+  power: [150, 220, 290, 360],
+  heartrate: [120, 140, 160, 180],
+  cadence: [60, 75, 90, 105],
+  temperature: [5, 15, 25, 32],
+  elevation: [250, 750, 1500, 2500],
+}
+
+/**
+ * Fresh default bands for a color-by metric — a starting point the user
+ * customizes. Returns new objects each call so edits never share state.
+ * @param {string} metric
+ * @returns {ColorBand[]}
+ */
+export function defaultColorBands(metric) {
+  if (metric === 'gradient' || !(metric in COLOR_BY_THRESHOLDS)) {
+    return GRADIENT_COLOR_BANDS.map((b) => ({ ...b }))
+  }
+  const bands = COLOR_BY_THRESHOLDS[metric].map((max, i) => ({
+    max,
+    color: COLOR_BY_RAMP[i],
+  }))
+  bands.push({ color: COLOR_BY_RAMP[COLOR_BY_RAMP.length - 1] })
+  return bands
+}
 
 /**
  * @typedef {Object} MeterElement

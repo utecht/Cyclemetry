@@ -348,6 +348,31 @@ impl OverlayElement for ValueConfig {
 
 // ─── Plot ──────────────────────────────────────────────────────────────────
 
+/// Linearly resample `series` (aligned with monotonic `src_dist`) onto the
+/// `dst_dist` grid. Used to carry a per-frame metric series onto the
+/// source-density route vertices of a course plot. Endpoints clamp; a
+/// length mismatch returns empty (which disables banding downstream).
+fn resample_by_distance(series: &[f64], src_dist: &[f64], dst_dist: &[f64]) -> Vec<f64> {
+    if series.is_empty() || src_dist.len() != series.len() {
+        return Vec::new();
+    }
+    dst_dist
+        .iter()
+        .map(|&d| {
+            let i = src_dist.partition_point(|&s| s < d);
+            if i == 0 {
+                return series[0];
+            }
+            if i >= src_dist.len() {
+                return series[series.len() - 1];
+            }
+            let (d0, d1) = (src_dist[i - 1], src_dist[i]);
+            let t = if d1 > d0 { (d - d0) / (d1 - d0) } else { 0.0 };
+            series[i - 1] + (series[i] - series[i - 1]) * t
+        })
+        .collect()
+}
+
 impl OverlayElement for PlotConfig {
     fn build_chart(&self, activity: &Activity, fonts_dir: &str) -> Option<ChartCache> {
         let (x_data, y_data) = activity.plot_data(&self.value);
@@ -361,12 +386,28 @@ impl OverlayElement for PlotConfig {
         } else {
             (Vec::new(), Vec::new())
         };
+        // Metric series are per-frame, but a course's geometry is the
+        // source-density route — resample the color series onto each route
+        // vertex by travelled distance so banding aligns with `x_data`.
+        let color_data = self
+            .color_by
+            .as_ref()
+            .map(|cb| {
+                let series = activity.plot_data(cb.attr()).1;
+                if is_course {
+                    resample_by_distance(&series, &activity.distance, &activity.route_distance)
+                } else {
+                    series
+                }
+            })
+            .unwrap_or_default();
         ChartCache::build(
             self,
             x_data,
             y_data,
             distance_data,
             frame_distance,
+            color_data,
             fonts_dir,
         )
     }
@@ -2193,6 +2234,131 @@ mod tests {
             rgba.chunks_exact(4).any(|px| px[3] != 0),
             "laps_to_go value element rendered nothing"
         );
+    }
+
+    /// End-to-end `color_by`: banded elevation fill, banded line plot, and a
+    /// banded course line (with past/future split) render through
+    /// SceneCache::build → render_frame, each producing several distinct band
+    /// colors inside its rect. Set CYCLEMETRY_TEST_DUMP=<dir> to write a PNG.
+    #[test]
+    fn color_by_renders_banded_plots_end_to_end() {
+        use super::{SceneCache, render_frame};
+        use crate::activity::Activity;
+        use crate::template::DEFAULT_GRADIENT_BANDS;
+
+        let mut activity = Activity::synthetic(600);
+        // Widen the synthetic gradient (±3%) so the sweep crosses most of the
+        // default bands (−12%…12%).
+        activity.gradient = (0..600).map(|i| 12.0 * (i as f64 / 40.0).cos()).collect();
+
+        let raw = serde_json::json!({
+            "scene": { "width": 1280, "height": 720 },
+            "elements": [
+                { "type": "rect", "id": "bg", "x": 0, "y": 0, "width": 1280, "height": 720,
+                  "color": "#18181b" },
+                { "type": "plot", "id": "profile", "value": "elevation",
+                  "x": 40, "y": 420, "width": 560, "height": 240,
+                  "line": { "color": "#ffffff", "width": 3 },
+                  "color_by": { "value": "gradient" } },
+                { "type": "plot", "id": "line-plot", "value": "elevation",
+                  "x": 680, "y": 420, "width": 560, "height": 240,
+                  "line": { "width": 6 },
+                  "color_by": { "value": "gradient", "mode": "line" } },
+                { "type": "plot", "id": "course", "value": "course",
+                  "x": 40, "y": 40, "width": 560, "height": 320,
+                  "line": { "width": 8, "past_opacity": 1.0, "future_opacity": 0.25 },
+                  "point": { "color": "#ffffff", "weight": 300 },
+                  "color_by": { "value": "gradient" } }
+            ]
+        });
+        let mut template = Template::from_value(raw).unwrap();
+        // Sample like the real pipeline does — course plots draw the
+        // source-density `route`, which is populated at sample time.
+        template.scene.fps = 1;
+        let activity = activity.sample_for_scene(&template.scene, true).unwrap();
+        let cache = SceneCache::build(&activity, &template, "/nonexistent", &[]).unwrap();
+        let frame = render_frame(300, &cache, &activity, &template, None, None);
+
+        // Count which band colors appear (exact matches only — interiors of
+        // opaque banded draws) within a rect of the BGRA frame.
+        let bands_in_rect = |x0: usize, y0: usize, w: usize, h: usize| -> usize {
+            DEFAULT_GRADIENT_BANDS
+                .iter()
+                .filter(|(_, hex)| {
+                    let (r, g, b, _) = crate::color::parse_hex_color(hex);
+                    (y0..y0 + h).any(|y| {
+                        (x0..x0 + w).any(|x| {
+                            let i = (y * 1280 + x) * 4;
+                            frame[i] == b && frame[i + 1] == g && frame[i + 2] == r
+                        })
+                    })
+                })
+                .count()
+        };
+        assert!(bands_in_rect(40, 420, 560, 240) >= 4, "banded fill");
+        assert!(bands_in_rect(680, 420, 560, 240) >= 4, "banded line");
+        // Course: only the traveled half is opaque (future is at 0.25 alpha).
+        assert!(bands_in_rect(40, 40, 560, 320) >= 3, "banded course line");
+
+        if let Ok(dir) = std::env::var("CYCLEMETRY_TEST_DUMP") {
+            let info = skia_safe::ImageInfo::new(
+                skia_safe::ISize::new(1280, 720),
+                skia_safe::ColorType::BGRA8888,
+                skia_safe::AlphaType::Premul,
+                None,
+            );
+            let data = skia_safe::Data::new_copy(&frame);
+            let img = skia_safe::images::raster_from_data(&info, data, 1280 * 4).unwrap();
+            let png = img
+                .encode(None, skia_safe::EncodedImageFormat::PNG, None)
+                .unwrap();
+            std::fs::write(format!("{dir}/color_by_e2e.png"), png.as_bytes()).unwrap();
+        }
+    }
+
+    /// Mirrors the native_demo preview path when the user drags the timeline
+    /// trim: scaled template parse → sample_for_scene over a changed window →
+    /// SceneCache::build → render_frame, with color_by plots present.
+    #[test]
+    fn time_range_change_rebuilds_color_by_preview() {
+        use super::{SceneCache, render_frame};
+        use crate::activity::Activity;
+
+        let source = Activity::synthetic(600);
+        let raw = serde_json::json!({
+            "scene": { "width": 3840, "height": 2160, "start": 60.0, "end": 240.0 },
+            "elements": [
+                { "type": "plot", "id": "profile", "value": "elevation",
+                  "x": 100, "y": 1200, "width": 1600, "height": 700,
+                  "line": { "color": "#ffffff", "width": 8 },
+                  "point": { "color": "#ffffff", "weight": 900 },
+                  "color_by": { "value": "gradient" } },
+                { "type": "plot", "id": "course", "value": "course",
+                  "x": 2000, "y": 200, "width": 1500, "height": 900,
+                  "line": { "width": 20, "past_opacity": 1.0, "future_opacity": 0.3 },
+                  "color_by": { "value": "gradient", "bands": [
+                      { "max": 0, "color": "#3b82f6" }, { "color": "#dc2626" } ] } }
+            ]
+        });
+
+        // The preview re-runs this whole flow for every new trim window.
+        for (start, end) in [(60.0, 240.0), (10.0, 590.0), (300.0, 302.0), (0.0, 600.0)] {
+            let mut config = raw.clone();
+            config["scene"]["start"] = serde_json::json!(start);
+            config["scene"]["end"] = serde_json::json!(end);
+            let mut template =
+                crate::template::Template::from_value_scaled(config, Some((1280, 720))).unwrap();
+            template.scene.fps = 10;
+            template.scene.target_duration = None;
+            let activity = source.sample_for_scene(&template.scene, true).unwrap();
+            let cache = SceneCache::build(&activity, &template, "/nonexistent", &[]).unwrap();
+            assert_eq!(cache.charts.len(), 2, "window {start}..{end}");
+            let last = activity.data_len().saturating_sub(1);
+            for idx in [0, last / 2, last] {
+                let frame = render_frame(idx, &cache, &activity, &template, None, None);
+                assert_eq!(frame.len(), 1280 * 720 * 4);
+            }
+        }
     }
 
     /// Unified model: explicit `scene.layers` ids drive draw order; elements
