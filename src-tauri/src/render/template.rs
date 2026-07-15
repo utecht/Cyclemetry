@@ -391,6 +391,10 @@ pub struct PlotConfig {
     pub opacity: Option<f32>,
     pub line: Option<LineConfig>,
     pub fill: Option<FillConfig>,
+    /// Color plot segments by a second attribute (e.g. gradient) using
+    /// ordered value bands — Tour-de-France-style climb profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_by: Option<ColorByConfig>,
     pub margin: Option<f64>,
     /// Single position marker for the current-value dot (preferred schema).
     pub point: Option<PointConfig>,
@@ -418,6 +422,80 @@ pub struct LineConfig {
 pub struct FillConfig {
     pub opacity: Option<f32>,
     pub color: Option<String>,
+}
+
+/// Built-in gradient bands (percent): descent, then TdF-style climb
+/// categories. Used when a gradient `color_by` has no explicit bands.
+pub const DEFAULT_GRADIENT_BANDS: &[(f64, &str)] = &[
+    (0.0, "#3b82f6"),
+    (4.0, "#22c55e"),
+    (7.0, "#eab308"),
+    (10.0, "#f97316"),
+    (14.0, "#dc2626"),
+    (f64::INFINITY, "#7f1d1d"),
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColorByConfig {
+    /// Attribute driving the color (default "gradient").
+    pub value: Option<String>,
+    /// Unit token for band thresholds (e.g. "mph" to author speed bands in
+    /// mph). Absent = the attribute's metric display unit (km/h, °C, m).
+    pub unit: Option<String>,
+    /// What gets band-colored: "fill" (under-curve), "line", or "both".
+    /// Default "fill". Course plots always color the route line only.
+    pub mode: Option<String>,
+    /// Ordered color bands; a value falls in the first band whose `max`
+    /// exceeds it. Absent/empty falls back to the built-in gradient bands
+    /// (non-gradient attributes require explicit bands).
+    pub bands: Option<Vec<ColorBand>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColorBand {
+    /// Upper bound (exclusive) in display units. Absent = catch-all top band.
+    pub max: Option<f64>,
+    pub color: String,
+}
+
+impl ColorByConfig {
+    pub fn attr(&self) -> &str {
+        self.value
+            .as_deref()
+            .unwrap_or(crate::render::activity::ATTR_GRADIENT)
+    }
+
+    /// Whether the under-curve fill is band-colored. Never for course plots,
+    /// which have no fill.
+    pub fn color_fill(&self, is_course: bool) -> bool {
+        !is_course && !matches!(self.mode.as_deref(), Some("line"))
+    }
+
+    /// Whether the line is band-colored. Always for course plots (the route
+    /// line is the only paintable surface), else when mode is "line"/"both".
+    pub fn color_line(&self, is_course: bool) -> bool {
+        is_course || matches!(self.mode.as_deref(), Some("line") | Some("both"))
+    }
+
+    /// Bands as (upper bound, color) sorted ascending. Values above the last
+    /// bound clamp to it. Empty when no bands apply (disables the feature).
+    pub fn resolved_bands(&self) -> Vec<(f64, String)> {
+        match &self.bands {
+            Some(bands) if !bands.is_empty() => {
+                let mut out: Vec<(f64, String)> = bands
+                    .iter()
+                    .map(|b| (b.max.unwrap_or(f64::INFINITY), b.color.clone()))
+                    .collect();
+                out.sort_by(|a, b| a.0.total_cmp(&b.0));
+                out
+            }
+            _ if self.attr() == crate::render::activity::ATTR_GRADIENT => DEFAULT_GRADIENT_BANDS
+                .iter()
+                .map(|&(max, color)| (max, color.to_string()))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -917,6 +995,45 @@ fn merge_scene_into_item(scene: &serde_json::Value, item: &mut serde_json::Value
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_by_defaults_to_gradient_bands_sorted() {
+        let cb: ColorByConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(cb.attr(), "gradient");
+        let bands = cb.resolved_bands();
+        assert_eq!(bands.len(), DEFAULT_GRADIENT_BANDS.len());
+        assert!(bands.windows(2).all(|w| w[0].0 <= w[1].0));
+        assert_eq!(bands.last().unwrap().0, f64::INFINITY);
+        // Default mode: fill for profiles, line for course.
+        assert!(cb.color_fill(false) && !cb.color_line(false));
+        assert!(!cb.color_fill(true) && cb.color_line(true));
+    }
+
+    #[test]
+    fn color_by_explicit_bands_sort_and_catch_all() {
+        let cb: ColorByConfig = serde_json::from_value(serde_json::json!({
+            "value": "power",
+            "mode": "both",
+            "bands": [
+                { "color": "#111111" },
+                { "max": 300, "color": "#222222" },
+                { "max": 150, "color": "#333333" }
+            ]
+        }))
+        .unwrap();
+        let bands = cb.resolved_bands();
+        assert_eq!(bands[0], (150.0, "#333333".to_string()));
+        assert_eq!(bands[1], (300.0, "#222222".to_string()));
+        assert_eq!(bands[2].0, f64::INFINITY);
+        assert!(cb.color_fill(false) && cb.color_line(false));
+    }
+
+    #[test]
+    fn color_by_non_gradient_without_bands_disables() {
+        let cb: ColorByConfig =
+            serde_json::from_value(serde_json::json!({ "value": "power" })).unwrap();
+        assert!(cb.resolved_bands().is_empty());
+    }
 
     /// The bundled ride-summary flyover template must always parse through the
     /// real deserializer and carry the time-lapse + running-metric wiring, so a

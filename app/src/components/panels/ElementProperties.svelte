@@ -14,7 +14,7 @@
   import ColorInput from '../ui/ColorInput.svelte'
   import AssetPicker from '../overlays/AssetPicker.svelte'
   import * as backend from '../../api/backend.js'
-  import { elementTypeName } from '../../lib/elementTypes.js'
+  import { defaultColorBands, elementTypeName } from '../../lib/elementTypes.js'
   import { metricRangeIssues, metricValueIssue } from '../../lib/metricLimits.js'
   import { normalizeElementField, normalizeTemplateIntegerField } from '../../lib/templateSchema.js'
 
@@ -135,6 +135,28 @@
     { value: 'right', label: 'Fill rightward' },
     { value: 'left', label: 'Fill leftward' },
   ]
+  // Metrics that can drive plot band colors (must have per-frame plot data).
+  const ALL_COLOR_BY_METRICS = ['gradient', 'speed', 'power', 'heartrate', 'cadence', 'temperature', 'elevation']
+  const COLOR_BY_METRICS = $derived(filterMetrics(ALL_COLOR_BY_METRICS))
+  const COLOR_BY_MODES = [
+    { value: 'fill', label: 'Fill under curve' },
+    { value: 'line', label: 'Line' },
+    { value: 'both', label: 'Fill + line' },
+  ]
+  // Unit the band thresholds are read in ('' = the metric's default display
+  // unit, matching units::resolve on the Rust side).
+  const COLOR_BY_UNITS = {
+    speed: [{ value: '', label: 'km/h' }, { value: 'mph', label: 'mph' }],
+    temperature: [{ value: '', label: '°C' }, { value: 'f', label: '°F' }],
+    elevation: [{ value: '', label: 'm' }, { value: 'ft', label: 'ft' }],
+  }
+  const COLOR_BY_UNIT_HINTS = { gradient: '%', power: 'W', heartrate: 'bpm', cadence: 'rpm' }
+  function colorByUnitHint(cb) {
+    const metric = cb.value ?? 'gradient'
+    const units = COLOR_BY_UNITS[metric]
+    if (units) return (units.find((u) => u.value === (cb.unit ?? '')) ?? units[0]).label
+    return COLOR_BY_UNIT_HINTS[metric] ?? ''
+  }
   const COURSE_MARKER_STYLES = [
     { value: 'checkered', label: 'Checkered finish' },
     { value: 'circle', label: 'Colored circle' },
@@ -706,6 +728,58 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
     } else {
       app.updateElement(s.id, { color: raw })
     }
+  }
+
+  // ── Plot color-by (banded coloring by a second metric) ────────────────────
+  function colorBy() {
+    return selected()?.item.color_by ?? null
+  }
+  function setColorBy(next) {
+    const s = selected()
+    if (!s) return
+    app.updateElement(s.id, { color_by: next })
+  }
+  function toggleColorBy(on) {
+    if (!on) return setColorBy(undefined)
+    const s = selected()
+    if (!s) return
+    // Banded fills read best solid; lift a translucent fill to full opacity
+    // in the same (single-undo) update.
+    const patch = { color_by: { value: 'gradient', bands: defaultColorBands('gradient') } }
+    const fillOpacity = s.item.fill?.opacity
+    if (s.item.value !== 'course' && typeof fillOpacity === 'number' && fillOpacity < 1) {
+      patch.fill = { ...s.item.fill, opacity: 1 }
+    }
+    app.updateElement(s.id, patch)
+  }
+  // Changing the driving metric resets bands — thresholds are metric-specific.
+  function setColorByMetric(metric) {
+    setColorBy({ ...colorBy(), value: metric, unit: undefined, bands: defaultColorBands(metric) })
+  }
+  function setColorByField(field, value) {
+    setColorBy({ ...colorBy(), [field]: value })
+  }
+  function colorByBands() {
+    return colorBy()?.bands ?? []
+  }
+  function updateColorBand(i, patch) {
+    const bands = colorByBands().map((b, idx) => (idx === i ? { ...b, ...patch } : b))
+    setColorBy({ ...colorBy(), bands })
+  }
+  function removeColorBand(i) {
+    setColorBy({ ...colorBy(), bands: colorByBands().filter((_, idx) => idx !== i) })
+  }
+  function addColorBand() {
+    const bands = [...colorByBands()]
+    const maxes = bands.map((b) => b.max).filter((m) => typeof m === 'number').sort((a, b) => a - b)
+    const top = maxes.at(-1)
+    const step = maxes.length >= 2 ? maxes.at(-1) - maxes.at(-2) : 5
+    const next = { max: top != null ? top + step : 0, color: bands.at(-1)?.color ?? '#ffffff' }
+    // Keep the catch-all (no max) band last.
+    const catchAll = bands.length && bands.at(-1).max == null ? bands.pop() : null
+    bands.push(next)
+    if (catchAll) bands.push(catchAll)
+    setColorBy({ ...colorBy(), bands })
   }
 
   // Meter gradient stops (ordered min→max). Absent = solid `color`.
@@ -1292,6 +1366,65 @@ Looks unrealistic for ${item.value} (expected ${issue.expected}). Enter a manual
           <span class="text-xs text-zinc-500">Opacity (0–1)</span>
           <OpacityControl value={item.opacity ?? 1} oninput={(e) => update('opacity', e.target.value)} />
         </label>
+        {/if}
+      </section>
+
+      <!-- Color by: band-color segments by a second metric (TdF-style profiles) -->
+      {@const cb = item.color_by}
+      <section class="mb-4 space-y-2">
+        <p class="text-[10px] uppercase tracking-wider text-zinc-600">Color by Metric</p>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={cb != null}
+            onchange={(e) => toggleColorBy(e.target.checked)}
+            class="accent-primary" />
+          <span class="text-xs text-zinc-400">Color segments by a second metric</span>
+        </label>
+        {#if cb != null}
+          <label class="space-y-1 block">
+            <span class="text-xs text-zinc-500">Metric</span>
+            <Select
+              value={cb.value ?? 'gradient'}
+              options={COLOR_BY_METRICS.map((m) => ({ value: m, label: metricLabel(m) }))}
+              onchange={setColorByMetric}
+            />
+          </label>
+          {#if item.value === 'course'}
+            <p class="text-[10px] text-zinc-600 italic">Colors the route line.</p>
+          {:else}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Apply to</span>
+              <Select value={cb.mode ?? 'fill'} options={COLOR_BY_MODES}
+                onchange={(v) => setColorByField('mode', v)} />
+            </label>
+          {/if}
+          {#if COLOR_BY_UNITS[cb.value ?? 'gradient']}
+            <label class="space-y-1 block">
+              <span class="text-xs text-zinc-500">Threshold unit</span>
+              <Select value={cb.unit ?? ''} options={COLOR_BY_UNITS[cb.value ?? 'gradient']}
+                onchange={(v) => setColorByField('unit', v || undefined)} />
+            </label>
+          {/if}
+          <div class="space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-zinc-500">Bands — up to ({colorByUnitHint(cb)})</span>
+              <button type="button" class="cursor-pointer text-xs text-primary hover:underline"
+                onclick={addColorBand}>+ band</button>
+            </div>
+            {#each colorByBands() as band, i (i)}
+              <div class="flex gap-2 items-center">
+                {#if band.max != null}
+                  <Input type="number" value={band.max} step={1} class="w-20 shrink-0"
+                    oninput={(e) => updateColorBand(i, { max: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                {:else}
+                  <span class="w-20 shrink-0 text-center text-xs text-zinc-500">above</span>
+                {/if}
+                <ColorInput value={band.color ?? '#ffffff'} vars={sceneVars}
+                  onchange={(v) => updateColorBand(i, { color: v })} class="flex-1 min-w-0" />
+                <button type="button" class="cursor-pointer text-xs text-zinc-500 hover:text-red-400 px-1 shrink-0"
+                  onclick={() => removeColorBand(i)} aria-label="Remove band">✕</button>
+              </div>
+            {/each}
+          </div>
         {/if}
       </section>
 

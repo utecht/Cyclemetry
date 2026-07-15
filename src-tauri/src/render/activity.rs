@@ -489,7 +489,8 @@ impl Activity {
                                 pt.power = current_text.parse().ok();
                             }
                             "Speed" if in_extensions => {
-                                pt.speed = current_text.parse::<f64>().ok().filter(|v| v.is_finite());
+                                pt.speed =
+                                    current_text.parse::<f64>().ok().filter(|v| v.is_finite());
                             }
                             "front_gear" | "frontGear" | "front_gear_num" if in_extensions => {
                                 pt.front_gear = current_text.parse().ok();
@@ -664,7 +665,8 @@ impl Activity {
                                 pt.power = current_text.parse().ok();
                             }
                             "speed" => {
-                                pt.speed = current_text.parse::<f64>().ok().filter(|v| v.is_finite());
+                                pt.speed =
+                                    current_text.parse::<f64>().ok().filter(|v| v.is_finite());
                             }
                             "TrackPointExtension" => {
                                 in_tpx = false;
@@ -938,7 +940,7 @@ impl Activity {
     }
 
     pub fn sample_for_scene(
-        self,
+        &self,
         scene: &crate::render::template::SceneConfig,
         synthetic: bool,
     ) -> Result<Self, String> {
@@ -1804,7 +1806,10 @@ mod tests {
         };
 
         // bare <speed> (GPX 1.0, direct child of trkpt)
-        assert_eq!(speeds("<speed>5.0</speed>", "<speed>7.5</speed>"), vec![5.0, 7.5]);
+        assert_eq!(
+            speeds("<speed>5.0</speed>", "<speed>7.5</speed>"),
+            vec![5.0, 7.5]
+        );
 
         // Garmin TrackPointExtension v2: <gpxtpx:speed> inside <extensions>
         assert_eq!(
