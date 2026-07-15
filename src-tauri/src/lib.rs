@@ -3066,7 +3066,7 @@ pub fn run() {
                                 continue;
                             };
                             if submenu.title().to_string() == "Help" {
-                                unsafe { ns_app.setHelpMenu(Some(&submenu)) };
+                                ns_app.setHelpMenu(Some(&submenu));
                                 break;
                             }
                         }

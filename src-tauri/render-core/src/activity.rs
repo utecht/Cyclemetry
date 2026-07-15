@@ -825,6 +825,7 @@ impl Activity {
         // Build raw data arrays
         let mut raw_gradient: Vec<f64> = Vec::with_capacity(n);
         let mut cum_dist = 0.0f64;
+        let mut speed_derived = false;
 
         for (i, pt) in points.iter().enumerate() {
             activity.course.push((pt.lat, pt.lon));
@@ -851,6 +852,7 @@ impl Activity {
                 Some(v) => v,
                 None if i == 0 => 0.0,
                 None => {
+                    speed_derived = true;
                     let prev = &points[i - 1];
                     let dist = haversine_m(prev.lat, prev.lon, pt.lat, pt.lon);
                     let dt = time_delta_seconds(prev.time_str.as_deref(), pt.time_str.as_deref());
@@ -883,6 +885,18 @@ impl Activity {
                 }
             };
             raw_gradient.push(grad.unwrap_or(0.0));
+        }
+
+        // GPS-derived speed inherits position jitter — on a 1 Hz track the
+        // point-to-point derivative swings several mph between consecutive
+        // seconds — so smooth it like elevation. Device-reported speed is left
+        // alone: the head unit already filtered it. The polynomial fit can
+        // overshoot below zero around stops, hence the clamp.
+        if speed_derived {
+            activity.speed = savgol_smooth_11_3(&activity.speed)
+                .into_iter()
+                .map(|v| v.max(0.0))
+                .collect();
         }
 
         // Smooth elevation with Savitzky-Golay (window=11, poly=3)
@@ -1998,6 +2012,58 @@ mod tests {
         let activity = Activity::parse_gpx(gpx).unwrap();
         assert_eq!(activity.elapsed_seconds, vec![0.0, 2.0, 5.0]);
         assert!(activity.has_wall_clock_time_axis());
+    }
+
+    #[test]
+    fn gps_derived_speed_is_smoothed() {
+        // 1 Hz track alternating ~12 m and ~8 m steps: the raw position
+        // derivative saws 12→8→12 m/s every second, like real GPS jitter.
+        // 1e-4 deg of latitude ≈ 11.1 m.
+        let mut lat = 0.0f64;
+        let mut body = String::new();
+        for i in 0..40 {
+            if i > 0 {
+                let step_m = if i % 2 == 0 { 12.0 } else { 8.0 };
+                lat += step_m / 111_194.9;
+            }
+            body.push_str(&format!(
+                r#"<trkpt lat="{lat:.7}" lon="0"><time>2026-01-01T00:00:{i:02}Z</time></trkpt>"#
+            ));
+        }
+        let gpx = format!("<gpx><trk><trkseg>{body}</trkseg></trk></gpx>");
+        let a = Activity::parse_gpx(&gpx).unwrap();
+
+        // Away from the boundaries the ±4 m/s sawtooth must be flattened…
+        let max_jump = a.speed[5..35]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(max_jump < 1.0, "smoothed speed still jumps {max_jump} m/s");
+        // …without shifting the average speed.
+        let mean = a.speed[5..35].iter().sum::<f64>() / 30.0;
+        assert!(
+            (mean - 10.0).abs() < 0.5,
+            "mean speed drifted to {mean} m/s"
+        );
+    }
+
+    #[test]
+    fn device_reported_speed_is_not_smoothed() {
+        // Same sawtooth, but as explicit <speed> values: the device already
+        // filtered these, so they must come through untouched.
+        let mut body = String::new();
+        for i in 0..40 {
+            let spd = if i % 2 == 0 { 12.0 } else { 8.0 };
+            body.push_str(&format!(
+                r#"<trkpt lat="1" lon="2"><time>2026-01-01T00:00:{i:02}Z</time><extensions><speed>{spd}</speed></extensions></trkpt>"#
+            ));
+        }
+        let gpx = format!("<gpx><trk><trkseg>{body}</trkseg></trk></gpx>");
+        let a = Activity::parse_gpx(&gpx).unwrap();
+        for (i, &v) in a.speed.iter().enumerate() {
+            let expected = if i % 2 == 0 { 12.0 } else { 8.0 };
+            assert_eq!(v, expected, "speed[{i}] was altered");
+        }
     }
 
     #[test]
